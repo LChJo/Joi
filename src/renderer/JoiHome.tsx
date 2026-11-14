@@ -115,8 +115,8 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
       <details className="model-source-advanced">
         <summary>{t("home.advancedSettingsOptional")}</summary>
         <p className="model-source-hint">{t("home.leaveBlankForRecommendedValuesChooseContextAndOutput")}</p>
-        <label>{t("home.contextWindowTokens")}<select defaultValue="" name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS)}</select></label>
-        <label>{t("home.maximumOutputTokens")}<select defaultValue="" name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS)}</select></label>
+        <label>{t("home.contextWindowTokens")}<select defaultValue={1_000_000} name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS)}</select></label>
+        <label>{t("home.maximumOutputTokens")}<select defaultValue={131_072} name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS)}</select></label>
         <label>{t("home.contextWindowUsagePercentageThatTriggersCompaction")}<select defaultValue="" name="compactionThresholdPercent">{limitOptions(COMPACTION_TIERS, undefined, "%")}</select></label>
         <label>{t("home.thinkingEffort")}<select defaultValue="" name="thinkingEffort">
             <option value="">{t("home.defaultChosenByJoi")}</option>
@@ -199,6 +199,8 @@ interface LimitTier {
  * same-labelled power of two, so picking "128K" here cannot exceed a route that accepts 128 Ki.
  */
 const CONTEXT_WINDOW_TIERS: readonly LimitTier[] = [
+  { label: "3M", value: 3_000_000 },
+  { label: "2M", value: 2_000_000 },
   { label: "1M", value: 1_000_000 },
   { label: "500K", value: 500_000 },
   { label: "200K", value: 200_000 },
@@ -209,6 +211,9 @@ const CONTEXT_WINDOW_TIERS: readonly LimitTier[] = [
 ];
 
 const MAX_OUTPUT_TIERS: readonly LimitTier[] = [
+  { label: "512K", value: 524_288 },
+  { label: "300K", value: 307_200 },
+  { label: "256K", value: 262_144 },
   { label: "128K", value: 131_072 },
   { label: "64K", value: 65_536 },
   { label: "32K", value: 32_768 },

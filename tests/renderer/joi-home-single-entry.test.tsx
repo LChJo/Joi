@@ -487,8 +487,10 @@ describe("joi home single entry", () => {
     expect(screen.getByText(/K3 的 Model ID 是 k3，不是 kimi-k3/u)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Model ID（可选，高级设置）"), { target: { value: "kimi-custom" } });
     fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
+    expect(screen.getByLabelText("上下文窗口（tokens）")).toHaveValue("1000000");
+    expect(screen.getByLabelText("最大输出（tokens）")).toHaveValue("131072");
     fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "coding-plan", apiKey: "test-key", kind: "kimi", modelId: "kimi-custom", protocol: "anthropic" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "coding-plan", apiKey: "test-key", contextWindow: 1_000_000, maxOutputTokens: 131_072, kind: "kimi", modelId: "kimi-custom", protocol: "anthropic" }));
     expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
   });
 
@@ -504,7 +506,7 @@ describe("joi home single entry", () => {
     fireEvent.click(screen.getByRole("button", { name: "Anthropic-compatible" }));
     fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "token-plan", apiKey: "test-key", kind: "qwen", modelId: undefined, protocol: "anthropic" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "token-plan", apiKey: "test-key", contextWindow: 1_000_000, maxOutputTokens: 131_072, kind: "qwen", modelId: undefined, protocol: "anthropic" }));
   });
 
   it("keeps a failed generic source as a diagnosable draft and supports local keyless fields", async () => {
@@ -520,7 +522,7 @@ describe("joi home single entry", () => {
     fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "custom", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai", modelId: "local-model", protocol: "openai" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "custom", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", contextWindow: 1_000_000, maxOutputTokens: 131_072, displayName: "本机", kind: "generic-openai", modelId: "local-model", protocol: "openai" }));
     expect(await screen.findByText(/无法访问所选接口/u)).toBeInTheDocument();
   });
 
@@ -664,7 +666,11 @@ describe("joi home single entry", () => {
     expect(warning).toHaveAttribute("role", "alert");
   });
 
-  it("sends the advanced model limits from the edit form", async () => {
+  it.each([
+    ["2M", "2000000", "256K", "262144"],
+    ["3M", "3000000", "300K", "307200"],
+    ["3M", "3000000", "512K", "524288"],
+  ])("saves expanded context/output tiers %j", async (contextLabel, contextValue, outputLabel, outputValue) => {
     const api = new DigitalLifeApi("");
     const generic = {
       ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
@@ -674,11 +680,16 @@ describe("joi home single entry", () => {
     const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
     render(<ModelSourceManager api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
-    fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "1000000" } });
+    const context = screen.getByLabelText("上下文窗口（tokens）");
+    const output = screen.getByLabelText("最大输出（tokens）");
+    expect(within(context).getByRole("option", { name: contextLabel })).toHaveValue(contextValue);
+    expect(within(output).getByRole("option", { name: outputLabel })).toHaveValue(outputValue);
+    fireEvent.change(context, { target: { value: contextValue } });
+    fireEvent.change(output, { target: { value: outputValue } });
     fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "70" } });
     fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
     await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
-      compactionThresholdPercent: 70, contextWindow: 1_000_000,
+      compactionThresholdPercent: 70, contextWindow: Number(contextValue), maxOutputTokens: Number(outputValue),
     })));
   });
 
@@ -694,8 +705,7 @@ describe("joi home single entry", () => {
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "本机" } });
     fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
-    // The section opens on "use the recommended value"; a picked tier is what has to reach the
-    // service, and its figure is the tier's own rather than whatever a box happened to hold.
+    // An explicit tier selection must reach the service with that tier's exact token count.
     fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "200000" } });
     fireEvent.change(screen.getByLabelText("最大输出（tokens）"), { target: { value: "32768" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));

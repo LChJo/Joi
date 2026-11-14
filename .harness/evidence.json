@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "7fb76873c8fe8a6de085145777baec944eb8a53f664da49b83306b52ff90c234",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "a6579ef15aff526d41e3a233d3459cd1a1199f6c89fc69737f8619cf0fd8c594",
+      "observedAt": "2026-11-14T10:03:13.841Z",
       "range": {
         "startLine": 1,
-        "endLine": 662
+        "endLine": 665
       }
     },
     {
@@ -946,11 +946,11 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "f985d22d29317043c45db2fa13ec37dcb6b3732c8519c77252c1af1febbc8541",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "f8faba7731cbf7a7956f4143fca95fd98f26ad0b55c6e158baac33b58e2b530a",
+      "observedAt": "2026-11-14T10:04:45.814Z",
       "range": {
-        "startLine": 1,
-        "endLine": 1597
+        "startLine": 945,
+        "endLine": 955
       }
     },
     {
@@ -1609,6 +1609,48 @@
       "range": {
         "startLine": 1,
         "endLine": 10
+      }
+    },
+    {
+      "id": "cea47700-6070-440d-8bb0-71bb202849a8",
+      "kind": "source-code",
+      "location": {
+        "path": "src/renderer/JoiHome.tsx"
+      },
+      "claim": "New model forms select 1M context and binary 128K output. Shared create/edit ladders offer 2M/3M context and binary 256K/300K/512K output while preserving explicit recommended resets and nonstandard stored values.",
+      "hash": "341871ce7bc4b03a566d1127f347cec5d1388afee9a596b4029a47fd2d89d3f3",
+      "observedAt": "2026-11-14T10:03:13.839Z",
+      "range": {
+        "startLine": 18,
+        "endLine": 363
+      }
+    },
+    {
+      "id": "18da4429-806e-4b16-b3d4-1363a15b85aa",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/renderer/joi-home-single-entry.test.tsx"
+      },
+      "claim": "Renderer regressions verify default 1M/128K submission, expanded context/output selection, explicit recommended resets and preservation of nonstandard model limits.",
+      "hash": "98d3905c7c1d1a5db24c724491b110a2efd5e7f3b118d2efb6b4d80f6a3dce07",
+      "observedAt": "2026-11-14T10:03:13.841Z",
+      "range": {
+        "startLine": 474,
+        "endLine": 750
+      }
+    },
+    {
+      "id": "68e4f10a-361b-41e7-b7cd-8e3d97365210",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/e2e/model-source-advanced-limits.spec.ts"
+      },
+      "claim": "Disposable Electron regression verifies new model defaults, expanded limit options, nonstandard existing values and reopening a saved 3M/512K revision.",
+      "hash": "1f9642a05b42a7a20d6b04e0c5972010c73fc67c7283be9597826a92a158a369",
+      "observedAt": "2026-11-14T10:03:13.841Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 109
       }
     }
   ]

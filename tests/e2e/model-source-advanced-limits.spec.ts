@@ -61,6 +61,15 @@ test("the advanced limits are picked from tiers and a size outside them is kept"
 
     await window.setViewportSize({ height: 900, width: 1280 });
     await window.getByRole("button", { exact: true, name: "设置" }).click();
+    await window.getByRole("button", { name: "添加网络" }).click();
+    await window.getByRole("button", { name: "连接 通用平台" }).click();
+    await window.getByRole("button", { name: "OpenAI-compatible", exact: true }).click();
+    const createForm = window.locator(".model-source-manager > .joi-network-gate .model-source-form");
+    await createForm.locator("summary").click();
+    await expect(createForm.getByLabel("上下文窗口（tokens）")).toHaveValue("1000000");
+    await expect(createForm.getByLabel("最大输出（tokens）")).toHaveValue("131072");
+    await createForm.getByRole("button", { name: "取消", exact: true }).click();
+    await window.getByRole("button", { name: "收起", exact: true }).click();
     const item = window.locator(".model-source-item").filter({ hasText: "127-glm" });
     await item.getByRole("button", { name: "编辑 127-glm" }).click();
     await item.locator("summary").click();
@@ -73,17 +82,26 @@ test("the advanced limits are picked from tiers and a size outside them is kept"
     await expect(maxOutput).toHaveValue("119040");
     await expect(contextWindow.locator("option", { hasText: "1M" })).toHaveCount(1);
     await expect(contextWindow.locator("option", { hasText: "500K" })).toHaveCount(1);
+    await expect(contextWindow.locator('option[value="2000000"]')).toHaveText("2M");
+    await expect(contextWindow.locator('option[value="3000000"]')).toHaveText("3M");
+    await expect(maxOutput.locator('option[value="262144"]')).toHaveText("256K");
+    await expect(maxOutput.locator('option[value="307200"]')).toHaveText("300K");
+    await expect(maxOutput.locator('option[value="524288"]')).toHaveText("512K");
     await expect(compaction).toHaveValue("");
     await mkdir(path.resolve("test-results"), { recursive: true });
     await item.locator(".model-source-advanced").scrollIntoViewIfNeeded();
     await item.locator(".model-source-advanced").screenshot({ path: path.resolve("test-results/e2e-model-source-limits.png") });
 
     // Picking a tier is what a select is for; the value it submits is the tier's own figure.
-    await contextWindow.selectOption("1000000");
-    await maxOutput.selectOption("131072");
+    await contextWindow.selectOption("3000000");
+    await maxOutput.selectOption("524288");
     await compaction.selectOption("85");
     await item.getByRole("button", { name: "保存修改" }).click();
     await expect(window.getByText(/修改已保存为草稿 revision/)).toBeVisible();
+    await item.getByRole("button", { name: "编辑 127-glm" }).click();
+    await item.locator("summary").click();
+    await expect(contextWindow).toHaveValue("3000000");
+    await expect(maxOutput).toHaveValue("524288");
   } finally {
     await application.close();
   }
