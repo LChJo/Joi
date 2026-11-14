@@ -1,5 +1,13 @@
 # ADR 0013: Android 原生控制端复用 iroh 直连与中继
 
+## 2026-11-14：普通对话能力
+
+- 握手增加可选 `conversations.v1`；新版 Android 对话入口在旧主机上提示升级，原有任务入口继续可用，不改变配对版本或保存的凭据。
+- `conversation.catalog/skills/list/get/history/events/inheritance/send/stop/rename/archive/restore/delete/cancelChild` 是明确的命令白名单。目录只含工作台、可选网络和搭档展示元数据及 Skill id/name，不发送凭据、persona、私有会话或工具结果。入口验证字段、大小、静态扩展和禁止的模型/工作路径覆盖。
+- 命令复用现有 `ConversationService`；发送仍先持久化并进入稳定 outbox，同一轮的请求身份不因传输重试改变。停止、归档与标题编辑沿用已有状态门禁和事务，不重放执行。
+- 响应复用连接绑定的 `read.next` 分片与容量/期限限制。Android 活跃对话约 500ms 增量读取，后台暂停，失败指数退避，旧选择/旧连接的结果不覆盖当前页面。安全正文用现有 Markdown 阅读器渲染，不远程加载图片。
+- 正式浏览器入口仍为主机提供的登录 HTTP/LAN 页面，继续使用 `/api/v1` 和现有鉴权、CSRF、SSE及游标恢复；浏览器不显示本机文件和 Git 操作。旧 `/remote` WebSocket 页面仅在原有回退网关配置存在时映射这些对话命令，不恢复 ADR 0012 为正式部署方案。
+
 ## 2026-09-30：工作台归属卡受限创建
 
 - 握手新增独立 `workbench.create` capability；旧主机仍可使用 `home.v2`，手机不会展示一个不受支持的创建入口。

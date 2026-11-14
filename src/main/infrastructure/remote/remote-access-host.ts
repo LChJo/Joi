@@ -1,3 +1,4 @@
+import { isRemoteConversationCommand } from "../../../shared/remote.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 
@@ -79,6 +80,7 @@ function isEncryptedFrame(value: unknown): value is RemoteEncryptedFrame {
 }
 
 export function isRemoteCommand(value: unknown): value is RemoteCommand {
+  if (isRemoteConversationCommand(value)) return true;
   if (value === null || Array.isArray(value) || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   const string = (key: string, max = 160, optional = false) => item[key] === undefined ? optional
@@ -397,7 +399,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       await this.#touchDevice(value.deviceId);
     }
     await this.#send(session.connectionId, {
-      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1"],
+      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1", "conversations.v1"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),

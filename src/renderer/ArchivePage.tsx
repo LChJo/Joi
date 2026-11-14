@@ -9,7 +9,7 @@ import type { ConversationDto, ConversationSummaryDto } from "../shared/conversa
 import type { WorkbenchDto } from "../shared/joi";
 import "./conversations.css";
 
-function ArchivedConversations({ api }: { api: DigitalLifeApi }) {
+export function ArchivedConversations({ api }: { api: DigitalLifeApi }) {
   const [items,setItems] = useState<ConversationSummaryDto[]>([]);
   const [workbenches,setWorkbenches] = useState<WorkbenchDto[]>([]);
   const [loading,setLoading] = useState(true);

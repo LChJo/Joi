@@ -5,6 +5,15 @@ import type { RemoteCommand, RemoteCommandResponse, RemoteReadPage } from "../..
 import { DomainError } from "../../domain/errors.js";
 import { sanitizeAgentConversationText } from "../partners/agent-conversation-presentation.js";
 import type { JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { ConversationService } from "../joi/conversation-service.js";
+import type { RemoteConversationCommand } from "../../../shared/remote.js";
+import { isRemoteConversationCommand } from "../../../shared/remote.js";
+
+export interface RemoteConversations {
+  service: Pick<ConversationService, "list" | "get" | "send" | "inheritance" | "page" | "events" | "stop" | "rename" | "archive" | "restore" | "delete" | "cancelChild">;
+  catalog(): Promise<unknown>;
+  skills(engine: string): unknown;
+}
 
 export interface RemoteHomeQueries {
   catalog(): Promise<unknown>;
@@ -50,6 +59,7 @@ export class RemoteCommandService {
     inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "archive" | "attachWorkbench" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview" | "unarchive">>;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     queries?: RemoteHomeQueries;
+    conversations?: RemoteConversations;
     now?: () => number;
   }) {}
 
@@ -62,6 +72,9 @@ export class RemoteCommandService {
     try {
       const c = command as RemoteCommand;
       const queries = this.dependencies.queries;
+      if (c.kind.startsWith("conversation.") && this.dependencies.conversations !== undefined) {
+        return { ...base, result: this.#page(await this.#conversation(c as RemoteConversationCommand), scope) };
+      }
       if (c.kind === "read.next") return { ...base, result: this.#next(c.cursor, scope) };
       if (c.kind === "feed.get") {
         const feed = await this.dependencies.homeFeed.load();
@@ -122,6 +135,30 @@ export class RemoteCommandService {
       return { ...base, error: { code: "remote_operation_forbidden", message: "This remote operation is not available." } };
     } catch (error) {
       return { ...base, error: { code: error instanceof DomainError ? error.code : "remote_command_failed", message: "操作未完成，请刷新后重试。" } };
+    }
+  }
+
+  async #conversation(command: RemoteConversationCommand): Promise<unknown> {
+    if (!isRemoteConversationCommand(command)) throw new DomainError("remote_operation_forbidden","This remote operation is not available.");
+    const remote = this.dependencies.conversations;
+    if (remote === undefined) throw new DomainError("remote_operation_forbidden","This remote operation is not available.");
+    const service = remote.service;
+    switch (command.kind) {
+      case "conversation.catalog": return remote.catalog();
+      case "conversation.skills": return { items: remote.skills(command.engine) };
+      case "conversation.list": return service.list(command.archived === true);
+      case "conversation.get": return service.get(command.conversationId);
+      case "conversation.history": return service.page(command.conversationId,command.cursor);
+      case "conversation.events": return service.events(command.conversationId,command.cursor);
+      case "conversation.inheritance": return service.inheritance(command.workbenchId,command.partnerId,command.networkId);
+      case "conversation.send": return service.send(command.input);
+      case "conversation.rename": return service.rename(command.conversationId,command.title);
+      case "conversation.stop": await service.stop(command.conversationId); return { stopped: true };
+      case "conversation.archive": await service.archive(command.conversationId); return { changed: true };
+      case "conversation.restore": await service.restore(command.conversationId); return { changed: true };
+      case "conversation.delete": await service.delete(command.conversationId); return { changed: true };
+      case "conversation.cancelChild": await service.cancelChild(command.conversationId,command.childId); return { canceled: true };
+      default: throw new DomainError("remote_operation_forbidden","This remote operation is not available.");
     }
   }
 

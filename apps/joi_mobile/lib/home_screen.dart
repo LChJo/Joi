@@ -3,6 +3,7 @@ import 'result_reader.dart';
 import 'package:flutter/material.dart';
 
 import 'archived_goals.dart';
+import 'conversation_screen.dart';
 import 'remote_controller.dart';
 import 'goal_detail.dart';
 import 'connection_diagnostics_view.dart';
@@ -444,6 +445,41 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       tr(Msg.mobileFinished): state.goals.where((g) => g.terminal).toList(),
     };
     return Scaffold(
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: (index) {
+          if (index != 1) return;
+          final Object controller = widget.controller;
+          if (controller is ConversationRemoteController &&
+              controller.supportsConversations) {
+            Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => ConversationScreen(controller: controller),
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  tr(Msg.mobileTheDesktopVersionIsOlderUpdateItToRead),
+                ),
+              ),
+            );
+          }
+        },
+        destinations: [
+          const NavigationDestination(
+            icon: Icon(Icons.favorite_outline),
+            label: 'joi',
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            label: tr(Msg.chatTitle),
+            tooltip: tr(Msg.chatTitle),
+          ),
+        ],
+      ),
       appBar: AppBar(
         title: const JoiBrand(),
         actions: [

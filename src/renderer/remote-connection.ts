@@ -1,6 +1,7 @@
 import { t } from "./i18n";
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
-import { REMOTE_PROTOCOL_VERSION, type RemoteCommandResponse, type RemoteEncryptedFrame, type RemoteHandshakeReady } from "../shared/remote.js";
+import { REMOTE_PROTOCOL_VERSION, type RemoteCommand, type RemoteCommandResponse, type RemoteEncryptedFrame, type RemoteHandshakeReady } from "../shared/remote.js";
+import { ApiError } from "./api";
 import { randomUuid } from "./random-uuid.js";
 import type { RemoteJoiConnection } from "./RemoteJoiApp.js";
 
@@ -111,6 +112,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
   #key: CryptoKey | undefined;
   #lastHello: HandshakeContext | undefined;
   #outboundSequence = 0;
+  #sendQueue: Promise<void> = Promise.resolve();
   #ready: Promise<void> | undefined;
   #readyReject: ((error: Error) => void) | undefined;
   #readyResolve: (() => void) | undefined;
@@ -128,6 +130,27 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
   }
 
   status() { return this.#status; }
+  dispose(): void {
+    this.#credential = undefined;
+    window.clearTimeout(this.#reconnectTimer);this.#reconnectTimer = undefined;
+    this.#disconnect();
+  }
+  async command<T>(command: RemoteCommand,signal?: AbortSignal): Promise<T> {
+    let response = await this.#request(command,signal),body = "";
+    for (let pages = 0;pages < 2048;pages += 1) {
+      if (response.error !== undefined) throw new ApiError(response.error.code,"Remote operation failed.",response.error.code === "remote_operation_forbidden" ? 403 : 409);
+      const result = response.result;
+      if (result === undefined) throw new ApiError("remote_response_invalid","Remote response is invalid.",502);
+      const page = result as { encoding?: unknown;chunk?: unknown;nextCursor?: unknown };
+      if (page.encoding !== "json") return result as T;
+      if (typeof page.chunk !== "string" || (page.nextCursor !== undefined && typeof page.nextCursor !== "string")) throw new ApiError("remote_response_invalid","Remote response is invalid.",502);
+      body += page.chunk;
+      if (body.length > 16 * 1024 * 1024) throw new ApiError("remote_read_too_large","Remote response is too large.",502);
+      if (page.nextCursor === undefined) return JSON.parse(body) as T;
+      response = await this.#request({ kind: "read.next",requestId: randomUuid(),cursor: page.nextCursor },signal);
+    }
+    throw new ApiError("remote_read_too_large","Remote response has too many pages.",502);
+  }
   async feed(): Promise<JoiHomeFeedDto> {
     const response = await this.#request({ kind: "feed.get", requestId: randomUuid() });
     if (response.error !== undefined || response.result === undefined) throw new Error(response.error?.code ?? "remote_response_invalid");
@@ -146,6 +169,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
     this.#reconnectTimer = undefined;
     this.#status = "connecting";
     this.#ready = new Promise((resolve, reject) => { this.#readyResolve = resolve; this.#readyReject = reject; });
+    void this.#ready.catch(() => undefined);
     const relay = new URL(this.#location.origin);
     relay.protocol = relay.protocol === "https:" ? "wss:" : "ws:";
     relay.pathname = "/connect"; relay.search = new URLSearchParams({ host: credential.hostId }).toString(); relay.hash = "";
@@ -210,13 +234,29 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
     this.#readyResolve?.();
   }
 
-  async #request(command: { idempotencyKey?: string; kind: "feed.get" | "message.send"; requestId: string; text?: string }): Promise<RemoteCommandResponse> {
+  async #request(command: RemoteCommand,signal?: AbortSignal): Promise<RemoteCommandResponse> {
     if (this.#ready === undefined) throw new Error("remote_not_paired");
-    await this.#ready;
-    if (this.#key === undefined || this.#connectionId === undefined || this.#socket?.readyState !== WebSocket.OPEN) throw new Error("remote_not_connected");
-    this.#outboundSequence += 1;
-    const response = new Promise<RemoteCommandResponse>((resolve, reject) => this.#pending.set(command.requestId, { reject, resolve }));
-    this.#socket.send(JSON.stringify(await encryptBrowserRemotePayload(this.#key, this.#outboundSequence, command, this.#connectionId)));
-    return response;
+    const ready = this.#ready;
+    return new Promise((resolve,reject) => {
+      let settled = false;
+      const cleanup = () => { settled = true;window.clearTimeout(timer);signal?.removeEventListener("abort",abort);this.#pending.delete(command.requestId); };
+      const fail = (error: Error) => { if (settled) return;cleanup();reject(error); };
+      const abort = () => fail(new DOMException("Request aborted.","AbortError"));
+      const timer = window.setTimeout(() => fail(new ApiError("request_timeout","Remote request timed out.",504)),15_000);
+      this.#pending.set(command.requestId,{ reject: fail,resolve: value => { if (settled) return;cleanup();resolve(value); } });
+      signal?.addEventListener("abort",abort,{ once: true });
+      if (signal?.aborted === true) { abort();return; }
+      void ready.then(() => {
+        this.#sendQueue = this.#sendQueue.catch(() => undefined).then(async () => {
+          if (settled) return;
+          if (this.#key === undefined || this.#connectionId === undefined || this.#socket?.readyState !== WebSocket.OPEN) throw new Error("remote_not_connected");
+          const socket = this.#socket,active = () => !settled;
+          this.#outboundSequence += 1;
+          const frame = await encryptBrowserRemotePayload(this.#key,this.#outboundSequence,command,this.#connectionId);
+          if (active()) socket.send(JSON.stringify(frame));
+        });
+        return this.#sendQueue;
+      }).catch((error: unknown) => fail(error instanceof Error ? error : new Error("remote_request_failed")));
+    });
   }
 }

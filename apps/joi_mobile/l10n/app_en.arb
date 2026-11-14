@@ -919,7 +919,7 @@
     "description": "chat.failureNetwork",
     "placeholders": {}
   },
-  "chatFailureAuthentication": "The selected model's credentials or access need attention.",
+  "chatFailureAuthentication": "Credentials or access for the selected model need attention.",
   "@chatFailureAuthentication": {
     "description": "chat.failureAuthentication",
     "placeholders": {}
@@ -1118,7 +1118,7 @@
     "description": "chat.networkHint",
     "placeholders": {}
   },
-  "chatNativeNetwork": "Uses the partner's native engine configuration",
+  "chatNativeNetwork": "Uses the native engine configuration for this partner",
   "@chatNativeNetwork": {
     "description": "chat.nativeNetwork",
     "placeholders": {}
@@ -1203,7 +1203,7 @@
     "description": "chat.noEvolution",
     "placeholders": {}
   },
-  "chatInheritHint": "Each turn inherits its workbench's available memory and validated methods. Chat text is not automatically saved as memory or learning evidence.",
+  "chatInheritHint": "Each turn inherits available memory and validated methods from its workbench. Chat text is not automatically saved as memory or learning evidence.",
   "@chatInheritHint": {
     "description": "chat.inheritHint",
     "placeholders": {}

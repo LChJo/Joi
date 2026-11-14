@@ -384,6 +384,14 @@ abstract interface class RemoteController implements Listenable {
   void setForeground(bool value);
 }
 
+abstract interface class ConversationRemoteController implements Listenable {
+  bool get supportsConversations;
+  Future<Map<String, dynamic>> conversation(
+    String operation, {
+    Map<String, Object?> parameters = const {},
+  });
+}
+
 class PlaceholderRemoteController extends ChangeNotifier
     implements RemoteController {
   RemoteViewState _state = const RemoteViewState();

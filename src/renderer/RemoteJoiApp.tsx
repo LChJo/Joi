@@ -1,12 +1,16 @@
 import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { ArrowUpIcon, CheckCircleIcon, CircleNotchIcon, WarningCircleIcon } from "@phosphor-icons/react";
-import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
 import { LanguageSelector } from "./LanguageSelector";
 import { randomUuid } from "./random-uuid.js";
+import { ConversationPage } from "./ConversationPage";
+import { RemoteConversationApi, type RemoteConversationTransport } from "./RemoteConversationApi";
+import { ArchivedConversations } from "./ArchivePage";
 
 export interface RemoteJoiConnection {
+  command?: RemoteConversationTransport["command"];
   feed(): Promise<JoiHomeFeedDto>;
   sendMessage(text: string, idempotencyKey: string): Promise<JoiAcceptedMessageDto>;
   status(): "connected" | "connecting" | "disconnected";
@@ -49,6 +53,11 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
   const [draft, setDraft] = useState("");
   const [notice, setNotice] = useNotice();
   const [sending, setSending] = useState(false);
+  const [section,setSection] = useState<"tasks" | "conversations" | "archived">("tasks");
+  const conversationApi = useMemo(() => new RemoteConversationApi({ command: (command,signal) => {
+    if (connection.command === undefined) return Promise.reject(new Error("remote_upgrade_required"));
+    return connection.command(command,signal);
+  } }),[connection]);
 
   const refresh = useCallback(async () => {
     try {
@@ -60,10 +69,15 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
   }, [connection]);
 
   useEffect(() => {
+    if (section !== "tasks") return;
     const initial = window.setTimeout(() => void refresh(), 0);
     const timer = window.setInterval(() => void refresh(), 2_000);
     return () => { window.clearInterval(timer); window.clearTimeout(initial); };
-  }, [refresh]);
+  }, [refresh,section]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setConnectionStatus(connection.status()),1_000);
+    return () => window.clearInterval(timer);
+  },[connection]);
 
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -83,12 +97,18 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     }
   };
 
-  return <main className="remote-joi-shell">
+  return <main className={`remote-joi-shell ${section !== "tasks" ? "remote-conversations" : ""}`}>
     <header className="remote-joi-header">
       <LanguageSelector />
       <div><span className="remote-joi-mark">joi</span><p>{t("remote.yourWorkContinuesHere")}</p></div>
       <span className={`remote-connection ${connectionStatus}`}><i aria-hidden="true" />{statusLabel(connectionStatus)}</span>
     </header>
+    <nav aria-label={t("settings.mainNavigation")} className="remote-section-nav">
+      <button aria-current={section === "tasks" ? "page" : undefined} onClick={() => setSection("tasks")} type="button">joi</button>
+      <button aria-current={section === "conversations" ? "page" : undefined} onClick={() => setSection("conversations")} type="button">{t("chat.title")}</button>
+      <button aria-current={section === "archived" ? "page" : undefined} onClick={() => setSection("archived")} type="button">{t("chat.archivedConversations")}</button>
+    </nav>
+    {section === "conversations" ? <ConversationPage api={conversationApi} /> : section === "archived" ? <ArchivedConversations api={conversationApi} /> : <>
     <section aria-label={t("remote.joiTasks")} className="remote-goal-list">
       {feed.goals.length === 0 ? <div className="remote-empty"><CircleNotchIcon aria-hidden /><h1>{t("remote.noTasksToShowYet")}</h1><p>{t("remote.tellJoiWhatYouWantToDoBelow")}</p></div> : feed.goals.map((goal) => <article className={`remote-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="remote-goal-top"><span>{goal.workbench.name}</span><strong>{goalStatus(goal.status)}</strong></div>
@@ -106,5 +126,6 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
       </form>
       <p>{t("remote.remoteAccessSupportsConversationsAndTaskViewingOnly")}</p>
     </footer>
+    </>}
   </main>;
 }

@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "c4d27986a15daba4862fdd2b04c3e3db3a680808211d2619d54bafbc32cd39e9",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "d246edc183a8c7249a6703a4417287811f7048d210c5380c7d40a730eda9dd50",
+      "observedAt": "2026-11-14T11:23:51.965Z",
       "range": {
         "startLine": 1,
-        "endLine": 590
+        "endLine": 593
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "0e386b19caeedeafd7f89d983397bc36c31737e9bd18d1ce778146849a154544",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "dec022c5e46a2016398712f0122ec4154102812f0e0f44c879e354b64ec1cb6d",
+      "observedAt": "2026-11-14T11:23:51.965Z",
       "range": {
         "startLine": 1,
-        "endLine": 400
+        "endLine": 416
       }
     },
     {
@@ -442,11 +442,11 @@
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "e9c176769da261d0205b639e84580621de0b8a1830fd3431a6254cd39f9ba42c",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "09ece8e2e0807181fa3e1d795650eb8e6995bb28b28355f8ff44794132bbb742",
+      "observedAt": "2026-11-14T11:23:51.963Z",
       "range": {
         "startLine": 1,
-        "endLine": 45
+        "endLine": 47
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "14772934110981080edcd26d3bf5172f057c18c4772576fd24f0728314a1ec58",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "645ca3dda2274d76b9aa2d99ecd6df30041c1529f16fdd0f54bc361ee29416e5",
+      "observedAt": "2026-11-14T11:23:51.966Z",
       "range": {
         "startLine": 1,
-        "endLine": 297
+        "endLine": 320
       }
     },
     {
@@ -494,15 +494,15 @@
     {
       "id": "e5438320-e3e9-41e2-abf9-b409867822e0",
       "kind": "source-code",
-      "claim": "Archived conversation prose and recorded safe activity render without exposing tool results or replaying execution.",
+      "claim": "Archived conversation prose and recorded safe activity render without exposing tool results or replaying execution. Archived conversations are reusable independently of task archives so the paired browser can read, restore and delete safe conversation snapshots through its restricted adapter.",
       "location": {
         "path": "src/renderer/ArchivePage.tsx"
       },
-      "hash": "2a21e3c181132a360e126992b1924a17f497a65b3ce253775945edd0dc2b4ca8",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "cc1836ab1e50241a080dd450311340bd8fefdbbcaea173631e68e232d047bb74",
+      "observedAt": "2026-11-14T11:23:51.964Z",
       "range": {
         "startLine": 1,
-        "endLine": 83
+        "endLine": 84
       }
     },
     {
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "a6579ef15aff526d41e3a233d3459cd1a1199f6c89fc69737f8619cf0fd8c594",
-      "observedAt": "2026-11-14T10:03:13.841Z",
+      "hash": "be8c1968a91f5e04407b78555f447506f07742ae26fb7cc52ebfd1c22363937c",
+      "observedAt": "2026-11-14T11:23:51.962Z",
       "range": {
         "startLine": 1,
-        "endLine": 665
+        "endLine": 672
       }
     },
     {
@@ -900,15 +900,15 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime polling starts concurrent conversation claim batches independently of serial Git and child dispatch.",
+      "claim": "Runtime polling starts concurrent conversation claim batches independently of serial Git and child dispatch. Runtime composition wires the existing conversation service into remote commands and projects only safe workbench/network/partner and Skill display metadata into the paired catalog.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "6fe4153b59d207e69cf96efe3373dd9b8cac9b377fb7ab5d51155e130fbe56a0",
-      "observedAt": "2026-11-12T07:00:19.612Z",
+      "hash": "69aab046a2e161d25086691584b9fab49c0bd8cb29f9dfc0a9285b42699f545b",
+      "observedAt": "2026-11-14T11:23:51.964Z",
       "range": {
         "startLine": 1,
-        "endLine": 365
+        "endLine": 378
       }
     },
     {
@@ -1651,6 +1651,328 @@
       "range": {
         "startLine": 1,
         "endLine": 109
+      }
+    },
+    {
+      "id": "c0f84140-afb3-44b8-8bb5-fde0e3339745",
+      "kind": "source-code",
+      "claim": "Generated localization keeps the three English conversation messages compatible with Flutter ICU escaping.",
+      "location": {
+        "path": "apps/joi_mobile/l10n/app_en.arb"
+      },
+      "hash": "c9a36561600417b644801d89afea6159091cb3fb97d6e602526f8c750ee4c703",
+      "observedAt": "2026-11-14T11:23:51.955Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 9627
+      }
+    },
+    {
+      "id": "4b0b84e3-24d0-44f7-aac1-2c450c507e80",
+      "kind": "source-code",
+      "claim": "The Android home offers a conversation destination; supported controllers open the native conversation screen and older hosts receive an upgrade notice.",
+      "location": {
+        "path": "apps/joi_mobile/lib/home_screen.dart"
+      },
+      "hash": "69b2dffd7cad040bd3289a8823407615a3b416c725052b766e6e930e58d41587",
+      "observedAt": "2026-11-14T11:23:51.958Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 692
+      }
+    },
+    {
+      "id": "479d96c5-ec0c-4509-9963-e0f00febdfff",
+      "kind": "source-code",
+      "claim": "Generated localization keeps the three English conversation messages compatible with Flutter ICU escaping.",
+      "location": {
+        "path": "apps/joi_mobile/lib/i18n_messages.dart"
+      },
+      "hash": "204d08db1264257a3e6effe45adf253fcd7a6b86d256ef38e3938754bbe706d2",
+      "observedAt": "2026-11-14T11:23:51.959Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 6805
+      }
+    },
+    {
+      "id": "f8b6f0fa-14fe-4833-9554-150cfe6a6c38",
+      "kind": "source-code",
+      "claim": "Native conversation RPC negotiates conversations.v1 and reuses serialized encrypted requests, deadlines, generation checks and bounded read.next assembly. Existing task operations remain available on older hosts.",
+      "location": {
+        "path": "apps/joi_mobile/lib/native_remote_controller.dart"
+      },
+      "hash": "666e7ba4dd89ff83278dc3648f557298c368df57ca92cac7476648db98c6e915",
+      "observedAt": "2026-11-14T11:23:51.961Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1183
+      }
+    },
+    {
+      "id": "4bf896c9-b798-4616-a9db-8da8c7e8980d",
+      "kind": "source-code",
+      "claim": "A narrow optional conversation controller interface extends paired clients without changing existing task controller implementations.",
+      "location": {
+        "path": "apps/joi_mobile/lib/remote_controller.dart"
+      },
+      "hash": "718132bb43d8ff4b3652bf7a6bf7450ba433095c08942452bf8820783448f854",
+      "observedAt": "2026-11-14T11:23:51.961Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 449
+      }
+    },
+    {
+      "id": "baccc11b-b811-475c-8ccc-299ecea71659",
+      "kind": "source-code",
+      "claim": "Encrypted native session regressions negotiate normal conversation capability, reassemble full Unicode pages, preserve refusal codes and refuse unsupported hosts locally.",
+      "location": {
+        "path": "apps/joi_mobile/test/remote_session_test.dart"
+      },
+      "hash": "90a7a95ae217d15a7f5b20f00ca53a845f82fda22f3eff421ab648f453f7f56b",
+      "observedAt": "2026-11-14T11:23:51.961Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 990
+      }
+    },
+    {
+      "id": "fbe5ef9b-02eb-4bfc-a188-bec2b21e4e4d",
+      "kind": "document",
+      "claim": "Cross-platform conversation acceptance and manual verification boundaries.",
+      "location": {
+        "path": "docs/13-native-android-remote-manual-test.md"
+      },
+      "hash": "61d6a66669c6a440b9a4a122070a8bb2ad933fffe1d4bbe461ddf62661d27b9c",
+      "observedAt": "2026-11-14T11:23:51.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 162
+      }
+    },
+    {
+      "id": "cdd1e29d-248d-4f50-86d6-da06f1571401",
+      "kind": "document",
+      "claim": "Cross-platform conversation acceptance and manual verification boundaries.",
+      "location": {
+        "path": "docs/adr/0013-native-iroh-remote-control.md"
+      },
+      "hash": "f7c842809d58135ba0bc824811b165b6d5c492e528c9b78f3c0bf46e71589a99",
+      "observedAt": "2026-11-14T11:23:51.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 70
+      }
+    },
+    {
+      "id": "a359d5a0-70b1-48a3-a0c3-5f9e5a741821",
+      "kind": "source-code",
+      "claim": "Generated localization keeps the three English conversation messages compatible with Flutter ICU escaping.",
+      "location": {
+        "path": "resources/locales/en/chat.json"
+      },
+      "hash": "3b00ecbd4b3948ecbc2e839df71562b55c9e8dd090dacbc0d04f7790a2ca9d1a",
+      "observedAt": "2026-11-14T11:23:51.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 199
+      }
+    },
+    {
+      "id": "a138a736-c367-4480-8655-8a70cd6b1091",
+      "kind": "source-code",
+      "claim": "Paired commands reuse the conversation application service for safe reads, immutable idempotent sends, stop and metadata lifecycle. Existing device-scoped bounded pages carry complete history without introducing another execution chain.",
+      "location": {
+        "path": "src/main/application/remote/remote-command-service.ts"
+      },
+      "hash": "95bc00a1ac9b4763103b50cae724a979c677ae716136bfad6cefe2e8457ca324",
+      "observedAt": "2026-11-14T11:23:51.964Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 193
+      }
+    },
+    {
+      "id": "7248e4e7-328d-4d19-9d07-c7552695b8a5",
+      "kind": "source-code",
+      "claim": "The authenticated encrypted host admits validated conversation commands and advertises conversations.v1 while preserving existing pairing, replay protection, frame limits and connection-scoped page release.",
+      "location": {
+        "path": "src/main/infrastructure/remote/remote-access-host.ts"
+      },
+      "hash": "ded515675daa5c7fa4c9d479802d80cb865e1ca0d27c792fe288733668c26deb",
+      "observedAt": "2026-11-14T11:23:51.964Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 461
+      }
+    },
+    {
+      "id": "3627078a-b447-432c-9b65-37a1521deadb",
+      "kind": "source-code",
+      "claim": "The legacy browser fallback offers tasks, normal conversations and archived conversations using the shared React views. Task polling pauses on conversation views; connection status remains visible. This retired WebSocket gateway is not the formal native iroh/browser deployment.",
+      "location": {
+        "path": "src/renderer/RemoteJoiApp.tsx"
+      },
+      "hash": "a5c19dd224c352d80fbb5b38e99c7d90522a678d62d5d150e2beae931e3a0e85",
+      "observedAt": "2026-11-14T11:23:51.965Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 132
+      }
+    },
+    {
+      "id": "1cf6ff37-cb04-4006-95a4-925a68b262d6",
+      "kind": "source-code",
+      "claim": "Paired browser conversation reads reassemble bounded encrypted pages. Outgoing encryption/send is serialized, requests have deadlines and cancellation, disconnect releases pending work, and disposal prevents reconnect. Transport is the existing legacy WebSocket fallback.",
+      "location": {
+        "path": "src/renderer/remote-connection.ts"
+      },
+      "hash": "683c10648e9a8983fea44f585509d1a5e32990718045f21020f1d82606c4f821",
+      "observedAt": "2026-11-14T11:23:51.966Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 263
+      }
+    },
+    {
+      "id": "c56ffabe-fe5f-41d2-8e22-c0ed8e10d06f",
+      "kind": "source-code",
+      "claim": "Generated localization keeps the three English conversation messages compatible with Flutter ICU escaping.",
+      "location": {
+        "path": "src/shared/i18n/generated.ts"
+      },
+      "hash": "4ed906b10d24a7d013799836cf0d737ef796e038734510fbb38ad61e1d0b07c6",
+      "observedAt": "2026-11-14T11:23:51.966Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 8591
+      }
+    },
+    {
+      "id": "eeed5019-b62d-454f-9699-f461331a8fde",
+      "kind": "source-code",
+      "claim": "Versioned conversation commands have a closed operation and field schema, bounded strings/selections and validated static Pi extensions. Arbitrary model/workspace overrides are refused before application dispatch.",
+      "location": {
+        "path": "src/shared/remote.ts"
+      },
+      "hash": "bfc1f4f427022dd47e2983683490a0bcf498743666dbc1af5e416692989ba819",
+      "observedAt": "2026-11-14T11:23:51.969Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 155
+      }
+    },
+    {
+      "id": "2e1b561f-9d1a-4a52-984b-ffd491ce229c",
+      "kind": "source-code",
+      "claim": "The browser fallback renders shared normal and archived conversation history, continues a selected conversation and exposes no desktop workspace or unsupported attachment controls.",
+      "location": {
+        "path": "tests/renderer/remote-joi-app.test.tsx"
+      },
+      "hash": "5919e238849c741063a49945a8fa95dd203a8297cd857caa5ba514d16a02e8d4",
+      "observedAt": "2026-11-14T11:23:51.969Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 143
+      }
+    },
+    {
+      "id": "5b5e2d23-0e65-499d-999d-976a1fbe3691",
+      "kind": "source-code",
+      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images.",
+      "location": {
+        "path": "apps/joi_mobile/lib/conversation_screen.dart"
+      },
+      "hash": "87ddec5158390f567af8143da8ff04fbe00062b5662c4b6fb412164261dd542b",
+      "observedAt": "2026-11-14T11:23:51.969Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 965
+      }
+    },
+    {
+      "id": "00eddc89-bcf1-43bd-ab95-2532ceb7d32a",
+      "kind": "source-code",
+      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots.",
+      "location": {
+        "path": "apps/joi_mobile/test/conversation_screen_test.dart"
+      },
+      "hash": "f799e047dc5ef6d10699706abf8f6a552c91653180427a4a4f0857b2d1622666",
+      "observedAt": "2026-11-14T11:23:51.971Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 270
+      }
+    },
+    {
+      "id": "19825361-c0da-4b03-b1bb-abfe0bef46ed",
+      "kind": "source-code",
+      "claim": "The paired browser adapter maps only explicit conversation API operations to shared remote commands, preserves the application send request identity, carries read cancellation and provides no workspace, attachment or arbitrary HTTP transport.",
+      "location": {
+        "path": "src/renderer/RemoteConversationApi.ts"
+      },
+      "hash": "cabf33441ac4e77a35d89313bacb378028b2e7f7bbc2603f3be3361003fd8521",
+      "observedAt": "2026-11-14T11:23:51.971Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 48
+      }
+    },
+    {
+      "id": "0d39bd91-cffc-4674-a1da-a6e3c7d8393e",
+      "kind": "source-code",
+      "claim": "A disposable browser window without a preload bridge logs in over synthetic HTTP, reads existing conversation history and sends at desktop, 390px, 320px and landscape sizes. It checks no horizontal overflow or privileged workspace requests.",
+      "location": {
+        "path": "tests/e2e/browser-conversations.spec.ts"
+      },
+      "hash": "13d28f4428acb4d6da5fc12f5ad832c6f14b87d4dc280b64e7c559a98e7bcb80",
+      "observedAt": "2026-11-14T11:23:51.971Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 71
+      }
+    },
+    {
+      "id": "b82fa8ff-8f0f-4ea0-ac05-b4e614fa6ee1",
+      "kind": "source-code",
+      "claim": "Renderer adapter tests verify the explicit operation mapping, catalog projection, cancellation signal, stable send identity and refusal of local workspace/settings routes.",
+      "location": {
+        "path": "tests/renderer/remote-conversation-api.test.ts"
+      },
+      "hash": "5ae05cc003a0208e33d312e0c23fb6f8ae3590ec8ff06a166610530bd6fbd09b",
+      "observedAt": "2026-11-14T11:23:51.971Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 46
+      }
+    },
+    {
+      "id": "781c1021-b0b0-4b2f-83b1-2f8036629656",
+      "kind": "source-code",
+      "claim": "Synthetic interoperable encrypted browser tests verify long-page assembly, monotonic concurrent request frames, refusal codes, invalid pages, timeout, abort and disconnect cleanup.",
+      "location": {
+        "path": "tests/renderer/remote-conversation-transport.test.ts"
+      },
+      "hash": "e2758332e5880dd13cd3a133a69bc7676acf43e44f3932be17f472667f588d32",
+      "observedAt": "2026-11-14T11:23:51.971Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 84
+      }
+    },
+    {
+      "id": "ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2",
+      "kind": "source-code",
+      "claim": "Protocol and application regressions cover all conversation operations, malformed/oversized selections, workspace overrides, application refusal codes, bounded pages and cross-device cursor denial.",
+      "location": {
+        "path": "tests/unit/remote-conversations.test.ts"
+      },
+      "hash": "c643a37e918ae5535bd1a7044437b599223cc1d5cbbf552ea76be89014ee63d5",
+      "observedAt": "2026-11-14T11:23:51.972Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 93
       }
     }
   ]

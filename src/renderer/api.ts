@@ -36,7 +36,7 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOptions {
+export interface RequestOptions {
   body?: Record<string, unknown>;
   idempotencyKey?: string;
   method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
@@ -47,6 +47,8 @@ export class DigitalLifeApi {
   private csrfToken: string | null = null;
 
   constructor(readonly origin: string, readonly desktop = false) {}
+
+  readonly conversationAttachments: boolean = true;
 
   setCsrfToken(token: string) {
     this.csrfToken = token;

@@ -47,6 +47,8 @@ class Peer implements NativeTransport {
   final sequences = <int>[];
   bool modern = true;
   bool history = true;
+  bool conversations = true;
+  Object? conversationResult;
   bool failSend = false;
   bool failFeed = false;
   String? feedError;
@@ -141,6 +143,7 @@ class Peer implements NativeTransport {
                 'workbench.create',
                 'workbench.choice.v1',
                 if (history) 'goal.results.v1',
+                if (conversations) 'conversations.v1',
               ],
           },
         ),
@@ -158,6 +161,10 @@ class Peer implements NativeTransport {
       throw StateError('receipt lost');
     }
     Object result = {'goals': [], 'thinking': [], 'unassignedActions': []};
+    if ((command['kind'] as String).startsWith('conversation.') &&
+        conversationResult != null) {
+      result = conversationResult!;
+    }
     if (command['kind'] == 'feed.get' && feedResult != null) {
       result = feedResult!;
     }
@@ -250,6 +257,83 @@ Future<void> settleUntil(bool Function() ready) async {
 }
 
 void main() {
+  test(
+    'normal conversation commands use the encrypted session and reassemble history',
+    () async {
+      final peer = Peer();
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await settleUntil(
+        () => controller.state.connection == RemoteConnectionState.connected,
+      );
+      expect(controller.supportsConversations, isTrue);
+      final body = jsonEncode({
+        'conversationId': 'chat',
+        'text': '中文😀' * 10000,
+      });
+      peer.conversationResult = {
+        'encoding': 'json',
+        'chunk': body.substring(0, 10000),
+        'nextCursor': 'next',
+      };
+      peer.tail = body.substring(10000);
+      final result = await controller.conversation(
+        'get',
+        parameters: {'conversationId': 'chat'},
+      );
+      expect(result['text'], '中文😀' * 10000);
+      expect(
+        peer.commands
+            .where((c) => c['kind'] == 'conversation.get')
+            .single['conversationId'],
+        'chat',
+      );
+      expect(peer.commands.any((c) => c['kind'] == 'read.next'), isTrue);
+      peer.refuseWith = 'conversation_busy';
+      await expectLater(
+        controller.conversation(
+          'archive',
+          parameters: {'conversationId': 'chat'},
+        ),
+        throwsA(
+          isA<RemoteActionFailure>().having(
+            (e) => e.code,
+            'code',
+            'conversation_busy',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'normal conversations refuse an unsupported host without sending a command',
+    () async {
+      final peer = Peer()..conversations = false;
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await settleUntil(
+        () => controller.state.connection == RemoteConnectionState.connected,
+      );
+      expect(controller.supportsConversations, isFalse);
+      await expectLater(controller.conversation('list'), throwsStateError);
+      expect(
+        peer.commands.any(
+          (c) => (c['kind'] as String).startsWith('conversation.'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test(
     'history reads preserve result identity and reassemble long snapshots',
     () async {

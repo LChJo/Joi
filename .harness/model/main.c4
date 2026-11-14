@@ -27,11 +27,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing."
+ brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing. LAN browsers share conversation UI through authenticated HTTP without local workspace controls. Responsive history closes on narrow transitions. The legacy paired fallback reuses conversation and archive views through a restricted command adapter."
  source "fact"
  status "verified"
- evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210"
- version "24"
+ evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210 3627078a-b447-432c-9b65-37a1521deadb 19825361-c0da-4b03-b1bb-abfe0bef46ed 0d39bd91-cffc-4674-a1da-a6e3c7d8393e"
+ version "25"
 }
 }
 preload = component "Desktop bridge" {
@@ -57,21 +57,31 @@ metadata {
 composition = component "Runtime composition" {
 metadata {
  harness_id "e6c5c10e-00a0-463c-b414-08b647077758"
- brief "Wires workers, services and adapters. Conversation turns use concurrent outbox delivery; explicit Git operations use a separate serial dispatcher with repository leases. Graceful shutdown closes turn and Git admission before aborting engines and preserves unstarted conversation messages; emergency stop cancels them. A separate child dispatcher allows parent settlement without blocking child delivery. Worker start, emergency stop and close control calls have deadlines and reject stale replies without automatic restart."
+ brief "Wires workers, services and adapters. Conversation turns use concurrent outbox delivery; explicit Git operations use a separate serial dispatcher with repository leases. Graceful shutdown closes turn and Git admission before aborting engines and preserves unstarted conversation messages; emergency stop cancels them. A separate child dispatcher allows parent settlement without blocking child delivery. Worker start, emergency stop and close control calls have deadlines and reject stale replies without automatic restart. Remote command composition reuses the existing conversation service with a minimal safe selector catalog."
  source "fact"
  status "verified"
  evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 0928551c-008e-4486-b324-fdd3cc15e717 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 e17342c4-7a41-4245-bbe9-b02def3930fc 3ed7ea76-20a9-424b-b16f-32b73d6dfded ef2d4aee-7a09-4ed9-a51b-768a2d911a92"
- version "7"
+ version "8"
 }
 }
 application = component "Application services" {
 metadata {
  harness_id "3c08dc1c-527b-456b-999b-8982b0ada159"
- brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts. Conversation observations publish only committed safe projections and keep transport concerns outside the application."
+ brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts. Conversation observations publish only committed safe projections and keep transport concerns outside the application. Paired remote commands reuse conversation services and existing connection-scoped paging rather than introducing another execution chain."
  source "fact"
  status "verified"
- evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 44b4de62-537a-42f1-8a5c-40d72900430b"
- version "10"
+ evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 44b4de62-537a-42f1-8a5c-40d72900430b a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2"
+ version "11"
+}
+remote = component "Paired remote commands" {
+metadata {
+ harness_id "a3484361-8b3f-4bed-aabb-5034c3bc381c"
+ brief "Validates and dispatches the paired normal conversation allowlist to existing application services. Safe catalogs and connection-scoped bounded pages reuse the current command protocol. Sends preserve application request identities and use the existing outbox; local filesystem, Git and arbitrary HTTP operations stay outside this interface."
+ source "fact"
+ status "verified"
+ evidence "a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2"
+ version "1"
+}
 }
 conversations = component "Conversation execution" {
 metadata {
@@ -97,11 +107,11 @@ metadata {
 infrastructure = component "Infrastructure adapters" {
 metadata {
  harness_id "05a7cbd5-4101-4522-a77a-16d3914b08c8"
- brief "Implements persistence, engine, A2A, security and artifact ports. Conversation state is transactional; startup clears backoff only for unstarted queued turns, preserving interrupted-execution protection and stable identities. Explicit Git uses root-confined file adapters and repository coordination. Pinned SDK sessions, native journals and incremental conversation/child stores implement the new ports."
+ brief "Implements persistence, engine, A2A, security and artifact ports. Conversation state is transactional; startup clears backoff only for unstarted queued turns, preserving interrupted-execution protection and stable identities. Explicit Git uses root-confined file adapters and repository coordination. Pinned SDK sessions, native journals and incremental conversation/child stores implement the new ports. The encrypted paired host validates conversation command shapes and advertises conversations.v1 without opening local file or Git operations."
  source "fact"
  status "verified"
- evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 529363b4-ba83-4f8c-946f-579a736f0406 db8263f3-5e65-499b-b358-e54b40a000cd 1cb47532-3623-40ae-88b1-bd52b81947e5 b19e6407-d990-45b3-b75e-b5ba562fd399 54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d 1519c446-98f9-4b5a-b873-26ea5d8e7d89"
- version "6"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 529363b4-ba83-4f8c-946f-579a736f0406 db8263f3-5e65-499b-b358-e54b40a000cd 1cb47532-3623-40ae-88b1-bd52b81947e5 b19e6407-d990-45b3-b75e-b5ba562fd399 54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d 1519c446-98f9-4b5a-b873-26ea5d8e7d89 7248e4e7-328d-4d19-9d07-c7552695b8a5"
+ version "7"
 }
 conversationStorage = component "Conversation persistence" {
 metadata {
@@ -127,11 +137,11 @@ metadata {
 shared = component "Shared contracts" {
 metadata {
  harness_id "523ea4b5-9b46-4d67-be22-b9ee3d7d3cfb"
- brief "Shared contracts carry safe conversation activity, scoped child/cursor metadata and static Pi extension IDs. Current restoration filters removed IDs without granting replacements; application and HTTP validate new requests. Shared tool policy keeps browser operations opt-in across UI and runtime; shared name classification lets the editor group browser operations while execution still checks individual saved tool names. Existing JSON snapshots and global Work enums need no migration. Conversation title editing shares an 80-character bound and uses the existing conversation summary contract. Conversation live updates carry one safe turn and optional context without title, private session or raw model payload."
+ brief "Shared contracts carry safe conversation activity, scoped child/cursor metadata and static Pi extension IDs. Current restoration filters removed IDs without granting replacements; application and HTTP validate new requests. Shared tool policy keeps browser operations opt-in across UI and runtime; shared name classification lets the editor group browser operations while execution still checks individual saved tool names. Existing JSON snapshots and global Work enums need no migration. Conversation title editing shares an 80-character bound and uses the existing conversation summary contract. Conversation live updates carry one safe turn and optional context without title, private session or raw model payload. Paired normal conversation commands use a versioned closed allowlist with bounded payloads and static extension validation."
  source "fact"
  status "verified"
- evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 2a3aff22-8581-424c-af0a-c4182b77742f"
- version "13"
+ evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 2a3aff22-8581-424c-af0a-c4182b77742f eeed5019-b62d-454f-9699-f461331a8fde"
+ version "14"
 }
 }
 relay = component "Browser relay" {
@@ -147,11 +157,11 @@ metadata {
 mobile = component "Android client" {
 metadata {
  harness_id "9bdcf527-c117-4762-86ce-c7d2e01c6321"
- brief "Flutter remote controller views with pairing and home. Internal remote transport not audited."
+ brief "Flutter remote controller views with pairing and home. Internal remote transport not audited. Normal conversation views and the native controller are reviewed for conversations.v1 negotiation, shared history, stable sends, incremental reads, stop and metadata actions. Background polling pauses and stale results are ignored. Real-device direct/relay behavior remains manual."
  source "fact"
  status "verified"
- evidence "9eb5b925-3b08-4116-94d5-c22547df6564"
- version "2"
+ evidence "9eb5b925-3b08-4116-94d5-c22547df6564 4b0b84e3-24d0-44f7-aac1-2c450c507e80 5b5e2d23-0e65-499d-999d-976a1fbe3691 f8b6f0fa-14fe-4833-9554-150cfe6a6c38 4bf896c9-b798-4616-a9db-8da8c7e8980d 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659"
+ version "3"
 }
 }
 native = component "Native remote core" {
@@ -177,11 +187,11 @@ metadata {
 validation = component "Quality gates" {
 metadata {
  harness_id "cfebb4bc-4ef2-4661-bd04-0d17d7f6619f"
- brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks. Two real-disk persistence scenarios have explicit bounded CI wait budgets; local budgets, transaction counts, privacy assertions and coverage gates remain enforced. Streaming regressions cover synthetic Pi callbacks, committed projections, transport cleanup, short-answer display, stale reads and an isolated Electron event stream. Renderer and disposable Electron checks verify model creation defaults, expanded limit submissions and retained saved values."
+ brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks. Two real-disk persistence scenarios have explicit bounded CI wait budgets; local budgets, transaction counts, privacy assertions and coverage gates remain enforced. Streaming regressions cover synthetic Pi callbacks, committed projections, transport cleanup, short-answer display, stale reads and an isolated Electron event stream. Renderer and disposable Electron checks verify model creation defaults, expanded limit submissions and retained saved values. Cross-platform conversation regressions cover command admission, device-scoped paging, restricted browser adapters, no-preload viewport behavior and encrypted/native widget paths."
  source "fact"
  status "verified"
- evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e ac69fa43-cea7-401a-a580-5f894151a348 2f959b06-4ad5-42b6-9fe0-f927d20e3e3f d3ce4801-6708-4041-a84e-7a5fa383272a 44b4de62-537a-42f1-8a5c-40d72900430b 2cf215ea-bf39-4ead-a1d5-70c2133ae170 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210"
- version "8"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e ac69fa43-cea7-401a-a580-5f894151a348 2f959b06-4ad5-42b6-9fe0-f927d20e3e3f d3ce4801-6708-4041-a84e-7a5fa383272a 44b4de62-537a-42f1-8a5c-40d72900430b 2cf215ea-bf39-4ead-a1d5-70c2133ae170 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2 b82fa8ff-8f0f-4ea0-ac05-b4e614fa6ee1 781c1021-b0b0-4b2f-83b1-2f8036629656 2e1b561f-9d1a-4a52-984b-ffd491ce229c 0d39bd91-cffc-4674-a1da-a6e3c7d8393e 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659"
+ version "9"
 }
 }
 }
@@ -405,6 +415,56 @@ metadata {
  version "1"
 }
 }
+app.infrastructure -[calls]-> app.application.remote "Dispatches authenticated paired commands" {
+metadata {
+ harness_id "3a63a556-6af0-4527-8645-0a3335472dff"
+ brief "The host validates authenticated encrypted frames before application command dispatch."
+ source "fact"
+ status "verified"
+ evidence "7248e4e7-328d-4d19-9d07-c7552695b8a5"
+ version "1"
+}
+}
+app.application.remote -[calls]-> app.application.conversations "Reuses normal conversation services" {
+metadata {
+ harness_id "2faa444c-a197-4a6c-874e-8ebab8b786fc"
+ brief "Remote reads and lifecycle commands reuse the existing safe conversation service and durable send identities."
+ source "fact"
+ status "verified"
+ evidence "a138a736-c367-4480-8655-8a70cd6b1091"
+ version "1"
+}
+}
+app.application.remote -[calls]-> app.shared "Validates versioned conversation commands" {
+metadata {
+ harness_id "95631905-88f5-49a4-8830-f069095ae9e8"
+ brief "Only the explicit bounded conversation wire schema enters application dispatch."
+ source "fact"
+ status "verified"
+ evidence "eeed5019-b62d-454f-9699-f461331a8fde"
+ version "1"
+}
+}
+app.composition -[calls]-> app.application.remote "Wires safe paired conversation catalogs" {
+metadata {
+ harness_id "3def4a5d-681b-4fa7-a4f8-bbd9e298996e"
+ brief "Composition projects safe selectors and reuses the existing conversation service."
+ source "fact"
+ status "verified"
+ evidence "e17342c4-7a41-4245-bbe9-b02def3930fc"
+ version "1"
+}
+}
+app.native -[calls]-> app.infrastructure "Carries encrypted paired command frames" {
+metadata {
+ harness_id "2d89ba45-820a-4b5c-921c-76f88c9a07de"
+ brief "The native transport delivers encrypted paired frames to the host adapter; new conversation behavior is checked with synthetic encrypted peers."
+ source "fact"
+ status "verified"
+ evidence "f8b6f0fa-14fe-4833-9554-150cfe6a6c38"
+ version "1"
+}
+}
 }
 views {
  view overview { include * }
@@ -416,5 +476,16 @@ views {
   include app.application.conversations
   include app.infrastructure.conversationStorage
   include app.infrastructure.conversationStorage.piSessions
+ }
+ view remote_conversations {
+  include app.renderer
+  include app.http
+  include app.mobile
+  include app.native
+  include app.infrastructure
+  include app.composition
+  include app.application.remote
+  include app.application.conversations
+  include app.shared
  }
 }

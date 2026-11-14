@@ -4,8 +4,62 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RemoteJoiApp, type RemoteJoiConnection } from "../../src/renderer/RemoteJoiApp.js";
 import type { JoiHomeFeedDto } from "../../src/shared/joi.js";
+import type { RemoteCommand } from "../../src/shared/remote";
 
 describe("RemoteJoiApp", () => {
+  it("loads shared conversation history and sends through the paired channel without desktop controls", async () => {
+    const chat = { conversationId: "chat",workbenchId: "wb",title: "已有对话",updatedAt: "2026-11-14",turns: [{ turnId: "turn",text: "原问题",status: "COMPLETED",createdAt: "2026-11-14",config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "网络",modelName: "Model",skills: [],attachmentIds: [] },artifacts: [],entries: [{ entryId: "entry",kind: "MARKDOWN",role: "AGENT",text: "已有回复" }] }] };
+    const invoke = vi.fn().mockImplementation((command: RemoteCommand) => {
+      switch (command.kind) {
+        case "conversation.catalog": return Promise.resolve({ workbenches: [{ workbenchId: "wb",name: "项目" }],networks: [{ sourceId: "network",displayName: "网络",status: "READY",activeModel: { id: "Model" } }],partners: [] });
+        case "conversation.skills": return Promise.resolve({ items: [] });
+        case "conversation.inheritance": return Promise.resolve({ memoryCount: 0,evolutionRevisionId: null });
+        case "conversation.list": return Promise.resolve({ items: [chat] });
+        case "conversation.get": return Promise.resolve(chat);
+        case "conversation.send": return Promise.resolve({ ...chat,turns: [...chat.turns,{ ...chat.turns[0],turnId: "second",text: command.input.text,entries: [{ entryId: "second-reply",kind: "MARKDOWN",role: "AGENT",text: "远程回复" }] }] });
+        default: return Promise.reject(new Error("unexpected_command"));
+      }
+    });
+    const connection: RemoteJoiConnection = { feed: vi.fn().mockResolvedValue({ goals: [],thinking: [],unassignedActions: [] }),sendMessage: vi.fn(),status: () => "connected",command: <T,>(command: RemoteCommand) => invoke(command) as Promise<T> };
+    const view = render(<RemoteJoiApp connection={connection} />);
+    fireEvent.click(screen.getByRole("button",{ name: "对话" }));
+    fireEvent.click(await screen.findByText("已有对话"));
+    expect(await screen.findByText("已有回复")).toBeInTheDocument();
+    expect(screen.queryByRole("button",{ name: "显示或收起工作区" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button",{ name: "附件" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button",{ name: "对话设置" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "在手机继续" } });
+    fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
+    expect(await screen.findByText("远程回复")).toBeInTheDocument();
+    const sendCommand = invoke.mock.calls.map(call => call[0] as RemoteCommand).find(command => command.kind === "conversation.send");
+    expect(sendCommand?.kind).toBe("conversation.send");
+    if (sendCommand?.kind === "conversation.send") expect(sendCommand.input).toMatchObject({ conversationId: "chat",text: "在手机继续",workbenchId: "wb" });
+    const originalWidth = window.innerWidth;
+    const toggleHistory = screen.getByRole("button",{ name: "显示或收起对话列表" });
+    const resize = (width: number) => { Object.defineProperty(window,"innerWidth",{ configurable: true,value: width });fireEvent(window,new Event("resize")); };
+    try {
+      expect(toggleHistory).toHaveAttribute("aria-expanded","true");
+      resize(390);expect(toggleHistory).toHaveAttribute("aria-expanded","false");
+      resize(1440);expect(toggleHistory).toHaveAttribute("aria-expanded","true");
+      fireEvent.click(toggleHistory);resize(390);resize(1440);
+      expect(toggleHistory).toHaveAttribute("aria-expanded","false");
+    } finally { resize(originalWidth); }
+    fireEvent.click(screen.getByRole("button",{ name: "归档对话" }));
+    expect(await screen.findByRole("button",{ name: "已有对话" })).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ kind: "conversation.list",archived: true }));
+    view.unmount();
+  });
+
+  it("offers conversations alongside tasks in the remote browser", async () => {
+    const connection: RemoteJoiConnection = {
+      feed: vi.fn().mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] }),
+      sendMessage: vi.fn(),
+      status: () => "connected",
+    };
+    render(<RemoteJoiApp connection={connection} />);
+    expect(await screen.findByRole("button", { name: "对话" })).toBeInTheDocument();
+  });
+
   it("renders a portrait-only joi feed and sends text without privileged controls", async () => {
     const connection: RemoteJoiConnection = {
       feed: vi.fn().mockResolvedValue({

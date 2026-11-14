@@ -171,6 +171,18 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       clock,
       diagnostics: runtimeDiagnostics,
       commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox, workbenchRegistry: workbenchStack.workbenchRegistry,
+        conversations: {
+          service: conversationStack.conversations,
+          catalog: async () => {
+            const [workbenches,networks,partners] = await Promise.all([persistence.workbenches.listSummaries(),modelSourceStack.modelSources.list(),partnerStack.partners.list()]);
+            return { workbenches,networks: networks.map(({ sourceId,displayName,status,activeModel }) => ({ sourceId,displayName,status,activeModel: { id: activeModel.id } })),
+              partners: partners.filter(p => p.kind === "local-pi" && p.status === "ACTIVE").map(({ partnerId,displayName,kind,status,engine }) => ({ partnerId,displayName,kind,status,engine })) };
+          },
+          skills: engine => {
+            if (engine !== "pi-core" && engine !== "claude-code" && engine !== "codex") return [];
+            return partnerStack.partnerSkillCatalog.listForEngine(engine).map(({ id,displayName }) => ({ id,displayName }));
+          },
+        },
         queries: new RemoteHomeQueryService({ homeFeed: workbenchStack.joiHomeFeed, inputs: persistence.joiInboxRepository,
           agents: workbenchStack.workbenchAgents, workbenches: persistence.workbenches, partners: partnerStack.partners }),
       }),

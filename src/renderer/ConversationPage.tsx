@@ -81,7 +81,7 @@ function WorkspaceResizeHandle({ layout,historyOpen,enabled }: { layout: RefObje
     onLostPointerCapture={() => { gesture.current = null;layout.current?.classList.remove("is-resizing"); }} />;
 }
 
-export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSettings: () => void }) {
+export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSettings?: () => void }) {
   useI18n();
   const [workbenches,setWorkbenches] = useState<WorkbenchDto[]>([]);
   const [networks,setNetworks] = useState<ModelSourceDto[]>([]);
@@ -126,12 +126,24 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const selectedWorkbench = workbenches.find(w => w.workbenchId === draft.workbenchId);
   const selectedNetwork = networks.find(n => n.sourceId === draft.networkId);
   const busy = conversation?.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING") === true;
-  const workspaceVisible = workspaceOpen && conversation !== null;
+  const workspaceVisible = api.desktop && workspaceOpen && conversation !== null;
   const conversationId = conversation?.conversationId;
   const showError = useCallback((error: unknown) => setNotice(error instanceof ApiError ? error.displayMessage : t("chat.error")),[]);
   const patchDraft = (patch: Partial<Draft>) => { pendingRequest.current = null; setDraft(value => ({ ...value,...patch })); };
   const toggle = (value: Picker) => setPicker(current => current === value ? null : value);
   const loadHistory = useCallback(async () => setHistory((await api.listConversations()).items),[api]);
+  useEffect(() => {
+    let narrow = window.innerWidth <= 720;
+    let wideHistory = true;
+    const resize = () => {
+      const next = window.innerWidth <= 720;
+      if (next && !narrow) { setHistoryOpen(current => { wideHistory = current;return false; });setPicker(null); }
+      if (!next && narrow) setHistoryOpen(wideHistory);
+      narrow = next;
+    };
+    window.addEventListener("resize",resize);
+    return () => window.removeEventListener("resize",resize);
+  },[]);
   useEffect(() => {
     let current = true;
     const remembered = drafts.get(api)?.get("active");
@@ -160,7 +172,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     cache.set(draft.id,draft); cache.set("active",draft); activeId.current = draft.id;
   },[api,draft]);
   useEffect(() => {
-    const key = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key === ",") { event.preventDefault(); onSettings(); } };
+    const key = (event: KeyboardEvent) => { if (onSettings !== undefined && (event.ctrlKey || event.metaKey) && event.key === ",") { event.preventDefault(); onSettings(); } };
     window.addEventListener("keydown",key);return () => window.removeEventListener("keydown",key);
   },[onSettings]);
   useEffect(() => {
@@ -255,6 +267,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       const latest = next.turns.at(-1);
       const saved = drafts.get(api)?.get(id);
       activeId.current = id;setConversation(next);setPicker(null);setNotice(null);setConnectionNotice(null);nearBottom.current = true;
+      if (window.innerWidth <= 720) setHistoryOpen(false);
       setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: currentConversationPiExtensions(latest?.config.piExtensions) });
     } catch (error) { if (request === selection.current) showError(error); }
   };
@@ -263,6 +276,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     selectedRead.current?.abort();
     const id = randomUuid();activeId.current = id;setConversation(null);setWorkspaceOpen(false);setPicker(null);setNotice(null);pendingRequest.current = null;
     setDraft({ ...draft,id,text: "",attachments: [],started: false });setRestoring(false);nearBottom.current = true;
+    if (window.innerWidth <= 720) setHistoryOpen(false);
   };
   useEffect(() => () => { selectedRead.current?.abort(); },[]);
   const stop = async () => {
@@ -337,7 +351,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   return <div className={`conversation-layout ${workspaceVisible ? "" : "workspace-hidden"} ${historyOpen ? "" : "history-hidden"}`} ref={layout}>
     {deleting === null ? null : <DeleteConversationDialog busy={changing} error={deleteError} onCancel={() => setDeleting(null)} onDelete={() => void changeConversation(deleting,true)} title={deleting.title} />}
     {renaming === null ? null : <RenameConversationDialog busy={changing} error={renameError} key={renaming.conversationId} onCancel={() => setRenaming(null)} onSave={title => void renameConversation(title)} title={renaming.title} />}
-    <aside className="conversation-history"><header><h1>{t("chat.title")}</h1></header>
+    {historyOpen ? <button aria-hidden="true" className="chat-history-backdrop" onClick={() => setHistoryOpen(false)} tabIndex={-1} type="button" /> : null}
+    <aside className="conversation-history" id="conversation-history"><header><h1>{t("chat.title")}</h1><button aria-label={t("common.close")} className="chat-history-close icon-button" onClick={() => setHistoryOpen(false)} type="button"><XIcon /></button></header>
       <button className="chat-new" onClick={newChat} type="button"><PlusIcon />{t("chat.newChat")}</button>
       <input aria-label={t("chat.search")} className="chat-search" onChange={e => setSearch(e.target.value)} placeholder={t("chat.search")} value={search} />
       <div className="chat-history-groups">{workbenches.map(wb => {
@@ -346,10 +361,10 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       })}{history.length === 0 ? <p className="chat-empty-note">{t("chat.emptyHistory")}</p> : null}</div>
       <footer><LockSimpleIcon />{t("chat.locked")}</footer>
     </aside>
-    <section className="conversation-center"><header className="conversation-topbar"><button aria-label={t("chat.showHistory")} className="icon-button" onClick={() => setHistoryOpen(v => !v)} type="button"><ListIcon /></button>
+    <section className="conversation-center"><header className="conversation-topbar"><button aria-controls="conversation-history" aria-expanded={historyOpen} aria-label={t("chat.showHistory")} className="icon-button" onClick={() => setHistoryOpen(v => !v)} type="button"><ListIcon /></button>
       <div><strong>{conversation?.title ?? t("chat.newChat")}</strong><small>{selectedWorkbench?.name ?? t("chat.chooseWorkbench")} · {t("chat.title")}</small></div>
       <div className="chat-top-actions"><PickerButton name={t("chat.help")} label="" icon={<QuestionIcon />} open={picker === "help"} onToggle={() => toggle("help")}><p>{t("chat.helpText")}</p></PickerButton>
-        {conversation === null ? null : <button aria-controls="conversation-workspace" aria-expanded={workspaceVisible} aria-label={t("chat.showWorkspace")} className="icon-button" onClick={() => setWorkspaceOpen(v => !v)} type="button"><SidebarSimpleIcon /></button>}</div></header>
+        {!api.desktop || conversation === null ? null : <button aria-controls="conversation-workspace" aria-expanded={workspaceVisible} aria-label={t("chat.showWorkspace")} className="icon-button" onClick={() => setWorkspaceOpen(v => !v)} type="button"><SidebarSimpleIcon /></button>}</div></header>
       <div className={`conversation-stream ${conversation === null ? "is-empty" : ""}`} onScroll={e => { const el = e.currentTarget;nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90; }} ref={stream}>
         {conversation === null ? <div className="chat-welcome"><div className="chat-welcome-mark"><SparkleIcon weight="duotone" /></div><h2>{t("chat.emptyTitle")}</h2><p>{t("chat.emptyHint")}</p></div> : <div className="chat-transcript">
           {conversation.historyCursor === undefined ? null : <button disabled={loadingHistory} onClick={() => void loadEarlier()} type="button">{t("chat.loadEarlier")}</button>}
@@ -376,8 +391,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
         <form className="chat-composer" onSubmit={e => { e.preventDefault();void send(); }}>
           {draft.attachments.length === 0 ? null : <div className="chat-attachment-chips">{draft.attachments.map(a => <span key={a.attachmentId}><PaperclipIcon />{a.filename}<button aria-label={`${t("chat.remove")} ${a.filename}`} onClick={() => patchDraft({ attachments: draft.attachments.filter(f => f.attachmentId !== a.attachmentId) })} type="button"><XIcon /></button></span>)}</div>}
           <textarea aria-label={t("chat.message")} disabled={submitting} maxLength={64000} onChange={e => patchDraft({ text: e.target.value })} onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault();void send(); } }} placeholder={t("chat.placeholder")} rows={3} value={draft.text} />
-          <div className="chat-composer-toolbar"><PickerButton name={t("chat.attachments")} label="" icon={<PlusIcon />} open={picker === "attachments"} onToggle={() => toggle("attachments")}><button disabled={uploading || draft.attachments.length >= 16} onClick={() => fileInput.current?.click()} type="button"><PaperclipIcon />{t("chat.addFiles")}</button>{draft.attachments.map(a => <small key={a.attachmentId}>{a.filename}</small>)}</PickerButton>
-            <PickerButton name={t("chat.network")} label={native ? engine : selectedNetwork?.displayName ?? t("chat.chooseNetwork")} icon={<NetworkIcon />} disabled={native} open={picker === "network"} onToggle={() => toggle("network")}><div role="listbox" aria-label={t("chat.network")}>{networks.map(n => <button aria-selected={draft.networkId === n.sourceId} disabled={n.status !== "READY"} key={n.sourceId} onClick={() => { patchDraft({ networkId: n.sourceId });setPicker(null); }} role="option" type="button"><span>{n.displayName}<small>{n.activeModel.id} · {n.status}</small></span></button>)}</div><p>{t("chat.networkHint")}</p><button onClick={onSettings} type="button"><GearSixIcon />{t("chat.settings")}</button></PickerButton>
+          <div className="chat-composer-toolbar">{api.conversationAttachments ? <PickerButton name={t("chat.attachments")} label="" icon={<PlusIcon />} open={picker === "attachments"} onToggle={() => toggle("attachments")}><button disabled={uploading || draft.attachments.length >= 16} onClick={() => fileInput.current?.click()} type="button"><PaperclipIcon />{t("chat.addFiles")}</button>{draft.attachments.map(a => <small key={a.attachmentId}>{a.filename}</small>)}</PickerButton> : null}
+            <PickerButton name={t("chat.network")} label={native ? engine : selectedNetwork?.displayName ?? t("chat.chooseNetwork")} icon={<NetworkIcon />} disabled={native} open={picker === "network"} onToggle={() => toggle("network")}><div role="listbox" aria-label={t("chat.network")}>{networks.map(n => <button aria-selected={draft.networkId === n.sourceId} disabled={n.status !== "READY"} key={n.sourceId} onClick={() => { patchDraft({ networkId: n.sourceId });setPicker(null); }} role="option" type="button"><span>{n.displayName}<small>{n.activeModel.id} · {n.status}</small></span></button>)}</div><p>{t("chat.networkHint")}</p>{onSettings === undefined ? null : <button onClick={onSettings} type="button"><GearSixIcon />{t("chat.settings")}</button>}</PickerButton>
             <PickerButton name={t("chat.partner")} label={selectedPartner?.displayName ?? "joi"} icon={<RobotIcon />} open={picker === "partner"} onToggle={() => toggle("partner")}><div role="listbox" aria-label={t("chat.partner")}><button aria-selected={draft.partnerId === "joi-chat"} onClick={() => { patchDraft({ partnerId: "joi-chat",skills: [] });setPicker(null); }} role="option" type="button">joi<small>Pi</small></button>{partners.map(p => <button aria-selected={draft.partnerId === p.partnerId} key={p.partnerId} onClick={() => { patchDraft({ partnerId: p.partnerId,skills: p.skills });setPicker(null); }} role="option" type="button">{p.displayName}<small>{p.engine}</small></button>)}</div></PickerButton>
             <PickerButton name={t("chat.skills")} label={<>{t("chat.skills")}{draft.skills.length > 0 ? ` · ${String(draft.skills.length)}` : ""}</>} icon={<SparkleIcon />} open={picker === "skills"} onToggle={() => toggle("skills")}>
               {skillOptions.length === 0 ? <p>{t("chat.noSkills")}</p> : skillOptions.map(s => <label key={s.id}><input checked={draft.skills.includes(s.id)} onChange={() => patchDraft({ skills: draft.skills.includes(s.id) ? draft.skills.filter(id => id !== s.id) : [...draft.skills,s.id] })} type="checkbox" />{s.displayName}</label>)}</PickerButton>
@@ -387,7 +402,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
                 {CONVERSATION_PI_EXTENSIONS.map(id => <label key={id}><span>{extensionLabels[id]}</span><input aria-label={extensionLabels[id]} checked={draft.piExtensions?.includes(id) ?? false} onChange={() => patchDraft({ piExtensions: CONVERSATION_PI_EXTENSIONS.filter(value => value === id ? !draft.piExtensions?.includes(id) : draft.piExtensions?.includes(value)) })} role="switch" type="checkbox" /></label>)}
               </div>
             </PickerButton>}
-            <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>
+            {onSettings === undefined ? null : <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>}
             {busy ? <button aria-label={t("chat.stop")} className="chat-send is-stop" onClick={() => void stop()} type="button"><StopIcon weight="fill" /></button>
               : <button aria-label={t("chat.send")} className="chat-send" disabled={submitting || restoring || uploading || draft.text.trim() === "" || draft.workbenchId === "" || (!native && selectedNetwork?.status !== "READY")} type="submit"><ArrowUpIcon weight="bold" /></button>}
           </div></form><input hidden multiple onChange={e => void upload(e.target.files)} ref={fileInput} type="file" />
@@ -395,6 +410,6 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       </div>
     </section>
     <WorkspaceResizeHandle enabled={workspaceVisible} historyOpen={historyOpen} layout={layout} />
-    {conversation === null ? null : <ConversationWorkspace api={api} conversation={conversation} workbenchId={draft.workbenchId} workbenchName={selectedWorkbench?.name ?? ""} />}
+    {!api.desktop || conversation === null ? null : <ConversationWorkspace api={api} conversation={conversation} workbenchId={draft.workbenchId} workbenchName={selectedWorkbench?.name ?? ""} />}
   </div>;
 }

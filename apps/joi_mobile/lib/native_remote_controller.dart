@@ -245,7 +245,7 @@ class SecureRemoteCredentialStore implements RemoteCredentialStore {
 }
 
 class NativeRemoteController extends ChangeNotifier
-    implements RemoteController {
+    implements RemoteController, ConversationRemoteController {
   NativeRemoteController({
     required RemoteCredentialStore credentials,
     required NativeTransport transport,
@@ -640,7 +640,7 @@ class NativeRemoteController extends ChangeNotifier
       throw StateError('remote_upgrade_required');
     }
     final generation = _generation;
-    var response = await _sendCommand({
+    final response = await _sendCommand({
       'kind': kind,
       'requestId': _requestId('read'),
       if (kind == 'feed.get' && _state.supportsHome) 'paged': true,
@@ -650,6 +650,35 @@ class NativeRemoteController extends ChangeNotifier
       'agentId': ?agentId,
       'cursor': ?cursor,
     });
+    return _readResponse(response, generation);
+  }
+
+  bool _supportsConversations = false;
+  @override
+  bool get supportsConversations => _supportsConversations;
+
+  @override
+  Future<Map<String, dynamic>> conversation(
+    String operation, {
+    Map<String, Object?> parameters = const {},
+  }) async {
+    if (!_supportsConversations) throw StateError('remote_upgrade_required');
+    if (_state.connection != RemoteConnectionState.connected) {
+      throw StateError('joi_remote_not_ready');
+    }
+    final generation = _generation;
+    final response = await _sendCommand({
+      ...parameters,
+      'kind': 'conversation.$operation',
+      'requestId': _requestId('conversation'),
+    });
+    return _readResponse(response, generation);
+  }
+
+  Future<Map<String, dynamic>> _readResponse(
+    Map<String, dynamic> response,
+    int generation,
+  ) async {
     var result = response['result'];
     if (result is Map<String, dynamic> && result['encoding'] == 'json') {
       final buffer = StringBuffer();
@@ -988,6 +1017,9 @@ class NativeRemoteController extends ChangeNotifier
       }
       if (generation != _generation || _disposed) return;
       _mode = 'resume';
+      _supportsConversations =
+          value['capabilities'] is List &&
+          (value['capabilities'] as List).contains('conversations.v1');
       _record(stage: ConnectionStage.sessionReady);
       _handshakeTimer?.cancel();
       _pairingTimer?.cancel();
