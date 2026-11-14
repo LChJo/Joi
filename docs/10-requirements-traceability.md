@@ -249,6 +249,8 @@ AC-67 搭档证据传递补充（2026-09-07）：`sqlite-partner-dispatch-instan
 5. 执行 24 小时长稳、多 Life/Alarm 峰值、磁盘不足和真实网络故障报告。
 ## AC-63 Routine
 
+AC-63 locked-target editing (2026-11-14): while a continuation run is pending, running, or blocked, its task type and linked goal stay locked. Saving edits to its name, supplemental instruction, or frequency retains the selected goal id even though disabled controls are omitted from native form data. `tests/renderer/automation-panel.test.tsx` verifies all three states, the submitted target and edited values, and successful editor closure.
+
 AC-63 entry placement (2026-09-17): home goal cards do not show a scheduling action. The goal detail header places a `定时` action below `关闭`; it opens the existing continuation editor with the current goal selected. The Automation page remains an independent creation entry.
 
 AC-63 blocked recovery regression (2026-09-17): before a new occurrence is due, unchanged continuation blockers must not update either the run or Routine row. A changed blocking reason is recorded once without moving the trigger timestamp. Delayed recovery preserves `triggeredAt` and records admission time in `queuedAt`, including exhausted one-time schedules. `goal_canceled` facts are excluded from automatic recovery scans; genuine subsequent occurrences may still coalesce without resuming the canceled goal. `tests/integration/automation.test.ts` verifies repeated ticks using SQLite `total_changes()`, reason transitions, occurrence merging, and single admission on recovery.

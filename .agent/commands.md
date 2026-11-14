@@ -22,13 +22,17 @@ npm run dev
 
 ## 验证
 
+按[验证范围](commands/verify.md)选择与改动直接相关的测试和检查；文档只做内容检查，局部代码先跑对应测试文件、typecheck 与定向 lint。例如：
+
 ```powershell
-npm run check
-npm run check:boundaries
-npm run test:e2e
+npx vitest run tests/renderer/automation-panel.test.tsx
+npm run typecheck
+npx eslint src/renderer/AutomationPanel.tsx tests/renderer/automation-panel.test.tsx --max-warnings 0
 ```
 
-原生远程与 Android App 另外执行：
+边界、E2E、原生测试、构建与打包检查由实际影响范围触发。全量检查与发布验收见验证文档；`npm run check` 不作为日常局部修改的默认命令。
+
+涉及原生远程与 Android App 时，按改动选择对应测试目标和以下检查：
 
 ```powershell
 cargo test --manifest-path native/joi-remote/Cargo.toml

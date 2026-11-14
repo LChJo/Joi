@@ -128,7 +128,7 @@ export function AutomationPanel({ api, initialGoalId, onOpenJoi }: { api: Digita
         ...(formText(form, "to") === "" ? {} : { to: formText(form, "to") }),
       };
       const target = targetKind === "GOAL_CONTINUATION"
-        ? { goalId: formText(form, "targetGoalId"), kind: "GOAL_CONTINUATION" as const }
+        ? { goalId: targetGoalId, kind: "GOAL_CONTINUATION" as const }
         : { kind: "NEW_GOAL" as const };
       if (selected === null) {
         const create: CreateAutomationInput = target.kind === "GOAL_CONTINUATION"

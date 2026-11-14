@@ -207,21 +207,17 @@ npm run app:run
 2. 至少连接一个模型来源，joi 才能思考——支持六家厂商加一个通用平台（`src/main/domain/model-sources/model-source.ts`）。
 3. 可选：为可信局域网浏览器启用 LAN 访问、选择界面语言，并在“设置 → 技能”中按需勾选本机 Skill。
 
-### 固定质量门禁
+### 按改动范围验证
 
-交付改动前执行以下命令（[`AGENTS.md`](AGENTS.md)、[`.agent/commands/verify.md`](.agent/commands/verify.md)）：
+根据实际 diff 和受影响调用方，按 [`AGENTS.md`](AGENTS.md) 与[验证范围表](.agent/commands/verify.md)选择检查。局部代码修改先跑相关测试文件、TypeScript 检查和定向 lint；文档修改检查 diff、链接和命令。例如：
 
 ```bash
+npx vitest run tests/renderer/automation-panel.test.tsx
 npm run typecheck
-npm run lint
-npm run test
-npm run test:coverage
-npm run test:e2e
-npm run build:prod
-npm run package:verify
+npx eslint src/renderer/AutomationPanel.tsx tests/renderer/automation-panel.test.tsx --max-warnings 0
 ```
 
-`npm run check` 会把 typecheck、lint、test、coverage、完整构建与打包校验串成一条命令。
+按实际涉及的边界增加集成、契约、Electron/原生测试、覆盖率、构建或打包校验。选定检查通过后结束，仅在新增修改、失败或存在具体未覆盖风险时扩展。CI 与发布门禁单独遵循；`npm run check` 包含耗时的全量检查，用于完整验收，不作为日常局部修改的默认命令。
 
 ---
 
@@ -310,7 +306,7 @@ digital-life/
 │   ├── renderer/      # React 同构 UI（桌面 + 局域网 + 远程网页）
 │   └── shared/        # 跨层 DTO 与 i18n
 ├── tests/             # unit / integration / contract / renderer / architecture / native / relay / e2e
-├── AGENTS.md          # 仓库指南：事实源、分层边界、固定命令
+├── AGENTS.md          # 仓库指南：事实源、分层边界、验证范围
 ├── package.json       # 脚本、依赖、engines、electron-builder 配置
 └── tsconfig*.json / vite.config.ts / vitest.config.ts / playwright.config.ts
 ```
@@ -462,7 +458,7 @@ joi 只读取少量环境变量，其余设置保存在 SQLite 中。仓库里�
 3. 外部副作用必须经过 outbox，并使用稳定幂等标识。
 4. 测试使用一次性 SQLite、`userData` 与凭据替身——绝不读取真实 Electron `userData`。
 5. 绝不记录或输出 token、cookie、CSRF、消息正文、persona、memory 文本或 A2A payload。
-6. 交付里程碑前运行[固定质量门禁](#固定质量门禁)。
+6. 交付前完成[按改动范围验证](#按改动范围验证)，说明实际结果及相关未验证范围。
 7. 遵守 [`AGENTS.md`](AGENTS.md) 中的分层边界，并在 `scripts/architecture-boundaries.mjs` 中登记每个新增生产目录。
 
 完整仓库指南见 [`AGENTS.md`](AGENTS.md)，命令索引见 [`.agent/commands/`](.agent/commands/README.md)。

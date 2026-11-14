@@ -166,6 +166,32 @@ describe("AutomationPanel", () => {
     expect(screen.getByLabelText("关联任务")).toBeDisabled();
   });
 
+  it.each(["PENDING", "RUNNING", "BLOCKED"] as const)("saves a %s continuation with its locked goal intact", async (status) => {
+    const fixture = mockApi();
+    fixture.listAutomations.mockResolvedValue({ items: [{
+      ...continuationRoutine,
+      frequency: { kind: "interval", hours: 4 },
+      runs: [{ mergeCount: 1, occurrenceAt: routine.createdAt, result: status, runId: "run-busy", status, triggeredAt: routine.createdAt }],
+    }] });
+    render(<AutomationPanel api={fixture.api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    expect(screen.getByLabelText("任务类型")).toBeDisabled();
+    expect(screen.getByLabelText("关联任务")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "定期检查" } });
+    fireEvent.change(screen.getByLabelText("续聊指令"), { target: { value: "继续核对最新证据" } });
+    fireEvent.change(screen.getByLabelText("间隔小时"), { target: { value: "6" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(fixture.updateAutomation).toHaveBeenCalledWith("routine_continuation", expect.objectContaining({
+      frequency: { kind: "interval", hours: 6 },
+      name: "定期检查",
+      prompt: "继续核对最新证据",
+      target: { goalId: "goal-running", kind: "GOAL_CONTINUATION" },
+    })));
+    expect(await screen.findByText("定时任务已保存。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "保存" })).not.toBeInTheDocument();
+  });
+
   it("submits interval, once and RRULE forms and reports operation failures", async () => {
     const fixture = mockApi();
     render(<AutomationPanel api={fixture.api} />);

@@ -8,11 +8,11 @@
       "location": {
         "path": "README.md"
       },
-      "hash": "6389b06dcb338735ec26fc9c69c666ff7ced6d6ba1b50508f9031d7686d3a0f3",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "f1614d9c291587f7882374c965d2ee33bcbc79e77164a45652859f354dbe8f52",
+      "observedAt": "2026-11-14T15:29:28.513Z",
       "range": {
         "startLine": 1,
-        "endLine": 491
+        "endLine": 487
       }
     },
     {
@@ -848,8 +848,8 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "2358458b1ef03503932539125d3197007080c9ef5354d01b51b8f87b9c48e85a",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "801a17ddcf88e5f71c817d27fddf6763f0575ef52cdc90266e772ac40fd8c4a0",
+      "observedAt": "2026-11-14T15:29:28.513Z",
       "range": {
         "startLine": 1,
         "endLine": 672
@@ -2155,6 +2155,48 @@
       "range": {
         "startLine": 1,
         "endLine": 226
+      }
+    },
+    {
+      "id": "f36cf665-bf68-4d61-bae9-8995b49dff4b",
+      "kind": "document",
+      "claim": "Local validation selects tests and checks from the actual diff and affected boundaries; desktop/native tests, coverage, builds and package checks have explicit triggers. Passing results and current build artifacts are reused. Full CI and release gates remain separate.",
+      "location": {
+        "path": ".agent/commands/verify.md"
+      },
+      "hash": "75153786dd344ff9179b2edcdf6071eea1966e489a4f1f3da892c78ecc9c01a0",
+      "observedAt": "2026-11-14T15:29:28.513Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 105
+      }
+    },
+    {
+      "id": "a2186992-b051-47e8-bdce-a4e4d8878e40",
+      "kind": "source-code",
+      "claim": "Continuation saves use the controlled goal selection, preserving the linked id when active runs disable its form control.",
+      "location": {
+        "path": "src/renderer/AutomationPanel.tsx"
+      },
+      "hash": "4c0ffab4a9a21bef26d292e48960d4dbcb4f5761d676d4f8b2ca346c239e1b4f",
+      "observedAt": "2026-11-14T15:29:28.513Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 208
+      }
+    },
+    {
+      "id": "c08040c4-15d6-410b-b52d-ca49f3aca31f",
+      "kind": "source-code",
+      "claim": "Pending, running and blocked continuation edits preserve the locked goal while submitting changed name, instructions and interval; successful save closes the editor.",
+      "location": {
+        "path": "tests/renderer/automation-panel.test.tsx"
+      },
+      "hash": "1f0f9cfc2689928a66336c65031503fa9cf6c389ab43350aeb7cf3b459287e2e",
+      "observedAt": "2026-11-14T15:29:28.513Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 292
       }
     }
   ]

@@ -208,21 +208,17 @@ npm run app:run
 2. Connect at least one model source before joi can think — six vendors plus a generic platform are supported (`src/main/domain/model-sources/model-source.ts`).
 3. Optional: enable LAN access for trusted local browsers, choose the interface language, and opt into skills under Settings.
 
-### Fixed quality gate
+### Change-scoped validation
 
-Run these before handing off a change ([`AGENTS.md`](AGENTS.md), [`.agent/commands/verify.md`](.agent/commands/verify.md)):
+Choose validation from the actual diff and affected callers using [`AGENTS.md`](AGENTS.md) and the [validation scope matrix](.agent/commands/verify.md). Local code changes start with relevant test files, TypeScript checking and linting of changed code. Documentation changes need diff, link and command review. For example:
 
 ```bash
+npx vitest run tests/renderer/automation-panel.test.tsx
 npm run typecheck
-npm run lint
-npm run test
-npm run test:coverage
-npm run test:e2e
-npm run build:prod
-npm run package:verify
+npx eslint src/renderer/AutomationPanel.tsx tests/renderer/automation-panel.test.tsx --max-warnings 0
 ```
 
-`npm run check` chains typecheck, lint, test, coverage, a full build and package verification in one command.
+Add integration, contract, Electron/native tests, coverage, builds or package verification when the affected boundary requires them. Stop once the selected checks pass; expand for new changes, failures or concrete uncovered risks. Full CI and release gates remain separate. `npm run check` chains expensive full checks and is reserved for full validation, rather than routine local edits.
 
 ---
 
@@ -311,7 +307,7 @@ digital-life/
 │   ├── renderer/      # React isomorphic UI (desktop + LAN + remote web)
 │   └── shared/        # Cross-layer DTOs and i18n
 ├── tests/             # unit / integration / contract / renderer / architecture / native / relay / e2e
-├── AGENTS.md          # Repository guide: source of truth, boundaries, fixed commands
+├── AGENTS.md          # Repository guide: source of truth, boundaries, validation scope
 ├── package.json       # Scripts, dependencies, engines, electron-builder config
 └── tsconfig*.json / vite.config.ts / vitest.config.ts / playwright.config.ts
 ```
@@ -463,7 +459,7 @@ joi reads a small set of environment variables and otherwise stores settings in 
 3. Keep external side effects behind an outbox with stable idempotency identifiers.
 4. Use disposable SQLite, `userData` and credential fakes in tests — never read real Electron `userData`.
 5. Never log or return tokens, cookies, CSRF values, message bodies, persona, memory text or A2A payloads.
-6. Run the [fixed validation commands](#fixed-quality-gate) before handing off a milestone.
+6. Complete [change-scoped validation](#change-scoped-validation) before handing off; report actual results and relevant unverified scope.
 7. Respect the layer boundaries in [`AGENTS.md`](AGENTS.md) and classify every new production directory in `scripts/architecture-boundaries.mjs`.
 
 See [`AGENTS.md`](AGENTS.md) for the full repository guide and [`.agent/commands/`](.agent/commands/README.md) for the command index.
