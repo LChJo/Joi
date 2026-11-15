@@ -676,3 +676,4 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 - CI-04：Windows/macOS 质量门禁通过后，在各自 runner 上调用 `package:win` / `package:mac`，执行生产构建、包内容审计并生成 NSIS `.exe` / `.dmg`；不以解包目录替代安装包。
 - push、pull request 和手动 `workflow_dispatch` 均可运行。安装包分别上传为 `joi-windows` / `joi-macos` Actions Artifacts，保留 14 天；缺少对应安装包时上传步骤失败。
 - CI 关闭签名身份自动发现，不依赖发布密钥；正式 Windows 签名与 macOS 签名/公证继续作为单独发布验收。工作流语法及 `ci-packaging-contract.test.ts` 覆盖触发、平台/目标映射、质量门禁顺序和可下载产物；托管 runner 上的真实执行结果单独记录。
+- 安装包生成命令始终显式传入 `--publish never`，禁止 electron-builder 根据 CI 环境隐式发布 GitHub Release 或要求 `GH_TOKEN`；上传由 Actions Artifacts 步骤负责。`package-command.test.ts` 通过真实打包入口和隔离工具替身验证构建、审计、目标和发布策略的命令边界。

@@ -8,8 +8,8 @@
       "location": {
         "path": "README.md"
       },
-      "hash": "dbcb8b0138e049b6ed95054ef92256bda39f88817c9f0a4327056e116389b85d",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "a16f10ce0997902ba0830d54d636bcd80271d7aa98ab259ffc0e5173a828d8a1",
+      "observedAt": "2026-11-15T07:13:51.971Z",
       "range": {
         "startLine": 1,
         "endLine": 488
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "7f281803d21a5a97b339202f02f7ea5fc0131c74155be0fa8a106ef64ceac6fd",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "472dfa864ae7f4427dd32b185efb3ccd5ecdb75c17eef44068e302865fc9f40b",
+      "observedAt": "2026-11-15T07:13:51.973Z",
       "range": {
         "startLine": 1,
-        "endLine": 678
+        "endLine": 679
       }
     },
     {
@@ -2239,6 +2239,34 @@
       "range": {
         "startLine": 1,
         "endLine": 67
+      }
+    },
+    {
+      "id": "b85ce84c-9c9a-4171-8473-d55d5f9ef4fb",
+      "kind": "source-code",
+      "claim": "All desktop package targets build production, audit contents and invoke electron-builder with explicit --publish never, preventing CI's implicit GitHub Release publishing and GH_TOKEN requirement. Actions upload remains a separate workflow responsibility.",
+      "location": {
+        "path": "scripts/package-app.mjs"
+      },
+      "hash": "eda229dc961d47a17d082a47fe0fde4f724ae527346f5e61ada47071f4aadd20",
+      "observedAt": "2026-11-15T07:13:51.975Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 78
+      }
+    },
+    {
+      "id": "269d5862-bca0-43c0-bd38-2aa48a68147e",
+      "kind": "source-code",
+      "claim": "A disposable CLI fixture executes the production packaging entry with CI environment and no release credentials. External tool recorders assert icons, build, audit and native host packaging order and explicit publication opt-out. Environment casing is normalized for the npm entry override on Windows.",
+      "location": {
+        "path": "tests/contract/package-command.test.ts"
+      },
+      "hash": "ec72e5a4479bc90e1bda31e43b62e085419305669b422086e9cc1f43bf4e72b3",
+      "observedAt": "2026-11-15T07:13:51.975Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 53
       }
     }
   ]

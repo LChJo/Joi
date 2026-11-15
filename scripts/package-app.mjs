@@ -71,6 +71,7 @@ await run(process.execPath, [path.resolve(projectRoot, "scripts/package-verify.m
 await run(process.execPath, [
   path.resolve(projectRoot, "node_modules/electron-builder/out/cli/cli.js"),
   ...builderArguments,
+  "--publish", "never",
   `--config.directories.output=${relativeOutput.replaceAll("\\", "/")}`,
 ]);
 
