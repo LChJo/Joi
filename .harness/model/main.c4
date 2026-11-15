@@ -177,11 +177,11 @@ metadata {
 design = component "Design prototypes" {
 metadata {
  harness_id "5241d3d1-1758-46a9-b7db-382ba7c72645"
- brief "Non-production HTML design artifacts include Phosphor navigation icon comparisons with the user-selected Heartbeat/SquaresFour pair. Conversation prototype models independent network/partner/skill choices, chat-first workbench creation, inherited context and simulated Git with embedded diff2html; isolated from the production runtime."
+ brief "Non-production HTML design artifacts include Phosphor navigation icon comparisons with the user-selected Heartbeat/SquaresFour pair. Conversation prototype models independent network/partner/skill choices, chat-first workbench creation, inherited context and simulated Git with embedded diff2html; isolated from the production runtime. Portrait documentation retains the approved gold-bob over-the-shoulder portrait with ivory skin and champagne hair, its G3 source, final comparison and selected prompts. The approved portrait supplies desktop, web and Android brand assets; unused drafts remain in ignored local storage and preview pages remain outside the production runtime."
  source "fact"
  status "verified"
- evidence "283d9312-432e-469c-b75c-8bc7a6685e12 ab760cb9-1a2a-45a2-8d8c-e00709dd5319 e17e48a7-5bdd-421e-aa56-72f72d2c410b"
- version "7"
+ evidence "283d9312-432e-469c-b75c-8bc7a6685e12 ab760cb9-1a2a-45a2-8d8c-e00709dd5319 e17e48a7-5bdd-421e-aa56-72f72d2c410b 6077cb09-13b5-4de5-9a60-3271a75c457e"
+ version "10"
 }
 }
 validation = component "Quality gates" {

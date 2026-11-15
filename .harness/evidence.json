@@ -2198,6 +2198,20 @@
         "startLine": 1,
         "endLine": 292
       }
+    },
+    {
+      "id": "6077cb09-13b5-4de5-9a60-3271a75c457e",
+      "kind": "document",
+      "claim": "The user approved final G3 refinement exec-cc667043-66bf-474e-9829-1557eeec5c6e: ivory skin, champagne bob and green engraved over-the-shoulder portrait. Desktop/web avatars and icons, Flutter portrait and all five Android launcher densities derive from this image. Versioned design records retain the final and original G3 images, comparison and selected prompts; unused drafts are kept only in ignored local storage. Installers and APK were not rebuilt.",
+      "location": {
+        "path": "docs/design/joi-portrait-selection.md"
+      },
+      "hash": "936a9639353e99582edfdc92649d480d1e4eee2d878ac5f8b1bef91e5148a0c0",
+      "observedAt": "2026-11-15T05:44:49.446Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 17
+      }
     }
   ]
 }
