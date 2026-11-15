@@ -59,7 +59,7 @@ export interface EvolutionVersionDto {
 /** The four stages a batch moves through, in order. Shared so the panel and the ports cannot drift. */
 export type EvolutionPhase = "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE";
 export interface EvolutionModelFailure {
-  kind: "provider_error" | "timeout" | "aborted" | "response_truncated" | "no_tool_call" | "multiple_tool_calls" | "unsupported_tool";
+  kind: "provider_error" | "timeout" | "aborted" | "response_truncated" | "no_tool_call" | "multiple_tool_calls" | "unsupported_tool" | "invalid_tool_arguments" | "protocol_sequence_invalid";
   stopReason?: "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
   toolCallCount: number;
 }

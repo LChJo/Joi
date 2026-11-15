@@ -140,6 +140,73 @@ describe("method learning lifecycle recovery", () => {
     expect(store.participant("a").enabled).toBe(false);
     expect(store.experimentUsage(seeded.id)).toEqual({calls:1,tokens:0,tokensComplete:false});
   });
+  it.each(["unsupported_tool", "no_tool_call", "response_truncated"] as const)("ends a %s experiment without globally pausing or consuming its defect evidence", async kind => {
+    const seeded=experiment([seedCase("protocol-recovery")]); const subject=service();
+    revision("ACTIVE");
+    store.configureGlobal({lastCandidateDay:now.slice(0,10)});
+    call.mockRejectedValue(new EvolutionModelCallError({kind,toolCallCount:kind === "unsupported_tool" ? 1 : 0},6));
+    await subject.handle("evolution:a");
+    expect(store.experiment(seeded.id)?.status).toBe("RUNNING");
+    await subject.handle("evolution:a");
+    expect(store.control().paused).toBe(false);
+    expect(store.participant("a").paused).toBe(false);
+    expect(store.experiment(seeded.id)).toMatchObject({status:"REJECTED",state:{reason:"model_response_invalid",invalidStreak:2,failure:{kind}}});
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:2,tokens:12,tokensComplete:true});
+    expect(subject.status("a").learning?.stage).not.toBe("PAUSED");
+    expect(store.revision("method")?.status).toBe("ACTIVE");
+    expect(diagnostics.emit).toHaveBeenCalledWith("joi.evolution.response_invalid",expect.objectContaining({failure:{kind,toolCallCount:kind === "unsupported_tool" ? 1 : 0}}));
+    expect(call.mock.calls[1]?.[0].systemPrompt).toContain("The previous response was rejected");
+    subject.resumeGlobal();
+    expect(store.experiment(seeded.id)?.status).toBe("REJECTED");
+    expect(service().pending()).toEqual([]);
+    await service().handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(2);
+    now="2026-10-24T01:00:00.000Z";
+    expect(service().pending()).toEqual([{inputId:"evolution:a",createdAt:now}]);
+    call.mockResolvedValue({value:{action:"read_evidence",evidenceId:"record-11"},tokens:4});
+    await service().handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(3);
+    expect(store.experiments().find(item=>item.status === "RUNNING")?.state).toMatchObject({invalidStreak:0,failure:null});
+    expect(store.experiment(seeded.id)?.status).toBe("REJECTED");
+  });
+  it("bounds malformed simulation responses without requiring a global resume", async () => {
+    const seeded=experiment([seedCase("malformed-protocol")]); const subject=service();
+    store.configureGlobal({lastCandidateDay:now.slice(0,10)});
+    call.mockResolvedValue(null);
+    await subject.handle("evolution:a");
+    await subject.handle("evolution:a");
+    expect(store.control().paused).toBe(false);
+    expect(store.experiment(seeded.id)).toMatchObject({status:"REJECTED",state:{reason:"model_response_invalid",failure:{kind:"invalid_tool_arguments",toolCallCount:1}}});
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:2,tokens:0,tokensComplete:false});
+    expect(subject.pending()).toEqual([]);
+  });
+  it.each([
+    ["record-13", "record-11", "complete"],
+    ["record-11", "record-13", "wait"],
+  ])("preflights registered tools in either evidence order without grading the %s/%s/%s decision", async (first, second, decision) => {
+    const seeded=experiment([seedCase("protocol-shape")]); const subject=service();
+    call.mockResolvedValueOnce({value:{action:"read_evidence",evidenceId:first},tokens:2})
+      .mockResolvedValueOnce({value:{action:"read_evidence",evidenceId:second},tokens:2})
+      .mockResolvedValueOnce({value:{action:"finish",decision,evidenceIds:[first,second]},tokens:2});
+    for (let index=0; index<3; index+=1) await subject.handle("evolution:a");
+    expect(store.experiment(seeded.id)).toMatchObject({status:"RUNNING",phase:"DEVELOP",state:{invalidStreak:0,failure:null}});
+    expect(store.control().paused).toBe(false);
+    expect(call.mock.calls.map(([input])=>input.mode)).toEqual(["protocol","protocol","protocol"]);
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:3,tokens:6,tokensComplete:true});
+  });
+  it("distinguishes a finish before reading evidence from an unregistered tool", async () => {
+    const seeded=experiment([seedCase("protocol-sequence")]); const subject=service();
+    call.mockResolvedValue({value:{action:"finish",decision:"complete",evidenceIds:["record-11","record-13"]},tokens:7});
+    await subject.handle("evolution:a");
+    expect(store.experiment(seeded.id)).toMatchObject({phase:"PROTOCOL",state:{failure:{kind:"protocol_sequence_invalid"}}});
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:1,tokens:7,tokensComplete:true});
+  });
+  it("rejects a non-string protocol decision without coercing it into a supported value", async () => {
+    const seeded=experiment([seedCase("protocol-argument")],"PROTOCOL",json({protocol:{...trial("development:unit-test-repair"),calls:2,actions:["read:record-11","read:record-13"]}}));
+    call.mockResolvedValue({value:{action:"finish",decision:["complete"],evidenceIds:["record-11","record-13"]},tokens:3});
+    await service().handle("evolution:a");
+    expect(store.experiment(seeded.id)).toMatchObject({phase:"PROTOCOL",state:{failure:{kind:"invalid_tool_arguments"}}});
+  });
   it("preserves the experiment on an unclassified failure and records unknown usage honestly", async () => {
     const seeded=experiment([seedCase("failure-generic")]); const subject=service();
     call.mockRejectedValue(new Error("Private provider detail"));

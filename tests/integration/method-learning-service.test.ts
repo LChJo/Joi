@@ -110,7 +110,7 @@ describe("production method learning", () => {
     expect(subject.status("a").learning?.blockers).not.toContain("daily_candidate_limit");
     expect(subject.pending()).toHaveLength(1);
   });
-  it("retains the experiment and evidence after protocol failures and resumes explicitly", async () => {
+  it("retains failed protocol audit and evidence while allowing an explicit new experiment", async () => {
     seedDefect();
     const subject = service();
     subject.configureGlobal({ enabled: true, dailyCallLimit: 150 });
@@ -118,15 +118,22 @@ describe("production method learning", () => {
     call.mockRejectedValue(new EvolutionModelCallError({ kind: "multiple_tool_calls", toolCallCount: 2 }, 45));
     await subject.handle("evolution:a");
     await subject.handle("evolution:a");
-    expect(store.experiments()[0]).toMatchObject({ status: "PAUSED", phase: "PROTOCOL" });
+    const failedId=store.experiments()[0]?.id;
+    expect(store.experiments()[0]).toMatchObject({ status: "REJECTED", phase: "PROTOCOL" });
+    expect(store.control().paused).toBe(false);
     expect(store.usage(now.slice(0, 10))).toMatchObject({ calls: 2, tokens: 90 });
     expect(subject.pending()).toEqual([]);
     const count = store.listCases().length;
     subject.resumeGlobal();
     subject.resumeWorkbench("a");
-    expect(store.experiments()[0]).toMatchObject({ status: "RUNNING", phase: "PROTOCOL" });
+    expect(store.experiments()[0]).toMatchObject({ status: "REJECTED", phase: "PROTOCOL" });
     expect(store.listCases()).toHaveLength(count);
+    now="2026-10-23T01:00:01.000Z";
+    subject.requestRun("a");
     expect(subject.pending()).toHaveLength(1);
+    call.mockResolvedValue({value:{action:"read_evidence",evidenceId:"record-11"},tokens:5});
+    await subject.handle("evolution:a");
+    expect(store.experiments().find(item=>item.status === "RUNNING")?.id).not.toBe(failedId);
   });
   it("stops at the global cap and continues the same protocol across a UTC day", async () => {
     seedDefect();

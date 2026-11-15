@@ -6,13 +6,14 @@ import type { ModelSourceRecord } from "../../src/main/application/ports/model-s
 import { createModelSource } from "../../src/main/domain/model-sources/model-source.js";
 import { PiModelSourceValidator } from "../../src/main/infrastructure/pi/pi-model-source-validator.js";
 
-function record(kind: "deepseek" | "generic-openai" = "deepseek", baseUrl?: string): ModelSourceRecord {
+function record(kind: "deepseek" | "generic-openai" = "deepseek", baseUrl?: string, maxOutputTokens=65_536): ModelSourceRecord {
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }), local: false, order: 0, primary: true,
     source: createModelSource({
       createdAt: "2026-09-20T00:00:00.000Z", credentialRef: "joi-source:test", credentialVersion: 1,
       displayName: "Probe test", kind, modelCapability: "custom-unverified-tools", modelId: "deepseek-flash",
       modelRevisionId: "model-1", sourceId: "test", sourceRevisionId: "revision-1",
+      contextWindow:1_000_000,maxOutputTokens,
     }),
   };
 }
@@ -61,7 +62,7 @@ describe("model source probe over the real Pi Responses transport", () => {
 
     expect(await validator().validate(source)).toMatchObject({ status: "READY" });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ reasoning: { effort: "none" }, max_output_tokens: 64 });
+    expect(requests[0]).toMatchObject({ reasoning: { effort: "none" }, max_output_tokens: 65_536 });
     expect(requests[0]?.tools).toBeUndefined();
   });
 
@@ -96,7 +97,7 @@ describe("model source probe over the real Pi Responses transport", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["completed", "incomplete"])("retries thinking-only %s output once with more room for text", async (status) => {
+  it.each(["completed", "incomplete"])("retries thinking-only %s output once with the same configured output limit", async (status) => {
     const requests: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: RequestInit) => {
       if (typeof init.body !== "string") throw new Error("expected JSON request body");
@@ -104,7 +105,7 @@ describe("model source probe over the real Pi Responses transport", () => {
       return requests.length === 1 ? response("", status, true) : response("OK");
     }));
     expect(await validator().validate(record())).toMatchObject({ status: "READY" });
-    expect(requests.map((request) => request.max_output_tokens)).toEqual([64, 1024]);
+    expect(requests.map((request) => request.max_output_tokens)).toEqual([65_536, 65_536]);
     for (const request of requests) {
       expect(request.reasoning).toEqual({ effort: "none" });
       expect(request.tools).toBeUndefined();
@@ -138,7 +139,7 @@ describe("model source probe over the real Pi Responses transport", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps the forced-thinking plan enabled during the larger retry", async () => {
+  it("keeps the forced-thinking plan and configured output limit on retry", async () => {
     const requests: Record<string, unknown>[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: RequestInit) => {
       if (typeof init.body !== "string") throw new Error("expected JSON request body");
@@ -147,7 +148,7 @@ describe("model source probe over the real Pi Responses transport", () => {
     }));
     expect(await validator().validate(record("generic-openai", "https://coding.dashscope.aliyuncs.com/v1")))
       .toMatchObject({ status: "READY" });
-    expect(requests.map((request) => request.max_output_tokens)).toEqual([256, 1024]);
+    expect(requests.map((request) => request.max_output_tokens)).toEqual([65_536, 65_536]);
     expect(requests.map((request) => request.reasoning)).toEqual([
       { effort: "low", summary: "auto" }, { effort: "low", summary: "auto" },
     ]);

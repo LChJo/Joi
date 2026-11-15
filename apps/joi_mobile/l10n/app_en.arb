@@ -2988,9 +2988,9 @@
     "description": "evolution: Not enough independent evaluation or trial samples",
     "placeholders": {}
   },
-  "evolutionBlockerProtocol": "Model tool protocol failed; inspect the source before resuming",
+  "evolutionBlockerProtocol": "This experiment failed the tool protocol check. Inspect the model source; automatic evaluation remains subject to the daily limit.",
   "@evolutionBlockerProtocol": {
-    "description": "evolution: Model tool protocol failed; inspect the source before resuming",
+    "description": "evolution: This experiment failed the tool protocol check. Inspect the model source; automatic evaluation remains subject to the daily limit.",
     "placeholders": {}
   },
   "evolutionBlockerModel": "Model or evaluator version changed; revalidation required",

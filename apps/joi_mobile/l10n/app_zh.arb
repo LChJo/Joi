@@ -570,7 +570,7 @@
   "evolutionBlockerBudget": "今日可用评测预算已用完",
   "evolutionBlockerNoCase": "尚无可复现缺陷案例",
   "evolutionBlockerSamples": "独立评测或灰度样本不足",
-  "evolutionBlockerProtocol": "模型工具协议失败，检查模型源后再恢复",
+  "evolutionBlockerProtocol": "本轮工具协议检查未通过，请检查模型源；自动评测仍受每日限额约束。",
   "evolutionBlockerModel": "模型或评测器版本变化，需重新验证",
   "evolutionBlockerCandidate": "今天已自动启动过新候选，下一次自动学习需等待下一日；也可手动安排评测。",
   "evolutionMethodReverted": "已回退",

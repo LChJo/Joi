@@ -5,12 +5,23 @@ describe("Pi evolution adapter", () => {
   const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
   const usage = { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 };
   const finish = { type: "toolCall", name: "finish", arguments: { decision: "wait", evidenceIds: ["record-11"] } };
-  function adapter(response: unknown, api = "anthropic-messages") {
+  function adapter(response: unknown, api = "anthropic-messages", maxTokens = 131_072) {
     const completeSimple = vi.fn().mockResolvedValue(response);
-    const resolve = vi.fn().mockResolvedValue({ model: { api }, models: { completeSimple }, thinkingLevel: "xhigh" });
+    const resolve = vi.fn().mockResolvedValue({ model: { api,maxTokens }, models: { completeSimple }, thinkingLevel: "xhigh" });
     return { model: new PiEvolutionModel({ resolver: { resolve }, sources: { selectInitial: vi.fn().mockResolvedValue(pin) } }), completeSimple };
   }
   const input = { pin, systemPrompt: "simulation", prompt: "fixture", mode: "simulation" as const, idempotencyId: "call-1" };
+  it.each([4096,262_144])("uses the configured %s output limit for evolution requests", async maxTokens => {
+    const {model,completeSimple}=adapter({content:[finish],stopReason:"toolUse",usage},"anthropic-messages",maxTokens);
+    await model.call(input);
+    expect(completeSimple.mock.calls[0]?.[2]).toMatchObject({maxTokens});
+  });
+  it("offers only evidence and finish tools during protocol preflight", async () => {
+    const { model,completeSimple }=adapter({content:[finish],stopReason:"toolUse",usage});
+    await model.call({...input,mode:"protocol",contract:"METHOD_V2"});
+    const context=completeSimple.mock.calls[0]?.[1] as {tools:{name:string}[]};
+    expect(context.tools.map(tool=>tool.name)).toEqual(["read_evidence","finish"]);
+  });
   it("offers registered three-module methods only for the versioned learning contract", async () => {
     const { model, completeSimple } = adapter({ content: [{ type: "toolCall", name: "propose_strategy", arguments: {
       strategy: { version: 2, context: [], planning: ["dependency_outline"], completion: [] }, fixes: ["case-one"], risks: [],
@@ -78,14 +89,14 @@ describe("Pi evolution adapter", () => {
   it("pins only immutable source identifiers and never executes returned tools", async () => {
     const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
     const completeSimple = vi.fn().mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "wait", evidenceIds: ["record-11"] } }], usage: { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 } });
-    const resolve = vi.fn().mockResolvedValue({ model: { baseUrl: "https://example.test" }, models: { completeSimple }, thinkingLevel: "off" });
+    const resolve = vi.fn().mockResolvedValue({ model: { baseUrl: "https://example.test",maxTokens:65_536 }, models: { completeSimple }, thinkingLevel: "off" });
     const selectInitial = vi.fn().mockResolvedValue({ ...pin, turnId: "ephemeral" });
     const model = new PiEvolutionModel({ resolver: { resolve }, sources: { selectInitial } });
     expect(await model.pin()).toEqual(pin);
     expect(selectInitial).toHaveBeenCalledWith("evolution", { requireToolProof: true });
     expect(await model.call({ pin, systemPrompt: "simulation", prompt: "fixture", mode: "simulation", idempotencyId: "call-1" })).toEqual({ value: { action: "finish", decision: "wait", evidenceIds: ["record-11"] }, tokens: 100 });
     expect(completeSimple).toHaveBeenCalledTimes(1);
-    expect(completeSimple.mock.calls[0]?.[2]).toMatchObject({ maxTokens: 2048 });
+    expect(completeSimple.mock.calls[0]?.[2]).toMatchObject({ maxTokens: 65_536 });
     completeSimple.mockResolvedValue({ content: [] });
     // A typed code, so the service can route this to the model-quality path instead of the
     // infrastructure park-and-retry one, and the diagnostic can name the failure class.

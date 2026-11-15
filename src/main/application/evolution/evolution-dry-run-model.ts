@@ -14,7 +14,7 @@ import { DRY_RUN_SOURCE_PIN } from "./evolution-dry-run-store.js";
 export class DeterministicEvolutionModel implements EvolutionModel {
   constructor(private readonly store: EvolutionStore, private readonly workbenchId: string) {}
   pin(): Promise<EvolutionSourcePin> { return Promise.resolve(DRY_RUN_SOURCE_PIN); }
-  call(input: { mode: "proposal" | "simulation" }): Promise<unknown> {
+  call(input: Pick<Parameters<EvolutionModel["call"]>[0], "mode">): Promise<unknown> {
     const batch = this.store.read(this.workbenchId).batch;
     if (batch === null) throw new Error("evolution_dry_run_batch_missing");
     return Promise.resolve(input.mode === "proposal" ? this.#propose(batch) : this.#simulate(batch));

@@ -28,6 +28,16 @@ async function capturedRequest(
 }
 
 describe("Pi Workbench routing runtime", () => {
+  it.each(["abstract",undefined] as const)("uses the configured output ceiling for %s routing", async mode => {
+    const faux=fauxProvider({provider:"routing-configured-limit"});
+    const models=createModels(); models.setProvider(faux.provider);
+    const request=vi.spyOn(models,"completeSimple").mockResolvedValue(fauxAssistantMessage([]));
+    const model={...faux.getModel(),contextWindow:1_000_000,maxTokens:131_072};
+    const runtime=new PiWorkbenchRoutingRuntime({resolver:{resolve:async()=>({model,models,thinkingLevel:"off"})},
+      sources:{selectInitial:async turnId=>({modelId:"model",modelRevisionId:"mr",sourceId:"source",sourceRevisionId:"sr",turnId})}});
+    await runtime.decide({...(mode === undefined ? {} : {mode}),workbenches:[],input:"Route this fixture",repair:false});
+    expect(request.mock.calls[0]?.[2]?.maxTokens).toBe(model.maxTokens);
+  });
   it("requires a unique semantic match and offers user selection", async () => {
     const request = await capturedRequest(
       async (runtime) => runtime.decide({

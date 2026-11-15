@@ -148,10 +148,8 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
       const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl);
-      const thinks = thinkingLevel !== "off" || modelRequiresAlwaysOnThinking(model.baseUrl);
       // DeepSeek defaults to thinking even when Pi's model metadata says false.
-      // For this no-tool probe only, let Pi emit reasoning.effort=none; otherwise
-      // thinking can exhaust the tiny output budget before any visible answer.
+      // The fixed no-tool probe requests no reasoning when the configured effort is off.
       const probeModel = model.api === "openai-responses" && new URL(model.baseUrl).hostname === "api.deepseek.com"
         ? { ...model, reasoning: true } : model;
       const timestamp = Date.now();
@@ -159,7 +157,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
         const response = await trackPiModels(models, usage, () => ({ engine: "pi", purpose: "probe", sourceId: source.sourceId, sourceName: source.activeSourceRevision.displayName, modelId: source.activeModelRevision.modelId })).completeSimple(probeModel, {
           messages: [{ content: "Reply with OK.", role: "user", timestamp }],
         }, {
-          maxTokens: attempt === 0 ? (thinks ? 256 : 64) : 1024,
+          maxTokens: model.maxTokens,
           signal,
           ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
         });

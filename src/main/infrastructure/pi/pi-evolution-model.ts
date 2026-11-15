@@ -37,14 +37,14 @@ export class PiEvolutionModel implements EvolutionModel {
       name: "propose_strategy", description: "Propose exactly one module change with supporting development scenario IDs.",
       parameters: Type.Object({ strategy: input.contract === "METHOD_V2" ? methodStrategy : Type.Object({ context: Type.Union([Type.Literal("baseline"), Type.Literal("requirements_first"), Type.Literal("open_questions_first")]), completion: Type.Union([Type.Literal("baseline"), Type.Literal("evidence_matrix"), Type.Literal("contradiction_check")]) }), fixes: Type.Array(Type.String(), { maxItems: 10 }), risks: Type.Array(Type.String(), { maxItems: 10 }) }),
     }] : [{ name: "read_evidence", description: "Read one synthetic evidence record by ID.", parameters: Type.Object({ evidenceId: Type.String() }) },
-      ...(input.contract === "METHOD_V2" ? [{ name: "work_plan", description: "Validate the disposable current-case dependency plan without dispatching any work.", parameters: Type.Unsafe(METHOD_WORK_PLAN_SCHEMA) }] : []),
+      ...(input.contract === "METHOD_V2" && input.mode !== "protocol" ? [{ name: "work_plan", description: "Validate the disposable current-case dependency plan without dispatching any work.", parameters: Type.Unsafe(METHOD_WORK_PLAN_SCHEMA) }] : []),
       { name: "finish", description: "Submit the completion decision and evidence IDs read.", parameters: Type.Object({ decision: Type.Union([Type.Literal("complete"), Type.Literal("continue"), Type.Literal("wait")]), evidenceIds: Type.Array(Type.String(), { maxItems: 10 }) }) }];
     const instruction = "Return exactly one tool call per response. Do not answer in plain text. After read_evidence, stop and wait for its observation before requesting another record or calling finish.";
     let response: AssistantMessage;
     try {
       response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "evolution", sourceId: input.pin.sourceId, modelId: input.pin.modelId, ...(input.workbenchId === undefined ? {} : { workbenchId: input.workbenchId }) })).completeSimple(model, { systemPrompt: `${input.systemPrompt}\n${instruction}`,
       messages: [{ role: "user", content: input.prompt, timestamp: Date.now() }], tools,
-      }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
+      }, { maxTokens: model.maxTokens, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
         onPayload: (payload: unknown) => {
           if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return;
           // Auto selection preserves thinking compatibility; the prompt requires one call and

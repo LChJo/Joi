@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "556c2d30cf7a11060e081343f33b4d02c53a205fe3a5b6cb9fb288cd60deca35",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "e8fa82036dec2781d55bdb63ddbc5a9cba6b428c4d6389bb5692d9e8cdfb1918",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
-        "endLine": 696
+        "endLine": 708
       }
     },
     {
@@ -1660,8 +1660,8 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "3be8da56503c4b115caafd57079f2b8409c1d7a7a75d899e23f553cd79645daf",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "5c24da2178de1c420bf963bde471048a41a4d991371128543693a4b498d980ba",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
         "endLine": 9710
@@ -1688,8 +1688,8 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "48e0a33bf033aedee7c27df480498f045f288247ff6c2a2cda5f89977f80a571",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "ebacc32004fa69c91127b5d774201f07686a25035eb8b4a85437cae78107ca88",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
         "endLine": 6833
@@ -1842,8 +1842,8 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "ece644351bd50d89a7f990572b60c42cc892c1bbfb2f0f440316d35ea484b4af",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "aa71f95920a8404d013c8df36aaab0b9053bbea6215d7ecb2d2c1c386400e3df",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
         "endLine": 8629
@@ -2454,15 +2454,15 @@
     {
       "id": "d64591f6-724e-4892-b3bb-602f4a1be477",
       "kind": "source-code",
-      "claim": "Method learning persists bounded backoff and pause causes, releases sample-waiting slots with scope isolation, gates proposal readiness and development cost, and reuses compatible numeric development comparisons.",
+      "claim": "Method learning separates structural preflight from quality, records fixed failure classes and bounded correction, rejects only protocol-failed experiments while preserving daily retry limits and defect evidence, and retains pause/backoff/sample and experience safeguards.",
       "location": {
         "path": "src/main/application/evolution/method-learning-service.ts"
       },
-      "hash": "a7a4d18c7c8c23d6010ca5298304111946d721fa6033a196a10a08ae5b9eeecc",
-      "observedAt": "2026-11-15T15:06:13.412Z",
+      "hash": "9159b1f6d4024504bfaf8ed9df59fc12e3208688ce826aca7778f0df30059e07",
+      "observedAt": "2026-11-15T17:31:20.897Z",
       "range": {
         "startLine": 1,
-        "endLine": 725
+        "endLine": 746
       }
     },
     {
@@ -2510,12 +2510,12 @@
     {
       "id": "dae47d44-3fd5-44e4-8c84-b7b383b49b7c",
       "kind": "source-code",
-      "claim": "Additive optional method-learning projections keep v2 compatibility and contain only fixed reasons, numeric metadata, timestamps and opaque identities.",
+      "claim": "Method learning DTOs retain additive compatibility and fixed failure facts, distinguishing unknown tools, invalid arguments and protocol prerequisites without payloads.",
       "location": {
         "path": "src/shared/evolution.ts"
       },
-      "hash": "8d79a07185b067109da067b6688eeff964e4c9eb504e065e9d4811868658550a",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "236affae2fd98c4d8e42d7af687fd6ed658d928bb124dc30caef78c765c4f3da",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
         "endLine": 195
@@ -2524,29 +2524,113 @@
     {
       "id": "251779e1-a5cc-4fda-a221-f895d44d0c88",
       "kind": "source-code",
-      "claim": "Disposable model-learning regressions cover persistent retry limits, opt-out cancellation, independent scheduling, sample readiness, expiry, cost rejection and conditional experience isolation.",
+      "claim": "Disposable learning regressions cover protocol order and quality separation, specific failure classification, bounded local rejection, daily/explicit recovery, cost accounting and existing backoff/sample/experience invariants.",
       "location": {
         "path": "tests/integration/method-learning-lifecycle.test.ts"
       },
-      "hash": "78e89f8a5f5d2ae7e52859ec57a33e4d3e95f6087e225e6e6db9e8d2bb497c9e",
-      "observedAt": "2026-11-15T15:06:13.414Z",
+      "hash": "693e35e2f9ce536b14322a9f4a9b152448294b6d0b063c2394f86e4d61a0766a",
+      "observedAt": "2026-11-15T17:31:20.898Z",
       "range": {
         "startLine": 1,
-        "endLine": 404
+        "endLine": 471
       }
     },
     {
       "id": "9cddc3d6-d91f-44e5-b7dc-541889c8d24e",
       "kind": "document",
-      "claim": "AC-EVO-03/04/05/07 bound retry, independent-sample waiting and measured development feedback without claiming real-model or production benefit.",
+      "claim": "AC-EVO-03/04/05/07 distinguish structural protocol checks and local failure recovery, preserve daily budgets and evaluation gates, and require configured output ceilings without claiming real-provider benefit or automatic failover.",
       "location": {
         "path": "docs/adr/0020-bounded-strategy-evolution.md"
       },
-      "hash": "c79285faec9ccf020d4d742091d4c59372d8ac2a112d2e9fe322760aca6340ca",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "81ee38570e529fe19d4b45a4a68eefb783b37e02b150f2dc6757f083b363e3cc",
+      "observedAt": "2026-11-15T17:29:12.963Z",
       "range": {
         "startLine": 1,
-        "endLine": 151
+        "endLine": 155
+      }
+    },
+    {
+      "id": "0c15f81a-c17b-4ea6-8e7f-ee2b438993df",
+      "kind": "source-code",
+      "claim": "Pi evolution exposes preflight-only fixture tools, requests the effective configured output limit and retains single-tool, usage, timeout and safe failure contracts; automatic failure-triggered source fallback is not wired.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-evolution-model.ts"
+      },
+      "hash": "49c8b16b2648aa036cb54b5aa80e09bded56ebf6fe609c6751644af84b46c893",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 77
+      }
+    },
+    {
+      "id": "948c3b24-2539-45f2-b359-57d6de7077a5",
+      "kind": "source-code",
+      "claim": "Routing and abstract naming request the effective configured model output maximum while returning only registered structured routing decisions.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-workbench-routing-runtime.ts"
+      },
+      "hash": "2d62bf46b2d48e0716e20432c327ded935a34f0499e791a589d939b903da604d",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 104
+      }
+    },
+    {
+      "id": "ce15aadc-3f49-421e-abf4-9c1465c28048",
+      "kind": "source-code",
+      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-model-source-validator.ts"
+      },
+      "hash": "9eace1a6ecc6f7286484b8558ebe65d391d85a9535db7b4a9bd309a9f75889ed",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 182
+      }
+    },
+    {
+      "id": "b68ad284-eace-4317-80a9-94c0bcb621e5",
+      "kind": "source-code",
+      "claim": "Synthetic Pi adapter regressions verify protocol-only tools, configured output limits and safe failure/usage classification.",
+      "location": {
+        "path": "tests/unit/pi-evolution-model.test.ts"
+      },
+      "hash": "275f7e2470bc6b3a5a70949adca7fabd9f46b2904fb1c1f5fff73f7ab06b81f8",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 108
+      }
+    },
+    {
+      "id": "2d288df3-a99a-4378-8c00-f7d5a8d2b2b8",
+      "kind": "source-code",
+      "claim": "Real Pi transport against synthetic fetch verifies configured probe and retry output maxima, fixed no-tool requests, cancellation and safe errors.",
+      "location": {
+        "path": "tests/unit/pi-model-source-probe.test.ts"
+      },
+      "hash": "6f7738a8b4cfe848bbe63ac564b25a07f2edafb05ce2649c60c67d6e3c570a60",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 176
+      }
+    },
+    {
+      "id": "d20a610d-59f1-44bd-9db0-c5ec1bed6755",
+      "kind": "source-code",
+      "claim": "Routing regressions verify configured output ceilings for selection and naming with structured decisions and cluster prompts.",
+      "location": {
+        "path": "tests/unit/pi-workbench-routing-runtime.test.ts"
+      },
+      "hash": "0a10941baf5ce9bd72ede7ef640c28f472e22061d941a60c326e86fe49708c24",
+      "observedAt": "2026-11-15T17:29:12.963Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 133
       }
     }
   ]

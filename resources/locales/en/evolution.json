@@ -812,9 +812,9 @@
     "sourceText": "独立评测或灰度样本不足"
   },
   "blockerProtocol": {
-    "message": "Model tool protocol failed; inspect the source before resuming",
-    "description": "evolution: Model tool protocol failed; inspect the source before resuming",
-    "sourceText": "模型工具协议失败，检查模型源后再恢复"
+    "message": "This experiment failed the tool protocol check. Inspect the model source; automatic evaluation remains subject to the daily limit.",
+    "description": "evolution: This experiment failed the tool protocol check. Inspect the model source; automatic evaluation remains subject to the daily limit.",
+    "sourceText": "本轮工具协议检查未通过，请检查模型源；自动评测仍受每日限额约束。"
   },
   "blockerModel": {
     "message": "Model or evaluator version changed; revalidation required",

@@ -7,10 +7,6 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
 
-// Structured route decisions and editable drafts both need room for their complete tool arguments.
-const ROUTE_MAX_TOKENS = 512;
-const ABSTRACT_MAX_TOKENS = 384;
-
 const SELECT_TOOL = {
   constrainedSampling: { strict: "prefer", type: "json_schema" },
   description: "Select the single Workbench that clearly covers the target project and primary work. A shared topic or reference source is insufficient.",
@@ -99,7 +95,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
       }],
       systemPrompt: abstract ? ABSTRACT_SYSTEM_PROMPT : ROUTE_SYSTEM_PROMPT,
       tools: abstract ? [CREATE_TOOL] : [SELECT_TOOL, CLARIFY_TOOL, CREATE_TOOL],
-    }, { maxTokens: abstract ? ABSTRACT_MAX_TOKENS : ROUTE_MAX_TOKENS, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }) });
+    }, { maxTokens: model.maxTokens, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }) });
     const call = response.content.find((block) => block.type === "toolCall"
       && (block.name === "workbench_select" || block.name === "workbench_create" || block.name === "workbench_clarify"));
     return call?.type === "toolCall" ? call.arguments : null;
