@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JoiGoalDetailDto, JoiGoalMapDetailDto, JoiGoalMapPathDto } from "../../../shared/joi.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import { queryJoiGoalProgress } from "./sqlite-joi-goal-progress.js";
+import { visibleHarnessPathSql } from "./sqlite-joi-harness-paths.js";
 
 type Row = Record<string, string | number | null>;
 const display = (value: string | number | null | undefined): string => sanitizeAgentConversationText(String(value ?? "")).replace(/\r\n?/gu, "\n").trim();
@@ -15,7 +16,7 @@ export function queryJoiGoalDetail(db: DatabaseSync, goalId: string, page: { off
   const result: JoiGoalDetailDto = { goalId, fullTitle: display(goal.body) || "未命名目标" };
   const map = db.prepare(`SELECT m.destination, m.status, m.revision,
     (SELECT COALESCE(MAX(layer),0) FROM joi_harness_paths WHERE goal_input_id=m.goal_input_id) AS current_layer,
-    (SELECT COUNT(*) FROM joi_harness_paths WHERE goal_input_id=m.goal_input_id) AS path_count,
+    (SELECT COUNT(*) FROM joi_harness_paths p WHERE p.goal_input_id=m.goal_input_id AND ${visibleHarnessPathSql("p")}) AS path_count,
     (SELECT COUNT(*) FROM joi_harness_decisions WHERE goal_input_id=m.goal_input_id) AS decision_count,
     (SELECT COUNT(*) FROM joi_harness_fog WHERE goal_input_id=m.goal_input_id) AS fog_count
     FROM joi_harness_maps m WHERE m.goal_input_id=? AND m.workbench_id=?`).get(goalId, goal.workbench_id ?? null) as Row | undefined;
@@ -24,7 +25,7 @@ export function queryJoiGoalDetail(db: DatabaseSync, goalId: string, page: { off
     FROM joi_harness_paths p JOIN joi_harness_maps m ON m.goal_input_id=p.goal_input_id
     LEFT JOIN work_items w ON w.work_id=p.work_id AND w.input_id=p.goal_input_id AND w.workbench_id=m.workbench_id
     LEFT JOIN joi_harness_decisions d ON d.decision_id=p.resolved_decision_id AND d.goal_input_id=p.goal_input_id
-    WHERE p.goal_input_id=? ORDER BY p.layer DESC,p.created_at DESC,p.path_id DESC LIMIT ? OFFSET ?`)
+    WHERE p.goal_input_id=? AND ${visibleHarnessPathSql("p")} ORDER BY p.layer DESC,p.created_at DESC,p.path_id DESC LIMIT ? OFFSET ?`)
     .all(goalId, page.limit, page.offset) as Row[];
   const decisions = db.prepare(`SELECT decision_id,kind,summary,detail,created_at FROM joi_harness_decisions
     WHERE goal_input_id=? ORDER BY created_at DESC,decision_id DESC LIMIT ? OFFSET ?`).all(goalId, page.limit, page.offset) as Row[];

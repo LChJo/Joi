@@ -502,6 +502,17 @@ describe("joi reasoning tools", () => {
     expect(harness.addCalls).toHaveLength(1);
   });
 
+  it("offers only active configured partners as dispatch candidates", async () => {
+    const harness = makeTools({ partners: [partnerDto,
+      { ...partnerDto, partnerId: "disabled", status: "DISABLED" },
+      { ...partnerDto, partnerId: "source-not-ready", configuration: {
+        reasonCodes: ["partner_model_source_not_ready"], status: "ACTION_REQUIRED",
+      } },
+    ] });
+    const available = await harness.call("partner_list_available", {}) as { partnerId: string }[];
+    expect(available.map(partner => partner.partnerId)).toEqual([partnerDto.partnerId]);
+  });
+
   it("reuses an active partner whose cluster key matches after stripping one-off model tokens", async () => {
     const existing = { ...partnerDto, createdBy: "user" as const, displayName: "模型调研搭档" };
     const harness = makeTools({ partners: [existing] });

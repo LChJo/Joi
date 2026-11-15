@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04 requires native Windows/macOS installer targets after quality gates, per-platform downloadable artifacts, manual triggering and failure on missing installers.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04 requires native Windows/macOS installer targets after quality gates, per-platform downloadable artifacts, manual triggering and failure on missing installers. AC-07/14/44/48/53 also specify Worker environment casing, current source admission, canonical Work paths and guarded recovery reopening.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "d1b0f073ed23226a5e792b81e527bef057bc71af6992be786c26e507c3f64821",
-      "observedAt": "2026-11-15T08:40:32.158Z",
+      "hash": "bc5d2b784498167db4eebc3a0599228efefa1164dae6a282653a5384afa520be",
+      "observedAt": "2026-11-15T12:13:09.113Z",
       "range": {
         "startLine": 1,
-        "endLine": 685
+        "endLine": 693
       }
     },
     {
@@ -2076,12 +2076,12 @@
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Cancellation intent is explicit for resource waits and the tool catalog advertises git_read.",
+      "claim": "Available dispatch candidates include only ACTIVE partners without ACTION_REQUIRED configuration; the management catalog retains all records.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "77666364ebdfee0c420960125a1b221ddb6ac503e7d3abbdcec831d464c4bcdb",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "42148c7de8a4d6f7188f0448b5db90a07d665119b7d22d7d0db9fcd38792de75",
+      "observedAt": "2026-11-15T12:13:09.113Z",
       "range": {
         "startLine": 1,
         "endLine": 1086
@@ -2118,15 +2118,15 @@
     {
       "id": "54924ed6-1441-4f5d-a175-47b16eae6fbc",
       "kind": "source-code",
-      "claim": "The production reasoning tool factory preserves resource waits and allows explicit user cancellation.",
+      "claim": "Synthetic tool regression excludes disabled and source-not-ready partners from available candidates while preserving the usable partner.",
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "cc4431f2269e5f87f66da3112604bcdb89887c38ac51b7c65954af77ea53e6d4",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "f0995e0a51e4d42bdf42316026fe5f0c974e120a9a324eb687efca087eb90059",
+      "observedAt": "2026-11-15T12:13:09.113Z",
       "range": {
         "startLine": 1,
-        "endLine": 1055
+        "endLine": 1066
       }
     },
     {
@@ -2323,6 +2323,132 @@
       "range": {
         "startLine": 1,
         "endLine": 57
+      }
+    },
+    {
+      "id": "dd14b77b-3e78-4d08-8012-39d32d8e2aef",
+      "kind": "source-code",
+      "claim": "Pinned Pi model sources are checked for current READY state before dispatch. Public configuration preserves the catalog during source-read failures and leaves native engines independent.",
+      "location": {
+        "path": "src/main/application/partners/partner-registry-service.ts"
+      },
+      "hash": "fea0c4adcca1fcbab264c7a43c93a222d871cb47bd058cc7822a616256c2dedf",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 459
+      }
+    },
+    {
+      "id": "0a318b41-99e0-4705-bcf0-b2157afc5f8c",
+      "kind": "source-code",
+      "claim": "Synthetic source state transitions, source lookup failure, native isolation and immutable revision retention exercise dispatch admission.",
+      "location": {
+        "path": "tests/unit/partner-registry-service.test.ts"
+      },
+      "hash": "9738730e4f2b26f63a08f61372f935c3f4347701ea8372d8ef02ab71f536fee3",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 473
+      }
+    },
+    {
+      "id": "3426be5b-ee08-43a4-8954-a94cdb103ade",
+      "kind": "source-code",
+      "claim": "Windows PATH and PATHEXT lookup is case-insensitive in Worker environments; user CLI priority and app-local shim exclusion remain enforced.",
+      "location": {
+        "path": "src/main/infrastructure/mana/local-cli-executable-resolver.ts"
+      },
+      "hash": "08e692d3f9217427aa1cba4fc29a57e1f70e13ab498ec774f777e61a2d3bc2b2",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 128
+      }
+    },
+    {
+      "id": "71d0db16-d0b0-49d2-81a9-deb9c6fc107f",
+      "kind": "source-code",
+      "claim": "Real Windows Workers resolve fake Claude and Codex installations with mixed-case environment keys; npm and native resolution retain existing coverage.",
+      "location": {
+        "path": "tests/unit/mana-executable-resolver.test.ts"
+      },
+      "hash": "452e2a8cbe1f2b15cd1685d4a4a90df9285ca1d754de4d32e935284aa5435a76",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 143
+      }
+    },
+    {
+      "id": "3fe19ae5-307a-42df-a06c-51a4f22df5f0",
+      "kind": "source-code",
+      "claim": "Work-linked charting reuses stable path identity, derives terminal state, and reopens recovered paths while preserving decisions, exclusions and cleared maps.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
+      },
+      "hash": "13718f3605bded43c272a2a6cbe516abc2ed75f7bd02f296ab2f507856bbd5d6",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1390
+      }
+    },
+    {
+      "id": "3e8617b6-ca31-4aad-a756-86b80351c515",
+      "kind": "source-code",
+      "claim": "Canonical Work-path visibility chooses deepest/newest stable rows per goal without deleting historical facts; unlinked paths remain distinct.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-joi-harness-paths.ts"
+      },
+      "hash": "f3e49d4a3a8b9f42340ac47d331880fe891e58f8442882f2431f9f91098be8db",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 10
+      }
+    },
+    {
+      "id": "321ffa43-c02f-4ddb-aa43-6bd5a3b0546a",
+      "kind": "source-code",
+      "claim": "Detail pagination and totals use canonical Work-path visibility before LIMIT/OFFSET while preserving safe Work and decision projections.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-joi-goal-detail.ts"
+      },
+      "hash": "ce626935567099f197f40bfd691ad10a1a844c72494d47cd1a2b4e35f1b54430",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 54
+      }
+    },
+    {
+      "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
+      "kind": "source-code",
+      "claim": "Disposable SQLite regressions cover Work-path identity, terminal state, recovery, decision/exclusion/cleared guards, legacy duplicate paging and retained history.",
+      "location": {
+        "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
+      },
+      "hash": "020674847153192b78ff4d594be32536e673ab69914620a91949dd8bbc39ba78",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 2075
+      }
+    },
+    {
+      "id": "0139295d-c933-4f90-8dbe-e817016f1e65",
+      "kind": "document",
+      "claim": "AC-07/14/44/48/53 map Worker CLI detection, current-source dispatch admission, path identity and recovery projection to bounded regressions.",
+      "location": {
+        "path": "docs/10-requirements-traceability.md"
+      },
+      "hash": "add74747323e4248d0890c1e1c43283c07e1ba515a338c64de7fb4ee484f8dc1",
+      "observedAt": "2026-11-15T12:13:09.113Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 286
       }
     }
   ]

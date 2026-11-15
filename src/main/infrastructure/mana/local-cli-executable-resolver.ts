@@ -16,15 +16,22 @@ export interface ResolvedLocalCliExecutable {
   protocol: LocalCliProtocol;
 }
 
+/** Windows Worker environments preserve key casing and use case-sensitive property lookup. */
+function environmentValue(name: string): string | undefined {
+  if (process.env[name] !== undefined || process.platform !== "win32") return process.env[name];
+  const key = Object.keys(process.env).find(candidate => candidate.toUpperCase() === name);
+  return key === undefined ? undefined : process.env[key];
+}
+
 function executableCandidates(commandName: string): string[] {
   if (process.platform !== "win32") return [commandName];
   if (/\.[a-z0-9]+$/iu.test(commandName)) return [commandName];
-  const pathext = process.env.PATHEXT?.split(";").filter(Boolean) ?? [".COM", ".EXE", ".BAT", ".CMD"];
+  const pathext = environmentValue("PATHEXT")?.split(";").filter(Boolean) ?? [".COM", ".EXE", ".BAT", ".CMD"];
   return pathext.map((ext) => `${commandName}${ext.toLowerCase()}`);
 }
 
 function resolvePathExecutable(commandNames: string[]): string | undefined {
-  const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const pathEntries = (environmentValue("PATH") ?? "").split(delimiter).filter(Boolean);
   for (const dir of pathEntries) {
     if (isNodeModulesBinDirectory(dir)) continue;
     for (const commandName of commandNames) {

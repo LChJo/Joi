@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+AC-07/14/44/48/53 搭档就绪与路径事实一致性：Windows Worker 的大小写环境变量与本机 CLI 解析对应 `mana-executable-resolver.test.ts`；模型源禁用、移除、恢复、读取失败及原生引擎隔离对应 `partner-registry-service.test.ts`；路径身份复用、终态关闭、恢复重开、决策/排除/清图保护及历史重复分页对应 `sqlite-joi-harness-repository.test.ts`，详情与契约兼容对应 `joi-goal-detail.test.ts` / `joi-goal-detail-http.test.ts`。验收条款见 [搭档就绪与路径事实一致性](07-roadmap-and-acceptance.md#2026-11-15-搭档就绪与路径事实一致性ac-0714444853)。
+
 M0 Windows/macOS 可重复构建与打包：原生 Cargo 查找覆盖显式路径、`CARGO_HOME`、默认 rustup 目录及系统 `PATH`，不依赖 runner 预装位置；对应 `tests/contract/native-build-toolchain.test.ts`，双平台 CI 显式安装 Rust 并执行完整构建、E2E 和打包门禁。
 
 桌面原生菜单（`docs/02-ux-specification.md`）：`electron-smoke.spec.ts` 在 Windows/Linux 断言窗口菜单栏隐藏；`isMenuBarVisible()` 不适用于 macOS，macOS 继续执行同一完整设置、工作台与响应式交互流程。

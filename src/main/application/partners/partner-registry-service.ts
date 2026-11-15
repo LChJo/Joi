@@ -286,15 +286,16 @@ export class PartnerRegistryService {
   }
 
   async list(): Promise<PartnerDto[]> {
+    const sources = await this.dependencies.modelSources?.list().catch(() => []);
     return Promise.all((await this.dependencies.repository.listActive())
       .filter((revision) => revision.status !== "DELETED")
-      .map((revision) => this.#public(revision)));
+      .map((revision) => this.#public(revision, sources)));
   }
 
   async pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> {
     const revision = await this.#active(partnerId);
     if (revision.status !== "ACTIVE") throw new DomainError("partner_not_available", "Partner is not available.");
-    const configuration = this.#configuration(revision);
+    const configuration = await this.#configuration(revision);
     if (configuration !== undefined) {
       throw new DomainError(configuration.reasonCodes[0] ?? "partner_configuration_invalid", "Partner configuration requires correction before dispatch.");
     }
@@ -344,8 +345,8 @@ export class PartnerRegistryService {
     }
   }
 
-  async #public(revision: PartnerRevision): Promise<PartnerDto> {
-    const configuration = this.#configuration(revision);
+  async #public(revision: PartnerRevision, sources?: ModelSourceDto[]): Promise<PartnerDto> {
+    const configuration = await this.#configuration(revision, sources);
     return {
       ...toPublicPartner(revision),
       ...(configuration === undefined ? {} : { configuration }),
@@ -355,7 +356,14 @@ export class PartnerRegistryService {
     };
   }
 
-  #configuration(revision: PartnerRevision): PartnerConfigurationDto | undefined {
+  async #configuration(revision: PartnerRevision, sources?: ModelSourceDto[]): Promise<PartnerConfigurationDto | undefined> {
+    if (revision.kind === "local-pi" && revision.engine === "pi-core" && revision.modelSourceId !== undefined
+      && this.dependencies.modelSources !== undefined) {
+      const current = sources ?? await this.dependencies.modelSources.list().catch(() => []);
+      if (!current.some(source => source.sourceId === revision.modelSourceId && source.status === "READY")) {
+        return { reasonCodes: ["partner_model_source_not_ready"], status: "ACTION_REQUIRED" };
+      }
+    }
     if (revision.kind !== "local-pi" || this.dependencies.skills === undefined) return undefined;
     try {
       this.#validateLocalSkills(revision.engine, revision.skills, revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM"), revision.tools);

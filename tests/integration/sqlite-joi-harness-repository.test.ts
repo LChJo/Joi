@@ -1458,6 +1458,8 @@ describe("SqliteJoiHarnessRepository", () => {
           .run(workId, workbenchId, goalInputId, index < 12 ? "COMPLETED" : "FAILED", NOW, NOW));
         await repository.chartPath({ goalInputId, open: { layer: 1, title: "待同步路径", workId }, turnId: `turn-${goalInputId}` });
       }
+      // The persisted route snapshot is still open while all linked Work is already terminal.
+      fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET status='OPEN' WHERE goal_input_id=?").run(goalInputId));
       seedCompletedLayer(fixture, goalInputId, 1);
       const [digest] = await repository.listReviewDigests();
       if (digest === undefined) throw new Error("review digest missing");
@@ -1716,6 +1718,102 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("wayfinder-driven goal lifecycle", () => {
+    async function seedPathWork(status: "RUNNING" | "FAILED" = "RUNNING") {
+      const goalInputId = "goal-canonical-path";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      fixture.database.transaction(db => db.prepare(`INSERT INTO work_items
+        (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+        VALUES ('canonical-work',?,?,'Work title','{}','READ',?,?,?)`).run(workbenchId, goalInputId, status, NOW, NOW));
+      return { goalInputId, workId: "canonical-work", turnId: `turn-${goalInputId}` };
+    }
+
+    it("reuses the synchronized Work path when the planner charts a different title", async () => {
+      const goal = await seedPathWork();
+      await repository.synchronizeWorkPaths({ now: NOW });
+      const first = await repository.chartPath({ ...goal, open: { layer: 1, title: "Planner title", workId: goal.workId } });
+      const again = await repository.chartPath({ ...goal, open: { layer: 1, title: "Planner title", workId: goal.workId } });
+      expect(first.pathId).toBe(`harness_path:work:${goal.workId}`);
+      expect(again).toEqual(first);
+      const rows = fixture.database.transaction(db => db.prepare("SELECT path_id,title FROM joi_harness_paths WHERE work_id=?").all(goal.workId));
+      expect(rows).toEqual([{ path_id: first.pathId, title: "Planner title" }]);
+    });
+
+    it("charts a terminal Work as closed and reuses a planner-first path during synchronization", async () => {
+      const goal = await seedPathWork("FAILED");
+      const first = await repository.chartPath({ ...goal, open: { layer: 1, title: "Failure evidence", workId: goal.workId } });
+      expect(first.status).toBe("CLOSED");
+      await expect(repository.synchronizeWorkPaths({ now: NOW })).resolves.toEqual({ closed: 0, created: 0 });
+      expect((await repository.chartPath({ ...goal, open: { layer: 1, title: "Failure evidence", workId: goal.workId } })).pathId).toBe(first.pathId);
+    });
+
+    it.each(["READY", "RUNNING", "WAITING"])("reopens a closed Work path when recovery makes the Work %s", async (status) => {
+      const goal = await seedPathWork("FAILED");
+      await repository.synchronizeWorkPaths({ now: NOW });
+      const recoveredAt = "2026-08-06T10:01:00.000Z";
+      fixture.database.transaction(db => db.prepare("UPDATE work_items SET status=?,updated_at=? WHERE work_id=?").run(status, recoveredAt, goal.workId));
+      await repository.synchronizeWorkPaths({ now: recoveredAt });
+      expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_harness_paths WHERE work_id=?").get(goal.workId)))
+        .toEqual({ status: "OPEN" });
+      expect((await repository.loadGoalProjections())[0]?.openPathCount).toBe(1);
+      const snapshot = fixture.database.transaction(db => db.prepare("SELECT * FROM joi_harness_paths WHERE work_id=?").all(goal.workId));
+      await repository.synchronizeWorkPaths({ now: "2026-08-06T10:02:00.000Z" });
+      expect(fixture.database.transaction(db => db.prepare("SELECT * FROM joi_harness_paths WHERE work_id=?").all(goal.workId))).toEqual(snapshot);
+    });
+
+    it("preserves a decision-closed path during Work recovery", async () => {
+      const goal = await seedPathWork();
+      await repository.synchronizeWorkPaths({ now: NOW });
+      await repository.recordDecision({ ...goal, kind: "SCOPE", summary: "Explicitly settled scope",
+        closePathId: `harness_path:work:${goal.workId}` });
+      fixture.database.transaction(db => db.prepare("UPDATE work_items SET status='RUNNING',updated_at='2099-01-01T00:00:00.000Z' WHERE work_id=?").run(goal.workId));
+      await repository.synchronizeWorkPaths({ now: "2099-01-01T00:01:00.000Z" });
+      expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_harness_paths WHERE work_id=?").get(goal.workId)))
+        .toEqual({ status: "CLOSED" });
+    });
+
+    it("preserves excluded paths and cleared maps during Work recovery", async () => {
+      const goal = await seedPathWork("FAILED");
+      await repository.synchronizeWorkPaths({ now: NOW });
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE joi_harness_paths SET status='OUT_OF_SCOPE' WHERE work_id=?").run(goal.workId);
+        db.prepare("UPDATE work_items SET status='RUNNING',updated_at='2026-08-06T10:01:00.000Z' WHERE work_id=?").run(goal.workId);
+      });
+      await repository.synchronizeWorkPaths({ now: "2026-08-06T10:02:00.000Z" });
+      expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_harness_paths WHERE work_id=?").get(goal.workId)))
+        .toEqual({ status: "OUT_OF_SCOPE" });
+      fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET status='CLOSED' WHERE work_id=?").run(goal.workId));
+      forceMapCleared(fixture, goal.goalInputId);
+      await repository.synchronizeWorkPaths({ now: "2026-08-06T10:03:00.000Z" });
+      expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_harness_paths WHERE work_id=?").get(goal.workId)))
+        .toEqual({ status: "CLOSED" });
+    });
+
+    it("projects legacy duplicate Work links once before pagination without deleting history", async () => {
+      const goal = await seedPathWork();
+      await repository.synchronizeWorkPaths({ now: NOW });
+      fixture.database.transaction(db => {
+        db.prepare(`INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,work_id,created_at,updated_at)
+          VALUES ('planner-path',?,1,'Planner title','OPEN',?,'2026-08-06T10:00:01.000Z',?)`).run(goal.goalInputId, goal.workId, NOW);
+        for (const pathId of ["unlinked-a", "unlinked-b"]) db.prepare(`INSERT INTO joi_harness_paths
+          (path_id,goal_input_id,layer,title,status,created_at,updated_at) VALUES (?, ?, 1,'Same title','OPEN',?,?)`)
+          .run(pathId, goal.goalInputId, NOW, NOW);
+      });
+      const feed = new SqliteJoiHomeFeedRepository(fixture.database);
+      const first = await feed.loadGoalDetail(goal.goalInputId, { offset: 0, limit: 2 });
+      const second = await feed.loadGoalDetail(goal.goalInputId, { offset: 2, limit: 2 });
+      expect(first?.harness?.pathCount).toBe(3);
+      expect(first?.nextOffset).toBe(2);
+      expect(second?.nextOffset).toBeUndefined();
+      const paths = [...(first?.harness?.paths ?? []), ...(second?.harness?.paths ?? [])];
+      expect(paths.map(path => path.pathId)).toEqual(["planner-path", "unlinked-b", "unlinked-a"]);
+      const projection = (await repository.loadGoalProjections())[0];
+      expect(projection?.openPathCount).toBe(3);
+      expect(projection?.topPaths.some(path => path.title === "Work title")).toBe(false);
+      expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_harness_paths WHERE goal_input_id=?").get(goal.goalInputId)))
+        .toEqual({ n: 4 });
+    });
+
     it("projects a synthesized active map as review instead of a terminal goal", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-state", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-state", now: NOW });

@@ -93,6 +93,41 @@ describe("partner-registry-revision-before-dispatch", () => {
     status: "READY",
   };
 
+  it.each(["DISABLED", "DRAFT", "NEEDS_AUTH", "MISSING"] as const)("rejects a stale model pin before dispatch when its source is %s", async (status) => {
+    const repository = new MemoryPartnerRegistry();
+    let sources: ModelSourceDto[] = [readySource];
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository,
+      modelSources: { list: async () => sources } });
+    const partner = await service.add({ displayName: "Pinned partner", capabilities: [], kind: "local-pi",
+      modelSourceId: readySource.sourceId, skills: [], tools: [] });
+    sources = status === "MISSING" ? [] : [{ ...readySource, status }];
+    expect((await service.inspect(partner.partnerId)).configuration).toEqual({
+      reasonCodes: ["partner_model_source_not_ready"], status: "ACTION_REQUIRED",
+    });
+    expect((await service.list())[0]?.configuration?.status).toBe("ACTION_REQUIRED");
+    await expect(service.pinForDispatch(partner.partnerId)).rejects.toMatchObject({ code: "partner_model_source_not_ready" });
+    expect(repository.history).toHaveLength(1);
+    sources = [readySource];
+    expect((await service.inspect(partner.partnerId)).configuration).toBeUndefined();
+    await expect(service.pinForDispatch(partner.partnerId)).resolves.toMatchObject({ partnerId: partner.partnerId });
+  });
+
+  it("keeps the catalog readable during a source lookup failure and leaves native engines independent", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const list = vi.fn(async () => [readySource]);
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository, modelSources: { list } });
+    const pinned = await service.add({ displayName: "Pinned", capabilities: [], kind: "local-pi",
+      modelSourceId: readySource.sourceId, skills: [], tools: [] });
+    const native = await service.add({ displayName: "Native", engine: "codex", capabilities: [], kind: "local-pi", skills: [], tools: [] });
+    list.mockRejectedValue(new Error("Source store unavailable"));
+    const catalog = await service.list();
+    expect(catalog).toHaveLength(2);
+    expect(catalog.find(partner => partner.partnerId === pinned.partnerId)?.configuration?.status).toBe("ACTION_REQUIRED");
+    expect(catalog.find(partner => partner.partnerId === native.partnerId)?.configuration).toBeUndefined();
+    await expect(service.pinForDispatch(native.partnerId)).resolves.toMatchObject({ partnerId: native.partnerId });
+    await expect(service.pinForDispatch(pinned.partnerId)).rejects.toMatchObject({ code: "partner_model_source_not_ready" });
+  });
+
   it("defaults new local partners to ALL while preserving explicit empty CUSTOM policies", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });

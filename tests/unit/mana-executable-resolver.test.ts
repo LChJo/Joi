@@ -1,8 +1,10 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { Worker } from "node:worker_threads";
 
 import { resolveLocalCliExecutable } from "../../src/main/infrastructure/mana/local-cli-executable-resolver.js";
+import { compileWorkerFixture } from "../support/compile-worker-fixture.js";
 
 const exe = (name: string) => (process.platform === "win32" ? `${name}.exe` : name);
 
@@ -47,6 +49,29 @@ function managedCodexBinary(packageRoot: string): string | undefined {
 }
 
 describe("local CLI executable resolver", () => {
+  it.skipIf(process.platform !== "win32").each(["Path", "pAtH"])("detects both CLIs in a real Worker inheriting Windows %s casing", async (pathKey) => {
+    const root = mkdtempSync(join(tmpdir(), "joi-cli-worker-"));
+    let worker: Worker | undefined;
+    try {
+      const [entry] = await compileWorkerFixture(join(root, "compiled"), ["src/main/infrastructure/mana/local-cli-executable-resolver.ts"]);
+      writeFileSync(join(root, "claude.exe"), "");
+      writeFileSync(join(root, "codex.exe"), "");
+      worker = new Worker(`const { parentPort, workerData } = require('node:worker_threads');
+        import(workerData).then(({ resolveLocalCliExecutable: resolve }) => parentPort.postMessage({
+          claude: resolve('claude').executablePath, codex: resolve('codex').executablePath,
+        }));`, { eval: true, env: { [pathKey]: root, pathext: ".EXE;.CMD" }, workerData: entry?.href });
+      const result: unknown = await new Promise((resolve, reject) => {
+        worker?.once("message", resolve);
+        worker?.once("error", reject);
+        worker?.once("exit", (code) => { if (code !== 0) reject(new Error(`Worker exited with ${String(code)}`)); });
+      });
+      expect(result).toEqual({ claude: join(root, "claude.exe"), codex: join(root, "codex.exe") });
+    } finally {
+      await worker?.terminate();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.skipIf(process.platform !== "win32")("resolves the installed Claude native binary behind an npm shim", () => {
     const root = mkdtempSync(join(tmpdir(), "joi-claude-shim-"));
     const native = join(root, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");

@@ -28,6 +28,7 @@ import { composeReviewBody } from "../../application/joi/joi-harness-review-body
 import { DomainError } from "../../domain/errors.js";
 import { harnessReviewInputId as reviewInputId, harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
 import { quarantineHistoricalReview } from "./sqlite-joi-historical-review.js";
+import { visibleHarnessPathSql } from "./sqlite-joi-harness-paths.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -222,7 +223,7 @@ export function queryHarnessGoalProjections(connection: DatabaseSync): HarnessGo
            (SELECT COALESCE(MAX(p.layer), 0) FROM joi_harness_paths p
              WHERE p.goal_input_id = m.goal_input_id) AS current_layer,
            (SELECT COUNT(*) FROM joi_harness_paths p
-             WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN') AS open_path_count,
+             WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN' AND ${visibleHarnessPathSql("p")}) AS open_path_count,
            (SELECT f.note FROM joi_harness_fog f
              WHERE f.goal_input_id = m.goal_input_id AND f.status = 'ACTIVE'
              ORDER BY f.created_at, f.fog_id LIMIT 1) AS top_fog_note
@@ -230,7 +231,7 @@ export function queryHarnessGoalProjections(connection: DatabaseSync): HarnessGo
      ORDER BY m.created_at, m.goal_input_id`).all() as Row[];
   const pathRows = connection.prepare(`
     SELECT goal_input_id, path_id, status, substr(title, 1, 80) AS title, layer
-      FROM joi_harness_paths
+      FROM joi_harness_paths p WHERE ${visibleHarnessPathSql("p")}
      ORDER BY goal_input_id, layer DESC, created_at DESC, path_id DESC LIMIT 500`).all() as Row[];
   const pathsByGoal = new Map<string, HarnessGoalProjection["topPaths"]>();
   const seenTitlesByGoal = new Map<string, Set<string>>();
@@ -658,6 +659,12 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE p.status = 'OPEN' AND p.work_id IS NOT NULL
            AND EXISTS (SELECT 1 FROM work_items w WHERE w.work_id = p.work_id
                         AND w.status IN ('COMPLETED', 'FAILED', 'CANCELED'))`).run(input.now).changes);
+      connection.prepare(`UPDATE joi_harness_paths AS p SET status='OPEN', updated_at=?
+        WHERE p.status='CLOSED' AND p.resolved_decision_id IS NULL
+          AND EXISTS (SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id=p.goal_input_id AND m.status='ACTIVE')
+          AND EXISTS (SELECT 1 FROM work_items w WHERE w.work_id=p.work_id AND w.input_id=p.goal_input_id
+            AND w.status NOT IN ('COMPLETED','FAILED','CANCELED') AND w.updated_at>p.updated_at)`)
+        .run(input.now);
       return { closed, created };
     });
   }
@@ -1197,15 +1204,31 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       }
       const title = requireText(open.title, PATH_TITLE_LIMIT, "harness_path_invalid");
       const workId = this.#validatedWorkId(connection, input.goalInputId, open.workId);
+      const work = workId === null ? undefined : connection.prepare("SELECT status FROM work_items WHERE work_id=?").get(workId);
+      const status: HarnessPathStatus = work !== undefined && ["COMPLETED", "FAILED", "CANCELED"].includes(String(work.status)) ? "CLOSED" : "OPEN";
+      if (workId !== null) {
+        const existing = connection.prepare(`SELECT path_id,title,layer,status,resolved_decision_id FROM joi_harness_paths
+          WHERE goal_input_id=? AND work_id=? AND status<>'OUT_OF_SCOPE'
+          ORDER BY layer DESC,created_at DESC,path_id DESC LIMIT 1`).get(input.goalInputId, workId);
+        if (existing !== undefined) {
+          const nextStatus = existing.resolved_decision_id === null ? status : existing.status as HarnessPathStatus;
+          if (existing.title !== title || existing.layer !== open.layer || existing.status !== nextStatus) {
+            connection.prepare("UPDATE joi_harness_paths SET title=?,layer=?,status=?,updated_at=? WHERE path_id=?")
+              .run(title, open.layer, nextStatus, now, String(existing.path_id));
+            this.#bumpRevision(connection, input.goalInputId, now);
+          }
+          return { pathId: String(existing.path_id), status: nextStatus };
+        }
+      }
       const pathId = randomUUID();
       connection.prepare(`
         INSERT INTO joi_harness_paths
           (path_id, goal_input_id, layer, title, status, work_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?)`).run(
-        pathId, input.goalInputId, open.layer, title, workId, now, now,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        pathId, input.goalInputId, open.layer, title, status, workId, now, now,
       );
       this.#bumpRevision(connection, input.goalInputId, now);
-      return { pathId, status: "OPEN" as const };
+      return { pathId, status };
     });
   }
 

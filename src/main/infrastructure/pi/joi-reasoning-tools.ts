@@ -1032,7 +1032,7 @@ export function createJoiReasoningTools(input: {
       description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
       execute: async () => {
         const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list({ workbenchId: input.workbenchId })]);
-        const enriched = await Promise.all(partners.map(async (dto) => {
+        const enriched = await Promise.all(partners.filter(dto => dto.status === "ACTIVE" && dto.configuration?.status !== "ACTION_REQUIRED").map(async (dto) => {
           const { tools, ...partner } = dto;
           return {
             ...partner,
