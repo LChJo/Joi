@@ -368,7 +368,9 @@ All commands are defined in `package.json#scripts`.
 - Coverage thresholds are `90` for statements, branches, functions and lines (`vitest.config.ts`).
 - E2E drives the real Electron window with Playwright (`tests/e2e/`).
 - CI runs `npm ci`, `i18n:check`, typecheck, lint, coverage and E2E on `windows-latest` and `macos-latest`, then builds Windows NSIS `.exe` and macOS `.dmg` installers through `package:win` / `package:mac`, including production rebuild and package-content verification (`.github/workflows/ci.yml`).
-- Pushes, pull requests and **Actions → quality → Run workflow** trigger the workflow. Download `joi-windows` and `joi-macos` from the run's **Artifacts** section; installers are retained for 14 days. Package commands explicitly disable electron-builder publishing (`--publish never`), so they do not require `GH_TOKEN` or create GitHub Releases. CI disables signing identity discovery and does not configure release certificates or notarization.
+- Pushes, pull requests and **Actions → quality → Run workflow** trigger the workflow. Download `joi-windows` and `joi-macos` from the run's **Artifacts** section; installers are retained for 14 days. CI disables signing identity discovery and does not configure release certificates or notarization.
+- After both platforms pass on `main`, a separate job downloads the installers from that same run and publishes [GitHub Releases](https://github.com/LChJo/Joi/releases/latest). The desktop version in `package.json` determines the tag (for example, `0.1.1` → `v0.1.1`). The job uploads `.exe`, `.dmg` and `SHA256SUMS.txt` to a draft, then publishes it as Latest. Bump the version for each new release; later pushes preserve already-published versions. Interrupted drafts can resume only from the same commit. PRs and other branches never publish.
+- Package commands keep electron-builder publishing disabled (`--publish never`). Only the separate release job receives `contents: write` through the automatic `GITHUB_TOKEN`; no personal token is needed. Windows installers remain unsigned; macOS apps use ad-hoc signing without notarization.
 
 ### Internationalization
 

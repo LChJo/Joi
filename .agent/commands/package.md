@@ -28,6 +28,12 @@ node scripts/package-app.mjs --target <current|win|mac|dir> [--output <repo-rela
 
 桌面产物默认写入 `release-joi/`。入口会生成品牌图标、执行生产构建、审计包内容，并清理本次目标输出目录。
 
+## GitHub Release
+
+升级 `package.json` 和 `package-lock.json` 的根版本后推送 `main`，或在 `main` 手动运行 **Actions → quality**。双平台质量门禁和安装包生成成功后，工作流自动发布 `v<version>` Release，附 Windows `.exe`、macOS `.dmg` 和 `SHA256SUMS.txt`，并设为 Latest。无需配置个人 Token。
+
+已发布版本不会被后续提交覆盖。上传中断保留草稿；在同一提交重跑可继续，不同提交必须使用新版本或由维护者处理未公开草稿。PR 与其他分支仅上传 Actions Artifacts。安装包默认仍未完成 Windows 正式签名及 macOS 公证。
+
 ## Android
 
 ```powershell

@@ -8,11 +8,11 @@
       "location": {
         "path": "README.md"
       },
-      "hash": "a16f10ce0997902ba0830d54d636bcd80271d7aa98ab259ffc0e5173a828d8a1",
-      "observedAt": "2026-11-15T07:13:51.971Z",
+      "hash": "26b043ca0bb424f0f64fdf0abd1429438c4667855ebb792ae9f668b6d539457d",
+      "observedAt": "2026-11-15T08:40:32.156Z",
       "range": {
         "startLine": 1,
-        "endLine": 488
+        "endLine": 490
       }
     },
     {
@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "cdfb07fcc87d77060c244b2f4b1b3a9717036e3f234ebf42c6d76fa0ef1fe39b",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "941ec66504f7946c29621a9be85b05a9b628398736aa4c766af4b5633ae34099",
+      "observedAt": "2026-11-15T08:40:32.158Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "472dfa864ae7f4427dd32b185efb3ccd5ecdb75c17eef44068e302865fc9f40b",
-      "observedAt": "2026-11-15T07:13:51.973Z",
+      "hash": "d1b0f073ed23226a5e792b81e527bef057bc71af6992be786c26e507c3f64821",
+      "observedAt": "2026-11-15T08:40:32.158Z",
       "range": {
         "startLine": 1,
-        "endLine": 679
+        "endLine": 685
       }
     },
     {
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "be7b04aa90be4f4151652fe36e13ea7fa859ca6273a5ebebe830dab4dac06f1b",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "c91b5fe745361bed78214cf48a46a9566882a1c5ee13ffe52c1aa034dd47493b",
+      "observedAt": "2026-11-15T08:40:32.159Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
@@ -2220,11 +2220,11 @@
       "location": {
         "path": ".github/workflows/ci.yml"
       },
-      "hash": "a1ee22fab97d4260c75cd191d60a6b575c704ba6863e2f9f315565876e3d97b1",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "6c8efb6a64e08045f580eaf111ee28ffd88e1b1b266730d359fe44dd7ce25745",
+      "observedAt": "2026-11-15T08:40:32.161Z",
       "range": {
         "startLine": 1,
-        "endLine": 60
+        "endLine": 87
       }
     },
     {
@@ -2234,11 +2234,11 @@
       "location": {
         "path": "tests/contract/ci-packaging-contract.test.ts"
       },
-      "hash": "8987dc62a490baab54537ac83392e1d2968928a82e2a739d06e9fb2ea37e887c",
-      "observedAt": "2026-11-15T06:36:07.181Z",
+      "hash": "ce136158b0ee0bff7664bf9015ad8a3c5e78fd0f931150e6df77499934e0367c",
+      "observedAt": "2026-11-15T08:40:32.161Z",
       "range": {
         "startLine": 1,
-        "endLine": 67
+        "endLine": 96
       }
     },
     {
@@ -2267,6 +2267,62 @@
       "range": {
         "startLine": 1,
         "endLine": 53
+      }
+    },
+    {
+      "id": "c2d55d69-2d3c-485d-b26b-4254884fa6e1",
+      "kind": "source-code",
+      "claim": "Publishes complete versioned desktop installer pairs through draft releases, preserves published versions and rejects commit conflicts.",
+      "location": {
+        "path": "scripts/publish-desktop-release.mjs"
+      },
+      "hash": "d5435c9cdad6ea1147af483f1b73c926f2256c66657960c5361b8832daaab9e6",
+      "observedAt": "2026-11-15T08:40:32.161Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 108
+      }
+    },
+    {
+      "id": "3ffd7401-3728-4397-acc8-22681b39cac4",
+      "kind": "source-code",
+      "claim": "Typed publishing boundary accepts an isolated GitHub HTTP transport for release contract tests.",
+      "location": {
+        "path": "scripts/publish-desktop-release.d.mts"
+      },
+      "hash": "cb918fc7f9445e402ed5b85ce8e8254c55fa4adaf5377945486dfc88b640ff83",
+      "observedAt": "2026-11-15T08:40:32.161Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 8
+      }
+    },
+    {
+      "id": "a17701d0-3d75-4b50-94c9-2a725a9c0454",
+      "kind": "source-code",
+      "claim": "Disposable release contracts cover complete publication, upload failure, draft recovery, version conflicts and desktop version consistency.",
+      "location": {
+        "path": "tests/contract/desktop-release.test.ts"
+      },
+      "hash": "cc66b7bc6991522b86026ebdfe4194c053e2586d9d348af7487a656054fde50a",
+      "observedAt": "2026-11-15T08:40:32.162Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 158
+      }
+    },
+    {
+      "id": "b2476fea-d7de-4dc4-9db1-ff980a32fc8f",
+      "kind": "document",
+      "claim": "Desktop package and versioned GitHub Release operating commands and signing limitations.",
+      "location": {
+        "path": ".agent/commands/package.md"
+      },
+      "hash": "b73d4cfc3dc22c855cfb919dde00512b9141b2b897b41d887490a298d7a883f4",
+      "observedAt": "2026-11-15T08:40:32.162Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 57
       }
     }
   ]

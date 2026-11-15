@@ -18,7 +18,15 @@ interface PackagingTarget {
 }
 
 interface QualityWorkflow {
+  permissions: Record<string, string>;
   jobs: {
+    release?: {
+      needs: string;
+      if: string;
+      permissions: Record<string, string>;
+      concurrency: { group: string; "cancel-in-progress": boolean };
+      steps: WorkflowStep[];
+    };
     verify: {
       "runs-on": string;
       steps: WorkflowStep[];
@@ -31,6 +39,27 @@ interface QualityWorkflow {
 const loadWorkflow = async () => parse(await readFile(path.resolve(".github/workflows/ci.yml"), "utf8")) as QualityWorkflow;
 
 describe("CI desktop installer contract", () => {
+  it("publishes both installers only after the main-branch quality matrix succeeds", async () => {
+    const workflow = await loadWorkflow();
+    const release = workflow.jobs.release;
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    expect(release).toMatchObject({
+      needs: "verify",
+      if: "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+      permissions: { contents: "write" },
+      concurrency: { group: "desktop-release", "cancel-in-progress": false },
+    });
+    const downloads = release?.steps.filter(step => step.uses?.startsWith("actions/download-artifact@"));
+    expect(downloads?.map(step => step.with)).toEqual([
+      { name: "joi-windows", path: "release-assets" },
+      { name: "joi-macos", path: "release-assets" },
+    ]);
+    expect(release?.steps.at(-1)).toMatchObject({
+      run: "node scripts/publish-desktop-release.mjs",
+      env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" },
+    });
+  });
+
   it("builds the native installer on each host and exposes separate downloadable artifacts", async () => {
     const { jobs: { verify } } = await loadWorkflow();
     const targets = verify.strategy.matrix.include ?? [];
