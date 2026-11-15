@@ -3,7 +3,10 @@ import type { LearningCase, LearningFacts } from "../../domain/evolution/learnin
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 // Recursive JSON values require an interface boundary.
 export interface JsonObject { [key: string]: JsonValue; }
-export interface MethodLearningControl { enabled: boolean; paused: boolean; dailyCallLimit: number; lastCandidateDay: string | null; }
+export interface MethodLearningControl {
+  enabled: boolean; paused: boolean; dailyCallLimit: number; lastCandidateDay: string | null;
+  pause?: { reason: "call_failed" | "model_response_invalid" | "model_changed" | "rolled_back" | "disabled"; at: string; workbenchId: string | null } | null;
+}
 export interface MethodLearningParticipant { enabled: boolean; paused: boolean; dailyCallLimit: number; reason: string; }
 export interface MethodExperiment {
   id: string; workbenchId: string; scope: "GLOBAL" | "WORKBENCH"; profile: string;

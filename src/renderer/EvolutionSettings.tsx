@@ -29,6 +29,7 @@ const learningBlockers = {
   budget_exhausted: "evolution.blockerBudget", no_reproducible_case: "evolution.blockerNoCase",
   insufficient_samples: "evolution.blockerSamples", model_response_invalid: "evolution.blockerProtocol",
   model_changed: "evolution.blockerModel", daily_candidate_limit: "evolution.blockerCandidate",
+  retry_wait: "evolution.retryWait",
 } as const satisfies Record<EvolutionLearningBlocker, MessageKey>;
 
 function LearningEvolutionPanel({ api, status, learning, overview, updateStatus, updateOverview, loadingNotice }: {
@@ -47,13 +48,15 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
     finally { setSaving(false); }
   };
   const globalSettings = async (enabled: boolean, limit: number) => { updateOverview(await api.configureGlobalEvolution(enabled, limit)); };
-  const canEvaluate = global.enabled && !global.paused && learning.participation.enabled && !learning.participation.paused && global.dailyCallLimit > 0;
+  const canEvaluate = global.enabled && !global.paused && learning.participation.enabled && !learning.participation.paused && global.dailyCallLimit > 0
+    && !learning.experiment?.waitingForSamples && !learning.blockers.includes("retry_wait");
   const running = learning.experiment?.reason === "evaluating" && ["PROTOCOL", "DEVELOP", "PROPOSE", "VALIDATE", "EVALUATE"].includes(learning.stage);
   const paused = global.paused || learning.participation.paused || learning.stage === "PAUSED";
   const disabled = !global.enabled || !learning.participation.enabled || global.dailyCallLimit === 0;
   const headline: MessageKey = disabled ? "evolution.blockerDisabled" : paused ? "evolution.stagePaused"
     : learning.blockers.includes("budget_exhausted") ? "evolution.blockerBudget"
-      : learning.blockers.includes("not_idle") ? "evolution.waitingForIdle" : learningStages[learning.stage];
+      : learning.experiment?.waitingForSamples ? "evolution.waitingSamples"
+        : learning.blockers.includes("not_idle") ? "evolution.waitingForIdle" : learningStages[learning.stage];
   const tokens = (value: number | null) => value === null ? t("evolution.tokenUsageUnknown") : `${formatNumber(value)} tokens`;
   return <div className="inline-settings workbench-evolution-panel">
     <p className="workbench-evolution-intro">{t("evolution.learningPageIntro")}</p>
@@ -66,18 +69,27 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
         <span className={`evolution-state ${disabled ? "disabled" : paused ? "paused" : ""}`}>{t(disabled ? "evolution.learningOffBadge" : paused ? "evolution.learningPausedBadge" : running ? "evolution.learningRunningBadge" : "evolution.learningEnabledBadge")}</span>
       </header>
       <p className="evolution-headline" role="status">{t(headline)}</p>
+      {global.paused ? <p className="evolution-description">{global.pause == null ? t("evolution.pauseUnknown")
+        : t("evolution.pauseDetail", {p0:t(labels[global.pause.reason]),p1:new Date(global.pause.at).toLocaleString()})}</p> : null}
+      {global.paused || !learning.participation.paused ? null : <p className="evolution-description">{learning.participation.reason === undefined
+        ? t("evolution.pauseUnknown") : t(labels[learning.participation.reason])}</p>}
       {learning.blockers.length === 0 ? <p className="evolution-description">{t("evolution.automaticLearningHint")}</p>
         : <div className="evolution-next"><span>{t("evolution.nextStep")}</span><ul>{learning.blockers.map((blocker) => <li key={blocker}>{t(learningBlockers[blocker])}</li>)}</ul></div>}
       {learning.experiment === null ? null : <div className="evolution-result">
         <span>{t(running ? "evolution.runningEvaluation" : "evolution.latestEvaluation")}</span>
-        <p>{t(labels[learning.experiment.reason])}</p>
+        <p>{t(learning.experiment.baselineNotReproduced ? "evolution.baselineNotReproduced" : labels[learning.experiment.reason])}</p>
         <small>{t("evolution.evaluationCalls", { p0: formatNumber(learning.experiment.calls) })} · {tokens(learning.experiment.tokens)}</small>
+        {learning.experiment.retryAt == null ? null : <p>{t("evolution.retryAt",{p0:new Date(learning.experiment.retryAt).toLocaleString()})}</p>}
+        {!learning.experiment.waitingForSamples ? null : <p>{t("evolution.sampleReadiness",{p0:formatNumber(learning.experiment.sealedGroups ?? 0),p1:formatNumber(learning.experiment.requiredSealedGroups ?? 5)})}</p>}
       </div>}
       <dl className="evolution-case-metrics">
         <div><dt>{t("evolution.developmentCases")}</dt><dd>{formatNumber(learning.cases.development)}</dd></div>
         <div><dt>{t("evolution.independentCases")}</dt><dd>{formatNumber(learning.cases.sealed)}</dd></div>
         <div><dt>{t("evolution.reproducibleProblems")}</dt><dd>{formatNumber(learning.cases.defects)}</dd></div>
       </dl>
+      {learning.cases.developmentGroups === undefined ? null : <p className="evolution-description">{t("evolution.sourceGroups",{p0:formatNumber(learning.cases.developmentGroups),p1:formatNumber(learning.cases.sealedGroups ?? 0)})}</p>}
+      {learning.cases.reproduced === undefined ? null : <p className="evolution-description">{t("evolution.reproducedGroups",{p0:formatNumber(learning.cases.reproduced)})}</p>}
+      {learning.cases.experiences === undefined ? null : <p className="evolution-description">{t("evolution.experienceCount",{p0:formatNumber(learning.cases.experiences)})}</p>}
       <p className="evolution-description">{t(learning.cases.sealed === 0 ? "evolution.noIndependentCasesHint" : "evolution.independentCasesHint")}</p>
       <div className="evolution-evaluate-action"><button className="button primary" type="button" disabled={saving || !canEvaluate}
         onClick={() => void act(async () => {

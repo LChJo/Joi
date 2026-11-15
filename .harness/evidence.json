@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "bc5d2b784498167db4eebc3a0599228efefa1164dae6a282653a5384afa520be",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "556c2d30cf7a11060e081343f33b4d02c53a205fe3a5b6cb9fb288cd60deca35",
+      "observedAt": "2026-11-15T14:59:09.571Z",
       "range": {
         "startLine": 1,
-        "endLine": 693
+        "endLine": 696
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "c9a36561600417b644801d89afea6159091cb3fb97d6e602526f8c750ee4c703",
-      "observedAt": "2026-11-14T11:23:51.955Z",
+      "hash": "3be8da56503c4b115caafd57079f2b8409c1d7a7a75d899e23f553cd79645daf",
+      "observedAt": "2026-11-15T14:59:09.571Z",
       "range": {
         "startLine": 1,
-        "endLine": 9627
+        "endLine": 9710
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "204d08db1264257a3e6effe45adf253fcd7a6b86d256ef38e3938754bbe706d2",
-      "observedAt": "2026-11-14T11:23:51.959Z",
+      "hash": "48e0a33bf033aedee7c27df480498f045f288247ff6c2a2cda5f89977f80a571",
+      "observedAt": "2026-11-15T14:59:09.571Z",
       "range": {
         "startLine": 1,
-        "endLine": 6805
+        "endLine": 6833
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "4ed906b10d24a7d013799836cf0d737ef796e038734510fbb38ad61e1d0b07c6",
-      "observedAt": "2026-11-14T11:23:51.966Z",
+      "hash": "ece644351bd50d89a7f990572b60c42cc892c1bbfb2f0f440316d35ea484b4af",
+      "observedAt": "2026-11-15T14:59:09.571Z",
       "range": {
         "startLine": 1,
-        "endLine": 8591
+        "endLine": 8629
       }
     },
     {
@@ -2449,6 +2449,104 @@
       "range": {
         "startLine": 1,
         "endLine": 286
+      }
+    },
+    {
+      "id": "d64591f6-724e-4892-b3bb-602f4a1be477",
+      "kind": "source-code",
+      "claim": "Method learning persists bounded backoff and pause causes, releases sample-waiting slots with scope isolation, gates proposal readiness and development cost, and reuses compatible numeric development comparisons.",
+      "location": {
+        "path": "src/main/application/evolution/method-learning-service.ts"
+      },
+      "hash": "a7a4d18c7c8c23d6010ca5298304111946d721fa6033a196a10a08ae5b9eeecc",
+      "observedAt": "2026-11-15T15:06:13.412Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 725
+      }
+    },
+    {
+      "id": "61e0cd00-7284-40f2-9e5d-0a7d4bb0c7de",
+      "kind": "source-code",
+      "claim": "Pure development-comparison extraction preserves unknown Token usage and refuses unsupported or identical comparisons.",
+      "location": {
+        "path": "src/main/domain/evolution/method-experience.ts"
+      },
+      "hash": "dd89c12b119dae6ca286d509fc46347cdcb9f96bb74e5fd718e1d1efc135a0ec",
+      "observedAt": "2026-11-15T14:59:09.571Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 42
+      }
+    },
+    {
+      "id": "30ec7a07-af3f-4075-bbde-ed1c454b08d4",
+      "kind": "source-code",
+      "claim": "Sample-waiting checkpoints retain their state outside the unique execution slot; running and fault-paused experiments remain exclusive.",
+      "location": {
+        "path": "resources/migrations/099_method_learning_waiting_slot.sql"
+      },
+      "hash": "8a3597cabe3d7b0ba205ffdb1d4e86772f5bdb50725e35dd3ab32c45e2144205",
+      "observedAt": "2026-11-15T14:59:09.571Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 5
+      }
+    },
+    {
+      "id": "bf81ead4-46f4-40a9-9739-6f928dc67c99",
+      "kind": "source-code",
+      "claim": "Learning settings distinguish pause causes, retry times, independent groups, baseline reproduction and reusable comparisons; sample waiting resumes without manual reproposal.",
+      "location": {
+        "path": "src/renderer/EvolutionSettings.tsx"
+      },
+      "hash": "ed1f17a24fb0e54d1a4a79d3dc3e0046185b7fd241cdbb624313af76b1f8d2b6",
+      "observedAt": "2026-11-15T14:59:09.571Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 172
+      }
+    },
+    {
+      "id": "dae47d44-3fd5-44e4-8c84-b7b383b49b7c",
+      "kind": "source-code",
+      "claim": "Additive optional method-learning projections keep v2 compatibility and contain only fixed reasons, numeric metadata, timestamps and opaque identities.",
+      "location": {
+        "path": "src/shared/evolution.ts"
+      },
+      "hash": "8d79a07185b067109da067b6688eeff964e4c9eb504e065e9d4811868658550a",
+      "observedAt": "2026-11-15T14:59:09.571Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 195
+      }
+    },
+    {
+      "id": "251779e1-a5cc-4fda-a221-f895d44d0c88",
+      "kind": "source-code",
+      "claim": "Disposable model-learning regressions cover persistent retry limits, opt-out cancellation, independent scheduling, sample readiness, expiry, cost rejection and conditional experience isolation.",
+      "location": {
+        "path": "tests/integration/method-learning-lifecycle.test.ts"
+      },
+      "hash": "78e89f8a5f5d2ae7e52859ec57a33e4d3e95f6087e225e6e6db9e8d2bb497c9e",
+      "observedAt": "2026-11-15T15:06:13.414Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 404
+      }
+    },
+    {
+      "id": "9cddc3d6-d91f-44e5-b7dc-541889c8d24e",
+      "kind": "document",
+      "claim": "AC-EVO-03/04/05/07 bound retry, independent-sample waiting and measured development feedback without claiming real-model or production benefit.",
+      "location": {
+        "path": "docs/adr/0020-bounded-strategy-evolution.md"
+      },
+      "hash": "c79285faec9ccf020d4d742091d4c59372d8ac2a112d2e9fe322760aca6340ca",
+      "observedAt": "2026-11-15T14:59:09.571Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 151
       }
     }
   ]

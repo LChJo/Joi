@@ -1,5 +1,7 @@
 # 路线图与验收
 
+2026-11-15 方法学习可靠性增量映射 AC-EVO-03/04/05/07：临时模型调用失败按60秒、120秒持久冷却，连续第三次才暂停；暂停原因、时间与来源工作台和最近实验结论分开投影，历史未知暂停不自动恢复。等待封存样本的实验保留候选和试验但释放模型槽位，按工作台/全局与输入适用条件隔离；五个封存来源组不足时不付费提案，开发质量/成本退化提前拒绝。相同模型来源、父方法、输入条件与缺陷的开发数值对照作为条件经验回流，最多四条，只共享全局经验；相同已拒绝退化方法不能重复提案。页面区分快照数、独立来源组、基线重放复现及未复现结果。099迁移只调整待样本实验的唯一索引，不恢复历史暂停或重放历史任务。回归见 `method-learning-lifecycle.test.ts`、`method-experience.test.ts`、`method-learning-service.recovery.test.ts`、`sqlite-method-learning-store.test.ts`、`method-learning-http.test.ts` 和 `evolution-redesign.test.tsx`。真实模型收益、长任务决策前状态重放和普通对话客观反馈采样仍需独立验收。
+
 2026-11-13 对话正文实时增量映射 CHAT-04/24/45：默认 joi（Pi）的安全轮次投影通过认证 SSE 直接推送，生成暂停时在100ms限流窗口内补刷尾段。每次仅发送当前轮次和安全上下文；界面保留已加载历史、草稿和编辑后的标题，拒绝旧刷新覆盖新片段。连接可用时700ms游标刷新补齐元数据，断线或无SSE时降级100ms刷新；完成、停止和切换对话释放订阅，传输背压合并为最新待发送快照，心跳复核会话。回归见 `conversation-pi-session.test.ts`、`normal-conversation-execution.test.ts`、`conversation-http.test.ts`、`conversation-stream.test.ts` 与 `conversation-interactions.test.tsx`。
 
 2026-11-13 对话标题编辑映射 CHAT-44：历史行操作提供“重命名”，编辑框聚焦并选中原标题，支持保存/Enter、取消/Escape、空白与80字符上限校验及失败重试。生成中仍可修改标题；保存后同步列表、搜索与当前标题，重启及后续轮次保留。受认证、CSRF和来源保护的标题写入采用幂等本地事务，不改动轮次、配置或执行状态，不派发任务，拒绝已删除身份。回归见 `normal-conversation-execution.test.ts`、`conversation-http.test.ts`、`conversation-archive.test.tsx` 与 `conversation-archive.spec.ts`。

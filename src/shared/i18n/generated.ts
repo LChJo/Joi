@@ -618,6 +618,16 @@ export interface MessageParameters {
   "evolution.dailyBudgetUsage": undefined;
   "evolution.participationHint": undefined;
   "evolution.upgradeRequired": undefined;
+  "evolution.retryWait": undefined;
+  "evolution.retryAt": { "p0": string };
+  "evolution.pauseDetail": { "p0": string; "p1": string };
+  "evolution.pauseUnknown": undefined;
+  "evolution.sourceGroups": { "p0": string; "p1": string };
+  "evolution.reproducedGroups": { "p0": string };
+  "evolution.waitingSamples": undefined;
+  "evolution.sampleReadiness": { "p0": string; "p1": string };
+  "evolution.baselineNotReproduced": undefined;
+  "evolution.experienceCount": { "p0": string };
   "export.processing": undefined;
   "export.fullTextCopied": undefined;
   "export.valueFilesSaved": { "p0": string };
@@ -2381,7 +2391,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.evaluationCalls": "{p0} calls in this evaluation",
     "evolution.developmentCases": "Development cases",
     "evolution.independentCases": "Held-out cases",
-    "evolution.reproducibleProblems": "Reproducible problems",
+    "evolution.reproducibleProblems": "Defect records awaiting reproduction",
     "evolution.noIndependentCasesHint": "No held-out cases yet. These cases independently verify the effect of new methods.",
     "evolution.independentCasesHint": "Development cases help improve methods; held-out cases independently verify their effect.",
     "evolution.manualEvaluationHint": "Starts when idle and counts toward the shared budget.",
@@ -2395,6 +2405,16 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.dailyBudgetUsage": "Shared budget used today",
     "evolution.participationHint": "Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
     "evolution.upgradeRequired": "Method learning is unavailable in this version. Update Joi and try again.",
+    "evolution.retryWait": "Temporary failure; waiting before a bounded retry.",
+    "evolution.retryAt": "Next retry: {p0}",
+    "evolution.pauseDetail": "Pause reason: {p0} · {p1}",
+    "evolution.pauseUnknown": "The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
+    "evolution.sourceGroups": "Independent source groups: development {p0} · held out {p1}",
+    "evolution.reproducedGroups": "Reproduced in the latest experiment: {p0} source groups",
+    "evolution.waitingSamples": "Waiting for independent samples; resumes automatically when ready",
+    "evolution.sampleReadiness": "Independent source groups in this experiment: {p0} / {p1}",
+    "evolution.baselineNotReproduced": "The baseline did not reproduce the defect; no candidate was proposed.",
+    "evolution.experienceCount": "Reusable comparisons: {p0}",
     "export.processing": "Processing…",
     "export.fullTextCopied": "Full text copied",
     "export.valueFilesSaved": "{p0} files saved",
@@ -4156,7 +4176,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.evaluationCalls": "本轮 {p0} 次调用",
     "evolution.developmentCases": "开发案例",
     "evolution.independentCases": "独立评测案例",
-    "evolution.reproducibleProblems": "可复现问题",
+    "evolution.reproducibleProblems": "待复现缺陷记录",
     "evolution.noIndependentCasesHint": "尚无独立评测案例；这些案例用于验证新方法的效果。",
     "evolution.independentCasesHint": "开发案例用于改进方法，独立评测案例用于验证效果。",
     "evolution.manualEvaluationHint": "空闲时开始，计入共享预算。",
@@ -4170,6 +4190,16 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.dailyBudgetUsage": "今日共享预算用量",
     "evolution.participationHint": "允许本工作台在空闲时参与方法学习，使用全部工作台共享的预算。",
     "evolution.upgradeRequired": "此版本暂不提供方法学习，请更新 Joi 后重试。",
+    "evolution.retryWait": "临时调用失败，冷却后会有限次重试。",
+    "evolution.retryAt": "下次重试：{p0}",
+    "evolution.pauseDetail": "暂停原因：{p0} · {p1}",
+    "evolution.pauseUnknown": "历史暂停未记录具体原因，请检查模型连接后显式恢复。",
+    "evolution.sourceGroups": "独立来源组：开发 {p0} · 封存 {p1}",
+    "evolution.reproducedGroups": "最近一轮已重放复现：{p0} 个来源组",
+    "evolution.waitingSamples": "等待独立样本，补齐后自动继续",
+    "evolution.sampleReadiness": "本轮独立来源组：{p0} / {p1}",
+    "evolution.baselineNotReproduced": "基线未重现缺陷，本轮未生成候选方法。",
+    "evolution.experienceCount": "可复用对照经验：{p0}",
     "export.processing": "正在处理…",
     "export.fullTextCopied": "已复制全文",
     "export.valueFilesSaved": "已保存 {p0} 个文件",
@@ -6458,8 +6488,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "开发案例": "evolution.developmentCases",
   "Held-out cases": "evolution.independentCases",
   "独立评测案例": "evolution.independentCases",
-  "Reproducible problems": "evolution.reproducibleProblems",
-  "可复现问题": "evolution.reproducibleProblems",
+  "Defect records awaiting reproduction": "evolution.reproducibleProblems",
+  "待复现缺陷记录": "evolution.reproducibleProblems",
   "No held-out cases yet. These cases independently verify the effect of new methods.": "evolution.noIndependentCasesHint",
   "尚无独立评测案例；这些案例用于验证新方法的效果。": "evolution.noIndependentCasesHint",
   "Development cases help improve methods; held-out cases independently verify their effect.": "evolution.independentCasesHint",
@@ -6484,6 +6514,14 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "允许本工作台在空闲时参与方法学习，使用全部工作台共享的预算。": "evolution.participationHint",
   "Method learning is unavailable in this version. Update Joi and try again.": "evolution.upgradeRequired",
   "此版本暂不提供方法学习，请更新 Joi 后重试。": "evolution.upgradeRequired",
+  "Temporary failure; waiting before a bounded retry.": "evolution.retryWait",
+  "临时调用失败，冷却后会有限次重试。": "evolution.retryWait",
+  "The stored pause has no detailed cause. Check the model connection before explicitly resuming.": "evolution.pauseUnknown",
+  "历史暂停未记录具体原因，请检查模型连接后显式恢复。": "evolution.pauseUnknown",
+  "Waiting for independent samples; resumes automatically when ready": "evolution.waitingSamples",
+  "等待独立样本，补齐后自动继续": "evolution.waitingSamples",
+  "The baseline did not reproduce the defect; no candidate was proposed.": "evolution.baselineNotReproduced",
+  "基线未重现缺陷，本轮未生成候选方法。": "evolution.baselineNotReproduced",
   "Processing…": "export.processing",
   "Full text copied": "export.fullTextCopied",
   "已复制全文": "export.fullTextCopied",

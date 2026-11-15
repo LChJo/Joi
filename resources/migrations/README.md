@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 099 releases the unique execution slot for `PAUSED` method experiments whose checkpoint reason is `insufficient_samples`. Their candidate, trials, costs and private cases remain unchanged. RUNNING and all other PAUSED experiments still share one unique slot. The migration does not resume learning or replay work.
+
 Migrations 094–096 add conversation-owned private session metadata and incrementally stored messages, durable child intents/checkpoints, safe context projections and payload-free update cursors. Conversation/turn ownership gates every write. Interrupted executions are recorded without replay; source text remains private and pageable. These migrations implement CHAT-18–26 / ADR 0033 and do not migrate or schedule historical work.
 
 Migration 069 为进化证据增加失败归因。只有上下文整理或完成判断可归因的验收失败进入策略触发门禁；执行、环境和未知原因仍保留在审计证据中，但不会推动策略改写。存量失败标记为 unknown，避免升级后把历史噪声误当作策略缺陷。

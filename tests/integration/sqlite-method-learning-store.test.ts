@@ -377,7 +377,7 @@ describe("production method learning persistence", () => {
     store.recordEvidenceRead({...read,toolCallId:"after-cancel"});
     expect(fixture.database.transaction(db=>db.prepare("SELECT COUNT(*) AS n FROM method_learning_evidence_reads").get())?.n).toBe(6);
   });
-  it("keeps archived-owner global revisions and only one unfinished experiment", () => {
+  it("keeps archived-owner global revisions and only one execution slot", () => {
     const experiment = {id:"e",workbenchId:"a",scope:"GLOBAL" as const,profile:"p",phase:"PROTOCOL" as const,status:"RUNNING" as const,createdAt:"2026-10-23",updatedAt:"2026-10-23",state:{}};
     store.saveExperiment(experiment);
     expect(() => store.saveExperiment({...experiment,id:"other"})).toThrow();
@@ -386,6 +386,18 @@ describe("production method learning persistence", () => {
     store.saveRevision({id:"r",workbenchId:"a",scope:"GLOBAL",profile:"p",status:"ACTIVE",createdAt:"2026-10-23",updatedAt:"2026-10-23",state:{}});
     fixture.database.transaction(db => db.prepare("UPDATE workbenches SET status='ARCHIVED' WHERE workbench_id='a'").run());
     expect(store.revisions()).toHaveLength(1);
+  });
+  it("upgrades a waiting checkpoint without resuming it and preserves the unique execution slot", () => {
+    fixture.database.transaction(db=>db.exec("DROP INDEX idx_method_learning_single_experiment; CREATE UNIQUE INDEX idx_method_learning_single_experiment ON method_learning_experiments((1)) WHERE status IN ('RUNNING','PAUSED')"));
+    const waiting={id:"waiting",workbenchId:"a",scope:"WORKBENCH" as const,profile:"p",phase:"VALIDATE" as const,status:"PAUSED" as const,
+      createdAt:"2026-10-23",updatedAt:"2026-10-23",state:{reason:"insufficient_samples",calls:99,candidate:{version:2}}};
+    store.saveExperiment(waiting);
+    fixture.database.transaction(db=>db.exec(readFileSync("resources/migrations/099_method_learning_waiting_slot.sql","utf8")));
+    store.saveExperiment({...waiting,id:"running",status:"RUNNING",state:{reason:"evaluating"}});
+    expect(store.experiment(waiting.id)).toEqual(waiting);
+    expect(()=>store.saveExperiment({...waiting,status:"RUNNING"})).toThrow();
+    expect(()=>store.saveExperiment({...waiting,id:"protocol-pause",state:{reason:"model_response_invalid"}})).toThrow();
+    expect(store.experiment(waiting.id)).toEqual(waiting);
   });
   it("versions baseline cache across source, model, tool, evaluator, parent and attempt", () => {
     const key = {source:"s",model:"m",tool:"t",evaluator:"e",parent:"p",caseId:"c",attempt:1};

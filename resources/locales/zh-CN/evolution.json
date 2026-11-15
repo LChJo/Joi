@@ -173,7 +173,7 @@
   "evaluationCalls": "本轮 {p0} 次调用",
   "developmentCases": "开发案例",
   "independentCases": "独立评测案例",
-  "reproducibleProblems": "可复现问题",
+  "reproducibleProblems": "待复现缺陷记录",
   "noIndependentCasesHint": "尚无独立评测案例；这些案例用于验证新方法的效果。",
   "independentCasesHint": "开发案例用于改进方法，独立评测案例用于验证效果。",
   "manualEvaluationHint": "空闲时开始，计入共享预算。",
@@ -186,5 +186,15 @@
   "callsUsedToday": "今日已用调用",
   "dailyBudgetUsage": "今日共享预算用量",
   "participationHint": "允许本工作台在空闲时参与方法学习，使用全部工作台共享的预算。",
-  "upgradeRequired": "此版本暂不提供方法学习，请更新 Joi 后重试。"
+  "upgradeRequired": "此版本暂不提供方法学习，请更新 Joi 后重试。",
+  "retryWait": "临时调用失败，冷却后会有限次重试。",
+  "retryAt": "下次重试：{p0}",
+  "pauseDetail": "暂停原因：{p0} · {p1}",
+  "pauseUnknown": "历史暂停未记录具体原因，请检查模型连接后显式恢复。",
+  "sourceGroups": "独立来源组：开发 {p0} · 封存 {p1}",
+  "reproducedGroups": "最近一轮已重放复现：{p0} 个来源组",
+  "waitingSamples": "等待独立样本，补齐后自动继续",
+  "sampleReadiness": "本轮独立来源组：{p0} / {p1}",
+  "baselineNotReproduced": "基线未重现缺陷，本轮未生成候选方法。",
+  "experienceCount": "可复用对照经验：{p0}"
 }

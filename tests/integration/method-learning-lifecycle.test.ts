@@ -112,13 +112,41 @@ describe("method learning lifecycle recovery", () => {
     expect(store.experiment(seeded.id)).toMatchObject({status:"PAUSED",state:{reason:"model_changed",protocol:{calls:0}}});
     expect(store.experimentUsage(seeded.id).tokens).toBe(8);
   });
-  it.each(["timeout","provider_error","generic"] as const)("preserves the experiment on %s and records unknown usage honestly", async kind => {
-    const seeded=experiment([seedCase(`failure-${kind}`)]); const subject=service();
-    call.mockRejectedValue(kind==="generic" ? new Error("Private provider detail") : new EvolutionModelCallError({kind,toolCallCount:0},null));
+  it("retries temporary failures after persisted backoff and requires explicit recovery after three failures", async () => {
+    const seeded=experiment([seedCase("temporary")]);
+    call.mockRejectedValue(new EvolutionModelCallError({kind:"timeout",toolCallCount:0},null));
+    await service().handle("evolution:a");
+    expect(store.control().paused).toBe(false);
+    expect(service().pending()).toEqual([]);
+    expect(service().status("a").learning?.blockers).toContain("retry_wait");
+    now="2026-10-23T01:01:00.000Z";
+    await service().handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(2);
+    now="2026-10-23T01:03:00.000Z";
+    await service().handle("evolution:a");
+    expect(store.control()).toMatchObject({paused:true,pause:{reason:"call_failed",at:now,workbenchId:"a"}});
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:3,tokens:0,tokensComplete:false});
+    now="2026-10-24T01:00:00.000Z";
+    expect(service().pending()).toEqual([]);
+  });
+  it("does not turn a user opt-out during an aborted call into a global failure", async () => {
+    const seeded=experiment([seedCase("opt-out-abort")]); const subject=service();
+    call.mockImplementation(()=>{
+      subject.configureParticipation("a",false);
+      return Promise.reject(new EvolutionModelCallError({kind:"aborted",toolCallCount:0},null));
+    });
+    await subject.handle("evolution:a");
+    expect(store.control().paused).toBe(false);
+    expect(store.participant("a").enabled).toBe(false);
+    expect(store.experimentUsage(seeded.id)).toEqual({calls:1,tokens:0,tokensComplete:false});
+  });
+  it("preserves the experiment on an unclassified failure and records unknown usage honestly", async () => {
+    const seeded=experiment([seedCase("failure-generic")]); const subject=service();
+    call.mockRejectedValue(new Error("Private provider detail"));
     await subject.handle("evolution:a");
     expect(store.experiment(seeded.id)).toMatchObject({status:"PAUSED",state:{reason:"call_failed",tokens:null}});
     expect(store.experimentUsage(seeded.id)).toEqual({calls:1,tokens:0,tokensComplete:false});
-    expect(subject.status("a").failure?.kind).toBe(kind==="generic" ? undefined : kind);
+    expect(subject.status("a").failure).toBeUndefined();
     expect(JSON.stringify(diagnostics.emit.mock.calls)).not.toContain("Private provider detail");
     subject.resumeGlobal();
     expect(store.experiment(seeded.id)).toMatchObject({status:"RUNNING",phase:"PROTOCOL",state:{failure:null,allowRepin:true}});
@@ -202,11 +230,77 @@ describe("method learning lifecycle recovery", () => {
     expect(store.experiment(seeded.id)).toMatchObject({status:"PAUSED",phase:"VALIDATE",state:{candidate}});
     expect(call).not.toHaveBeenCalled();
   });
+  it("allows another workbench to learn while a candidate waits for samples, without replacing that candidate", async () => {
+    const item=seedCase("parked");
+    const waiting=experiment([item],"VALIDATE",json({candidate,reason:"insufficient_samples"}));
+    waiting.status="PAUSED"; store.saveExperiment(waiting);
+    seedCase("independent","development","b");
+    store.configureParticipant("b",{enabled:true,dailyCallLimit:150});
+    const subject=service();
+    expect(subject.pending()).toEqual([{inputId:"evolution:b",createdAt:now}]);
+    call.mockResolvedValue({value:{action:"read_evidence",evidenceId:"record-11"},tokens:3});
+    await subject.handle("evolution:b");
+    expect(store.experiment(waiting.id)).toMatchObject({status:"PAUSED",state:{candidate}});
+    expect(store.experiments().find(e=>e.workbenchId==="b")).toMatchObject({status:"RUNNING"});
+    for (let i=0;i<5;i++) seedCase(`held-out-while-busy-${String(i)}`,"sealed");
+    subject.scan();
+    expect(store.experiment(waiting.id)?.status).toBe("PAUSED");
+    const other=store.experiments().find(e=>e.workbenchId==="b");
+    if (!other) throw new Error("Missing independent experiment");
+    store.saveExperiment({...other,status:"REJECTED"});
+    subject.pending();
+    expect(store.experiment(waiting.id)).toMatchObject({status:"RUNNING",phase:"EVALUATE",state:{candidate}});
+  });
   it("caps unfinished isolated trials and preserves a failed baseline as counterevidence", async () => {
     const item=seedCase("bounded"); const seeded=experiment([item],"DEVELOP",json({current:{...trial(item.caseId),calls:5,modelCalls:5}}));
     call.mockResolvedValue({value:{action:"read_evidence",evidenceId:"requirements"},tokens:1});
     await service().handle("evolution:a");
     expect(store.experiment(seeded.id)?.state).toMatchObject({current:null,trials:[{success:false,calls:6}]});
+  });
+  it("distinguishes source groups and baseline reproduction from immutable defect snapshots", () => {
+    const item=seedCase("metrics");
+    store.upsertCases([{...item,caseId:"another-snapshot"}]);
+    experiment([item],"DEVELOP",json({trials:[0,1,2].map(attempt=>({...trial(item.caseId,"baseline",attempt),success:attempt===2}))}));
+    expect(service().status("a").learning?.cases).toMatchObject({development:2,defects:2,developmentGroups:1,sealedGroups:0,reproduced:1});
+  });
+  it("shows the executing experiment ahead of a waiting candidate in another input profile", () => {
+    const waiting=experiment([seedCase("waiting-profile")],"VALIDATE",json({candidate,reason:"insufficient_samples"}));
+    waiting.status="PAUSED"; store.saveExperiment(waiting);
+    now="2026-10-24T01:00:00.000Z";
+    const running=experiment([],"PROTOCOL",{},"executing-profile");
+    running.profile=learningProfile(11); store.saveExperiment(running);
+    expect(service().status("a").learning).toMatchObject({stage:"PROTOCOL",experiment:{id:running.id,waitingForSamples:false}});
+  });
+  it("explains the daily candidate cap for another workbench even while a candidate waits for samples", () => {
+    const waiting=experiment([seedCase("daily-wait")],"PROPOSE",json({reason:"insufficient_samples"}));
+    waiting.status="PAUSED"; store.saveExperiment(waiting);
+    seedCase("daily-other","development","b");
+    store.configureParticipant("b",{enabled:true,dailyCallLimit:150});
+    store.configureGlobal({lastCandidateDay:now.slice(0,10)});
+    const subject=service();
+    expect(subject.pending()).toEqual([]);
+    expect(subject.status("b").learning?.blockers).toContain("daily_candidate_limit");
+  });
+  it("waits for five independent samples before paying for a proposal and resumes the measured baseline", async () => {
+    const item=seedCase("readiness");
+    const trials=[0,1,2].map(attempt=>({...trial(item.caseId,"baseline",attempt),success:attempt===2,modelCalls:4}));
+    const seeded=experiment([item],"DEVELOP",json({trials}));
+    const subject=service();
+    await subject.handle("evolution:a");
+    expect(store.experiment(seeded.id)).toMatchObject({status:"PAUSED",phase:"PROPOSE",state:{reason:"insufficient_samples",candidate:null,trials}});
+    expect(call).not.toHaveBeenCalled();
+    for (let i=0;i<5;i++) seedCase(`ready-sealed-${String(i)}`,"sealed");
+    subject.scan();
+    expect(store.experiment(seeded.id)).toMatchObject({status:"RUNNING",phase:"PROPOSE",state:{trials}});
+  });
+  it("rejects an excessive development cost before paying for independent evaluation", async () => {
+    const item=seedCase("cost-gate");
+    const trials=[0,1,2].flatMap(attempt=>["baseline","candidate"].map(variant=>({...trial(item.caseId,variant,attempt),
+      success:variant==="candidate" || attempt===0,modelCalls:variant==="candidate" ? 6 : 4,tokens:10})));
+    const seeded=experiment([item],"VALIDATE",json({candidate,trials}));
+    await service().handle("evolution:a");
+    expect(store.experiment(seeded.id)).toMatchObject({status:"REJECTED",state:{reason:"cost_regression",experience:{baselineCalls:12,candidateCalls:18}}});
+    expect(call).not.toHaveBeenCalled();
   });
   it("rejects malformed proposals without losing their production evidence", async () => {
     const item=seedCase("proposal"); const seeded=experiment([item],"PROPOSE");
@@ -215,11 +309,86 @@ describe("method learning lifecycle recovery", () => {
     expect(store.experiment(seeded.id)).toMatchObject({status:"REJECTED",state:{reason:"invalid_candidate"}});
     expect(store.listCases()).toHaveLength(1);
   });
+  it("retains development counterexamples for compatible proposals and rejects an unchanged harmful method", async () => {
+    const item=seedCase("experience");
+    const trials=[0,1,2].flatMap(attempt=>["baseline","candidate"].map(variant=>({...trial(item.caseId,variant,attempt),
+      success:variant==="baseline" || attempt===0,modelCalls:4,tokens:10})));
+    const previous=experiment([item],"VALIDATE",json({candidate,trials}));
+    const subject=service();
+    await subject.handle("evolution:a");
+    expect(store.experiment(previous.id)).toMatchObject({status:"REJECTED",state:{reason:"quality_regression"}});
+    expect(subject.status("a").learning?.cases.experiences).toBe(1);
+    now="2026-10-24T01:00:00.000Z";
+    const nextItem=seedCase("next-experience");
+    const next=experiment([nextItem],"PROPOSE",{},"next");
+    call.mockImplementation(input=> {
+      const prompt=JSON.parse(input.prompt) as {experiences:unknown[]};
+      expect(prompt.experiences).toEqual([expect.objectContaining({outcome:"quality_regression",baselineSuccesses:3,candidateSuccesses:1})]);
+      return Promise.resolve({value:{strategy:candidate,fixes:[nextItem.caseId]},tokens:5});
+    });
+    await subject.handle("evolution:a");
+    expect(store.experiment(next.id)).toMatchObject({status:"REJECTED",state:{reason:"invalid_candidate"}});
+  });
+  it.each(["workbench","model"] as const)("keeps incompatible %s comparisons out of a proposal", async mismatch => {
+    const item=seedCase("private-experience");
+    const trials=[0,1,2].flatMap(attempt=>["baseline","candidate"].map(variant=>({...trial(item.caseId,variant,attempt),
+      success:variant==="baseline" || attempt===0,modelCalls:4,tokens:10})));
+    experiment([item],"VALIDATE",json({candidate,trials}));
+    await service().handle("evolution:a");
+    now="2026-10-24T01:00:00.000Z";
+    const workbenchId=mismatch==="workbench" ? "b" : "a";
+    store.configureParticipant(workbenchId,{enabled:true,dailyCallLimit:150});
+    if (mismatch==="model") pin={...pin,modelRevisionId:"m2"};
+    const nextItem=seedCase("isolated-next","development",workbenchId);
+    const next=experiment([nextItem],"PROPOSE",json({pin}),"isolated-next-experiment");
+    next.workbenchId=workbenchId; store.saveExperiment(next);
+    call.mockImplementation(input=>{
+      expect((JSON.parse(input.prompt) as {experiences:unknown[]}).experiences).toEqual([]);
+      return Promise.resolve({value:{strategy:candidate,fixes:[nextItem.caseId]},tokens:5});
+    });
+    await service().handle(`evolution:${workbenchId}`);
+    expect(store.experiment(next.id)).toMatchObject({status:"RUNNING",phase:"VALIDATE"});
+  });
+  it("does not match unrelated defects merely because both datasets contain a healthy control", async () => {
+    const item=seedCase("first-defect"), healthy=seedCase("healthy-control","development","a",true);
+    const trials=[item,healthy].flatMap(row=>[0,1,2].flatMap(attempt=>["baseline","candidate"].map(variant=>({...trial(row.caseId,variant,attempt),
+      success:row.defect==="healthy" || variant==="baseline" || attempt===0,modelCalls:4,tokens:10}))));
+    experiment([item,healthy],"VALIDATE",json({candidate,trials}));
+    await service().handle("evolution:a");
+    const nextItem={...seedCase("different-defect"),defect:"dependency_order" as const};
+    const next=experiment([nextItem,healthy],"PROPOSE",{},"different-defect-experiment");
+    call.mockImplementation(input=>{
+      expect((JSON.parse(input.prompt) as {experiences:unknown[]}).experiences).toEqual([]);
+      return Promise.resolve({value:{strategy:candidate,fixes:[nextItem.caseId]},tokens:5});
+    });
+    await service().handle("evolution:a");
+    expect(store.experiment(next.id)).toMatchObject({status:"RUNNING",phase:"VALIDATE"});
+  });
+  it("blocks a previously hard-violating method even when its incomplete comparison produced no experience", async () => {
+    const item=seedCase("hard-counterexample");
+    const previous=experiment([item],"VALIDATE",json({candidate,current:trial(item.caseId,"candidate")}));
+    call.mockResolvedValue({value:{action:"finish",decision:"complete",evidenceIds:[]},tokens:5});
+    await service().handle("evolution:a");
+    expect(store.experiment(previous.id)).toMatchObject({status:"REJECTED",state:{reason:"hard_violation"}});
+    const nextItem=seedCase("hard-repeat");
+    const next=experiment([nextItem],"PROPOSE",{},"hard-repeat-experiment");
+    call.mockResolvedValue({value:{strategy:candidate,fixes:[nextItem.caseId]},tokens:5});
+    await service().handle("evolution:a");
+    expect(store.experiment(next.id)).toMatchObject({status:"REJECTED",state:{reason:"invalid_candidate"}});
+  });
   it("expires an under-sampled canary without issuing another model call", () => {
     const subject=service(); const old=revision("CANARY","2026-09-01T00:00:00.000Z");
     expect(subject.pending()).toEqual([]);
     subject.scan();
     expect(store.revision(old.id)).toMatchObject({status:"REJECTED",state:{reason:"insufficient_samples"}});
+    expect(call).not.toHaveBeenCalled();
+  });
+  it("expires a candidate after thirty days of insufficient samples without spending", () => {
+    const waiting=experiment([seedCase("expired-wait")],"VALIDATE",json({candidate,reason:"insufficient_samples"}));
+    waiting.status="PAUSED"; store.saveExperiment(waiting);
+    now="2026-11-24T01:00:00.000Z";
+    service().scan();
+    expect(store.experiment(waiting.id)).toMatchObject({status:"REJECTED",state:{reason:"insufficient_samples",candidate}});
     expect(call).not.toHaveBeenCalled();
   });
   it("keeps a production canary pending until independent matched controls exist", () => {

@@ -163,7 +163,7 @@ export interface EvolutionStatusDto {
 }
 
 export type EvolutionLearningStage = "OBSERVING" | "DIAGNOSING" | "PROTOCOL" | "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE" | "CANARY" | "ACTIVE" | "PAUSED";
-export type EvolutionLearningBlocker = "disabled" | "paused" | "not_idle" | "budget_exhausted" | "no_reproducible_case" | "insufficient_samples" | "model_response_invalid" | "model_changed" | "daily_candidate_limit";
+export type EvolutionLearningBlocker = "disabled" | "paused" | "not_idle" | "budget_exhausted" | "no_reproducible_case" | "insufficient_samples" | "model_response_invalid" | "model_changed" | "daily_candidate_limit" | "retry_wait";
 export interface EvolutionMethodDto {
   revisionId: string;
   scope: EvolutionScope;
@@ -183,10 +183,12 @@ export interface EvolutionLearningDto {
   evaluatorVersion: string;
   stage: EvolutionLearningStage;
   blockers: EvolutionLearningBlocker[];
-  globalBudget: { enabled: boolean; paused: boolean; dailyCallLimit: number; callsUsedToday: number; tokensToday: number | null };
-  participation: { enabled: boolean; paused: boolean };
-  cases: { development: number; sealed: number; defects: number };
-  experiment: { id: string; calls: number; tokens: number | null; reason: EvolutionReason } | null;
+  globalBudget: { enabled: boolean; paused: boolean; dailyCallLimit: number; callsUsedToday: number; tokensToday: number | null;
+    pause?: { reason: EvolutionReason; at: string; workbenchId: string | null } | null };
+  participation: { enabled: boolean; paused: boolean; reason?: "call_failed" | "rolled_back" | "model_response_invalid" };
+  cases: { development: number; sealed: number; defects: number; developmentGroups?: number; sealedGroups?: number; reproduced?: number; experiences?: number };
+  experiment: { id: string; calls: number; tokens: number | null; reason: EvolutionReason; retryAt?: string | null;
+    waitingForSamples?: boolean; sealedGroups?: number; requiredSealedGroups?: number; baselineNotReproduced?: boolean } | null;
   appliedGoals: number;
   methods: EvolutionMethodDto[];
 }

@@ -84,3 +84,23 @@ it("keeps rejected and reverted candidates out of the adopted methods section", 
   expect(within(methods).queryByText("任务规划")).toBeNull();
   expect(within(methods).queryByRole("button")).toBeNull();
 });
+
+it("explains a global pause separately from the latest assessment and counts independent groups", async () => {
+  show({...status,learning:{...learning,stage:"PAUSED",blockers:["paused"],
+    globalBudget:{...learning.globalBudget,paused:true,pause:{reason:"model_changed",at:"2026-10-23T01:00:00.000Z",workbenchId:"other"}},
+    cases:{...learning.cases,developmentGroups:1,sealedGroups:0,reproduced:0}}});
+  const progress=await screen.findByRole("region",{name:"当前进展"});
+  expect(within(progress).getByText(/暂停原因：模型或评测环境已变化/u)).toBeInTheDocument();
+  expect(within(progress).getByText(/独立来源组：开发 1 · 封存 0/u)).toBeInTheDocument();
+  expect(within(progress).getByText("待复现缺陷记录")).toBeInTheDocument();
+  expect(within(progress).getByText(/改善幅度不足/u)).toBeInTheDocument();
+});
+
+it("shows sample waiting without asking for manual resume or reproposing a candidate", async () => {
+  show({...status,learning:{...learning,blockers:["insufficient_samples"],
+    experiment:{id:"waiting",calls:99,tokens:null,reason:"insufficient_samples",waitingForSamples:true,sealedGroups:2,requiredSealedGroups:5}}});
+  expect(await screen.findByText("等待独立样本，补齐后自动继续")).toBeInTheDocument();
+  expect(screen.getByText("本轮独立来源组：2 / 5")).toBeInTheDocument();
+  expect(screen.getByRole("button",{name:"立即评测一次"})).toBeDisabled();
+  expect(screen.queryByText("方法学习已暂停")).toBeNull();
+});

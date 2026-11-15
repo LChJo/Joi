@@ -920,9 +920,9 @@
     "sourceText": "独立评测案例"
   },
   "reproducibleProblems": {
-    "message": "Reproducible problems",
-    "description": "evolution: Reproducible problems",
-    "sourceText": "可复现问题"
+    "message": "Defect records awaiting reproduction",
+    "description": "evolution: Defect records awaiting reproduction",
+    "sourceText": "待复现缺陷记录"
   },
   "noIndependentCasesHint": {
     "message": "No held-out cases yet. These cases independently verify the effect of new methods.",
@@ -988,5 +988,76 @@
     "message": "Method learning is unavailable in this version. Update Joi and try again.",
     "description": "evolution: Method learning is unavailable in this version. Update Joi and try again.",
     "sourceText": "此版本暂不提供方法学习，请更新 Joi 后重试。"
+  },
+  "retryWait": {
+    "message": "Temporary failure; waiting before a bounded retry.",
+    "description": "evolution: Temporary failure; waiting before a bounded retry.",
+    "sourceText": "临时调用失败，冷却后会有限次重试。"
+  },
+  "retryAt": {
+    "message": "Next retry: {p0}",
+    "description": "evolution: Next retry: {p0}",
+    "sourceText": "下次重试：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "pauseDetail": {
+    "message": "Pause reason: {p0} · {p1}",
+    "description": "evolution: Pause reason: {p0} · {p1}",
+    "sourceText": "暂停原因：{p0} · {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "pauseUnknown": {
+    "message": "The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
+    "description": "evolution: The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
+    "sourceText": "历史暂停未记录具体原因，请检查模型连接后显式恢复。"
+  },
+  "sourceGroups": {
+    "message": "Independent source groups: development {p0} · held out {p1}",
+    "description": "evolution: Independent source groups: development {p0} · held out {p1}",
+    "sourceText": "独立来源组：开发 {p0} · 封存 {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "reproducedGroups": {
+    "message": "Reproduced in the latest experiment: {p0} source groups",
+    "description": "evolution: Reproduced in the latest experiment: {p0} source groups",
+    "sourceText": "最近一轮已重放复现：{p0} 个来源组",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "waitingSamples": {
+    "message": "Waiting for independent samples; resumes automatically when ready",
+    "description": "evolution: Waiting for independent samples; resumes automatically when ready",
+    "sourceText": "等待独立样本，补齐后自动继续"
+  },
+  "sampleReadiness": {
+    "message": "Independent source groups in this experiment: {p0} / {p1}",
+    "description": "evolution: Independent source groups in this experiment: {p0} / {p1}",
+    "sourceText": "本轮独立来源组：{p0} / {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "baselineNotReproduced": {
+    "message": "The baseline did not reproduce the defect; no candidate was proposed.",
+    "description": "evolution: The baseline did not reproduce the defect; no candidate was proposed.",
+    "sourceText": "基线未重现缺陷，本轮未生成候选方法。"
+  },
+  "experienceCount": {
+    "message": "Reusable comparisons: {p0}",
+    "description": "evolution: Reusable comparisons: {p0}",
+    "sourceText": "可复用对照经验：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
   }
 }

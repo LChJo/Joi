@@ -3097,9 +3097,9 @@
     "description": "evolution: Held-out cases",
     "placeholders": {}
   },
-  "evolutionReproducibleProblems": "Reproducible problems",
+  "evolutionReproducibleProblems": "Defect records awaiting reproduction",
   "@evolutionReproducibleProblems": {
-    "description": "evolution: Reproducible problems",
+    "description": "evolution: Defect records awaiting reproduction",
     "placeholders": {}
   },
   "evolutionNoIndependentCasesHint": "No held-out cases yet. These cases independently verify the effect of new methods.",
@@ -3166,6 +3166,89 @@
   "@evolutionUpgradeRequired": {
     "description": "evolution: Method learning is unavailable in this version. Update Joi and try again.",
     "placeholders": {}
+  },
+  "evolutionRetryWait": "Temporary failure; waiting before a bounded retry.",
+  "@evolutionRetryWait": {
+    "description": "evolution: Temporary failure; waiting before a bounded retry.",
+    "placeholders": {}
+  },
+  "evolutionRetryAt": "Next retry: {p0}",
+  "@evolutionRetryAt": {
+    "description": "evolution: Next retry: {p0}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionPauseDetail": "Pause reason: {p0} · {p1}",
+  "@evolutionPauseDetail": {
+    "description": "evolution: Pause reason: {p0} · {p1}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionPauseUnknown": "The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
+  "@evolutionPauseUnknown": {
+    "description": "evolution: The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
+    "placeholders": {}
+  },
+  "evolutionSourceGroups": "Independent source groups: development {p0} · held out {p1}",
+  "@evolutionSourceGroups": {
+    "description": "evolution: Independent source groups: development {p0} · held out {p1}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionReproducedGroups": "Reproduced in the latest experiment: {p0} source groups",
+  "@evolutionReproducedGroups": {
+    "description": "evolution: Reproduced in the latest experiment: {p0} source groups",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionWaitingSamples": "Waiting for independent samples; resumes automatically when ready",
+  "@evolutionWaitingSamples": {
+    "description": "evolution: Waiting for independent samples; resumes automatically when ready",
+    "placeholders": {}
+  },
+  "evolutionSampleReadiness": "Independent source groups in this experiment: {p0} / {p1}",
+  "@evolutionSampleReadiness": {
+    "description": "evolution: Independent source groups in this experiment: {p0} / {p1}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionBaselineNotReproduced": "The baseline did not reproduce the defect; no candidate was proposed.",
+  "@evolutionBaselineNotReproduced": {
+    "description": "evolution: The baseline did not reproduce the defect; no candidate was proposed.",
+    "placeholders": {}
+  },
+  "evolutionExperienceCount": "Reusable comparisons: {p0}",
+  "@evolutionExperienceCount": {
+    "description": "evolution: Reusable comparisons: {p0}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
   },
   "exportProcessing": "Processing…",
   "@exportProcessing": {

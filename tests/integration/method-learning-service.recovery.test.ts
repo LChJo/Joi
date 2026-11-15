@@ -103,6 +103,7 @@ describe("method learning recovery and exposure safeguards", () => {
     subject.park("evolution:a");
     expect(store.experiment("experiment")?.status).toBe("PAUSED");
     expect(store.control().paused).toBe(false);
+    expect(subject.status("a").reason).toBe("call_failed");
     subject.resumeWorkbench("a");
     expect(store.experiment("experiment")).toMatchObject({ status: "RUNNING", phase: "PROTOCOL" });
     expect(subject.pending()).toEqual([{ inputId: "evolution:a", createdAt: now }]);
