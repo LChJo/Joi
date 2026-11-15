@@ -3,13 +3,25 @@ name: quality
 on:
   push:
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            package: package:win
+            artifact: joi-windows
+            installer: release-joi/*.exe
+          - os: macos-latest
+            package: package:mac
+            artifact: joi-macos
+            installer: release-joi/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +46,15 @@ jobs:
         run: npm run test:coverage
       - name: Electron E2E
         run: npx playwright test
-      - run: npm run package:verify
-      - run: npm run package:dir
+      - name: Build native installer
+        run: npm run ${{ matrix.package }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.installer }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

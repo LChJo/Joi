@@ -366,7 +366,8 @@ digital-life/
 
 - 覆盖率门槛为 statements、branches、functions、lines 均 `90`（`vitest.config.ts`）。
 - E2E 用 Playwright 驱动真实 Electron 窗口（`tests/e2e/`）。
-- CI 在 `windows-latest` 与 `macos-latest` 上依次运行 `npm ci`、`i18n:check`、typecheck、lint、test、coverage、E2E、打包校验与 unpacked 打包（`.github/workflows/ci.yml`）。
+- CI 在 `windows-latest` 与 `macos-latest` 上依次运行 `npm ci`、`i18n:check`、typecheck、lint、coverage、E2E，再通过 `package:win` / `package:mac` 生成 Windows NSIS `.exe` 和 macOS `.dmg`，包含生产重建与包内容审计（`.github/workflows/ci.yml`）。
+- push、pull request 及 **Actions → quality → Run workflow** 均可触发。在该次运行的 **Artifacts** 中下载 `joi-windows` 或 `joi-macos`，安装包保留 14 天。CI 关闭签名身份自动发现，尚未配置正式签名证书或 macOS 公证。
 
 ### 国际化
 

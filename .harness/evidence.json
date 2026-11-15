@@ -8,11 +8,11 @@
       "location": {
         "path": "README.md"
       },
-      "hash": "f1614d9c291587f7882374c965d2ee33bcbc79e77164a45652859f354dbe8f52",
-      "observedAt": "2026-11-14T15:29:28.513Z",
+      "hash": "dbcb8b0138e049b6ed95054ef92256bda39f88817c9f0a4327056e116389b85d",
+      "observedAt": "2026-11-15T06:36:07.181Z",
       "range": {
         "startLine": 1,
-        "endLine": 487
+        "endLine": 488
       }
     },
     {
@@ -274,11 +274,11 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "c5c23843eeab5cf525eb51f52eedc10675c3e95433d3cf32c02bdb3d2d74933d",
-      "observedAt": "2026-11-12T17:43:19.454Z",
+      "hash": "cdfb07fcc87d77060c244b2f4b1b3a9717036e3f234ebf42c6d76fa0ef1fe39b",
+      "observedAt": "2026-11-15T06:36:07.181Z",
       "range": {
         "startLine": 1,
-        "endLine": 162
+        "endLine": 163
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04 requires native Windows/macOS installer targets after quality gates, per-platform downloadable artifacts, manual triggering and failure on missing installers.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "801a17ddcf88e5f71c817d27fddf6763f0575ef52cdc90266e772ac40fd8c4a0",
-      "observedAt": "2026-11-14T15:29:28.513Z",
+      "hash": "7f281803d21a5a97b339202f02f7ea5fc0131c74155be0fa8a106ef64ceac6fd",
+      "observedAt": "2026-11-15T06:36:07.181Z",
       "range": {
         "startLine": 1,
-        "endLine": 672
+        "endLine": 678
       }
     },
     {
@@ -1380,11 +1380,11 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "395965fe1b05c7428565a0dbef1408f25bd2e5400d0d4cac8523fb0d9a290691",
-      "observedAt": "2026-11-12T18:25:25.650Z",
+      "hash": "be7b04aa90be4f4151652fe36e13ea7fa859ca6273a5ebebe830dab4dac06f1b",
+      "observedAt": "2026-11-15T06:36:07.181Z",
       "range": {
         "startLine": 1,
-        "endLine": 14188
+        "endLine": 14189
       }
     },
     {
@@ -2211,6 +2211,34 @@
       "range": {
         "startLine": 1,
         "endLine": 17
+      }
+    },
+    {
+      "id": "8dac9f09-aa75-4064-9754-8888b2337446",
+      "kind": "source-code",
+      "claim": "Windows and macOS quality runners execute native package:win/package:mac targets after coverage and Electron E2E, replacing unpacked-only output. Installers upload as distinct artifacts for 14 days with missing-file failure; push, PR and manual triggers use read-only repository permission and no signing identity discovery.",
+      "location": {
+        "path": ".github/workflows/ci.yml"
+      },
+      "hash": "a1ee22fab97d4260c75cd191d60a6b575c704ba6863e2f9f315565876e3d97b1",
+      "observedAt": "2026-11-15T06:36:07.181Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 60
+      }
+    },
+    {
+      "id": "7aee14ac-686a-4775-8339-6bb7a0b492de",
+      "kind": "source-code",
+      "claim": "Parsed-YAML regression contracts require native host/installer mapping, distinct artifact names, upload after packaging, default success gates, signing-discovery disablement, missing-installer errors and retained quality and manual triggers.",
+      "location": {
+        "path": "tests/contract/ci-packaging-contract.test.ts"
+      },
+      "hash": "8987dc62a490baab54537ac83392e1d2968928a82e2a739d06e9fb2ea37e887c",
+      "observedAt": "2026-11-15T06:36:07.181Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 67
       }
     }
   ]

@@ -670,3 +670,9 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 - 网页通过既有登录与 `/api/v1` 读取和继续同一对话；手机浏览器支持 320px、390px 与横屏，缩窄时自动收起历史遮罩。非桌面会话不显示本机工作区/Git入口。
 - Android 通过 `conversations.v1` 能力和明确的 `conversation.*` 白名单复用同一对话服务、持久身份与分页，不引入独立执行链；支持历史、选择、发送、停止、标题与归档生命周期，未确认发送复用请求身份。命令不允许路径、模型覆盖、凭据或任意 HTTP/文件/设置调用。
 - 回归覆盖加密传输、分片边界与设备游标隔离、受限 API 映射、共享 React 界面、无桌面桥接的浏览器尺寸及 Flutter 草稿/增量/停止；Android 真机网络验收与自动化验证分开记录。详见 [CHAT-46](21-normal-conversations.md)、[ADR 0013](adr/0013-native-iroh-remote-control.md) 和 [手机端手测](13-native-android-remote-manual-test.md)。
+
+## 2026-11-15 CI 桌面安装包（CI-04）
+
+- CI-04：Windows/macOS 质量门禁通过后，在各自 runner 上调用 `package:win` / `package:mac`，执行生产构建、包内容审计并生成 NSIS `.exe` / `.dmg`；不以解包目录替代安装包。
+- push、pull request 和手动 `workflow_dispatch` 均可运行。安装包分别上传为 `joi-windows` / `joi-macos` Actions Artifacts，保留 14 天；缺少对应安装包时上传步骤失败。
+- CI 关闭签名身份自动发现，不依赖发布密钥；正式 Windows 签名与 macOS 签名/公证继续作为单独发布验收。工作流语法及 `ci-packaging-contract.test.ts` 覆盖触发、平台/目标映射、质量门禁顺序和可下载产物；托管 runner 上的真实执行结果单独记录。
