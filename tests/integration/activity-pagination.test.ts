@@ -84,5 +84,5 @@ describe("bounded activity projections", () => {
     } finally {
       await fixture.close();
     }
-  }, 15_000);
+  }, process.env.CI && process.platform === "win32" ? 30_000 : 15_000);
 });

@@ -676,6 +676,7 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 ## 2026-11-15 CI 桌面安装包（CI-04）
 
 - CI-04：Windows/macOS 质量门禁通过后，非 `test` 分支在各自 runner 上调用 `package:win` / `package:mac`，执行生产构建、包内容审计并生成 NSIS `.exe` / `.dmg`；不以解包目录替代安装包。
+- Windows CI 的单用例总预算为 30 秒，覆盖临时 SQLite、文件系统准备与收尾；其他 CI 平台保留 15 秒，本地默认 5 秒。十万行活动分页测试的实际查询仍须小于 1 秒，业务断言、覆盖率门槛和双平台质量门禁保持有效。
 - push、pull request 和手动 `workflow_dispatch` 均可运行。安装包分别上传为 `joi-windows` / `joi-macos` Actions Artifacts，保留 14 天；缺少对应安装包时上传步骤失败。
 - `test` 分支的 push、手动运行及以 `test` 为源分支的 PR 保留安装依赖、国际化、类型、lint、生产构建、覆盖率和 Electron E2E 门禁，跳过安装包生成与上传，不更新 GitHub Release。
 - CI 关闭签名身份自动发现，不依赖发布密钥；正式 Windows 签名与 macOS 签名/公证继续作为单独发布验收。工作流语法及 `ci-packaging-contract.test.ts` 覆盖触发、平台/目标映射、质量门禁顺序和可下载产物；托管 runner 上的真实执行结果单独记录。

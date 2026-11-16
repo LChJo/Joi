@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "9c961e143b812b9ff302f6864f64c84956efb16df574ce9ae3aa887b68dd4da3",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "955b6cb2b10f6c0c7ca9e9ef7ad2ea577f3c78ad8c5074a301cf1df449d64091",
+      "observedAt": "2026-11-16T05:38:53.928Z",
       "range": {
         "startLine": 1,
-        "endLine": 718
+        "endLine": 719
       }
     },
     {
@@ -2164,11 +2164,11 @@
       "location": {
         "path": ".agent/commands/verify.md"
       },
-      "hash": "d2b36befc3fcb26147ce085cc46f5cbd8953d627e8e4d2fd7cedb70f35158279",
-      "observedAt": "2026-11-16T03:40:54.003Z",
+      "hash": "245d2aa5a49cff95bd91b651c94d546dad836f2044f9f4923cad40fb5dab149a",
+      "observedAt": "2026-11-16T05:38:53.928Z",
       "range": {
         "startLine": 1,
-        "endLine": 105
+        "endLine": 107
       }
     },
     {
@@ -2785,6 +2785,34 @@
       "range": {
         "startLine": 1,
         "endLine": 103
+      }
+    },
+    {
+      "id": "8207ea08-5d5a-4a15-89c4-edcd36a8182a",
+      "kind": "source-code",
+      "claim": "Windows CI gives fixture-inclusive cases a bounded 30-second deadline while other CI platforms retain 15 seconds, local cases retain 5 seconds, worker count stays two and all coverage thresholds remain 90 percent.",
+      "location": {
+        "path": "vitest.config.ts"
+      },
+      "hash": "6868f38cc8c87bf723fd8118d8c0575689ee3d484c25c4b30d9080f73a38b00c",
+      "observedAt": "2026-11-16T05:38:53.928Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 35
+      }
+    },
+    {
+      "id": "f0bbba9a-d8fb-4adc-9a1a-ba426b4e115e",
+      "kind": "source-code",
+      "claim": "The 100,000-row activity scenario allows 30 seconds of fixture-inclusive execution on Windows CI while enforcing the unchanged one-second query assertion.",
+      "location": {
+        "path": "tests/integration/activity-pagination.test.ts"
+      },
+      "hash": "8361b15ec2968f24f8dd96524733e47595ccab0f961e5f3b0b0f240e1fb6c6ca",
+      "observedAt": "2026-11-16T05:38:53.928Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 88
       }
     }
   ]

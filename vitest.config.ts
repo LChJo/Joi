@@ -6,7 +6,8 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
-    testTimeout: process.env.CI ? 15_000 : 5_000,
+    // Coverage and disposable SQLite/filesystem setup share each case's bounded time budget.
+    testTimeout: process.env.CI ? process.platform === "win32" ? 30_000 : 15_000 : 5_000,
     hookTimeout: process.env.CI ? 30_000 : 10_000,
     maxWorkers: process.env.CI ? 2 : undefined,
     globalSetup: ["tests/support/runtime-database-setup.ts"],
