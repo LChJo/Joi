@@ -675,18 +675,19 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 
 ## 2026-11-15 CI 桌面安装包（CI-04）
 
-- CI-04：Windows/macOS 质量门禁通过后，非 `test` 分支在各自 runner 上调用 `package:win` / `package:mac`，执行生产构建、包内容审计并生成 NSIS `.exe` / `.dmg`；不以解包目录替代安装包。
+- CI-04：只读版本规划确认 `main` 稳定版本高于 GitHub Latest（或首次发布）后，Windows/macOS 质量门禁通过才在各自 runner 上调用 `package:win` / `package:mac`，执行生产构建、包内容审计并生成 NSIS `.exe` / `.dmg`；不以解包目录替代安装包。
 - Windows CI 的单用例总预算为 30 秒，覆盖临时 SQLite、文件系统准备与收尾；其他 CI 平台保留 15 秒，本地默认 5 秒。十万行活动分页测试的实际查询仍须小于 1 秒，业务断言、覆盖率门槛和双平台质量门禁保持有效。
 - push、pull request 和手动 `workflow_dispatch` 均可运行。安装包分别上传为 `joi-windows` / `joi-macos` Actions Artifacts，保留 14 天；缺少对应安装包时上传步骤失败。
-- `test` 分支的 push、手动运行及以 `test` 为源分支的 PR 保留安装依赖、国际化、类型、lint、生产构建、覆盖率和 Electron E2E 门禁，跳过安装包生成与上传，不更新 GitHub Release。
+- 同版本、降版本、所有 PR 及其他分支的 push/手动运行保留安装依赖、国际化、类型、lint、生产构建、覆盖率和 Electron E2E 门禁，跳过安装包生成与上传，不更新 GitHub Release；手动触发不能绕过版本门禁。
 - CI 关闭签名身份自动发现，不依赖发布密钥；正式 Windows 签名与 macOS 签名/公证继续作为单独发布验收。工作流语法及 `ci-packaging-contract.test.ts` 覆盖触发、平台/目标映射、质量门禁顺序和可下载产物；托管 runner 上的真实执行结果单独记录。
 - 安装包生成命令始终显式传入 `--publish never`，禁止 electron-builder 根据 CI 环境隐式发布 GitHub Release 或要求 `GH_TOKEN`；上传由 Actions Artifacts 步骤负责。`package-command.test.ts` 通过真实打包入口和隔离工具替身验证构建、审计、目标和发布策略的命令边界。
 
 ## 2026-11-15 版本化桌面 Release（CI-05）
 
-- CI-05：仅 `main` 的 push/手动运行且 Windows、macOS 全部门禁及安装包上传成功后，独立发布任务下载同一次运行的两个安装包。PR 与其他分支不发布；仅发布任务拥有 `contents: write`，使用自动 `GITHUB_TOKEN`，打包进程继续禁止隐式发布。
-- 桌面版本由 `package.json` 与锁文件根版本共同维护，当前为 `0.1.1`，对应 `v0.1.1`。两个安装包须非空且版本匹配；草稿上传 `.exe`、`.dmg`、`SHA256SUMS.txt` 全部确认后才能公开并设为 Latest。任一上传失败不得公开不完整版本。
+- CI-05：仅 `main` 的 push/手动运行、版本规划确认升级且 Windows、macOS 全部门禁及安装包上传成功后，独立发布任务下载同一次运行的两个安装包。PR 与其他分支不发布；仅发布任务拥有 `contents: write`，使用自动 `GITHUB_TOKEN`，打包进程继续禁止隐式发布。
+- 桌面版本由 `package.json` 与锁文件根版本共同维护，当前为 `0.1.2`，对应 `v0.1.2`。两个安装包须非空且版本匹配；草稿上传 `.exe`、`.dmg`、`SHA256SUMS.txt` 全部确认后才能公开并设为 Latest。任一上传失败不得公开不完整版本。
 - 已公开版本保持不变，新版本需要升级版本号；中断草稿只允许同一提交恢复，不移动已有标签或混用其他提交的安装包。发布任务串行执行，不能取消正在上传的任务。自动化契约覆盖门禁、权限、草稿与发布顺序、失败、重复执行及版本冲突；真实双平台打包和 Release 附件另行验证。签名/公证状态须在 Release 中明确披露。
+- 2026-11-16 版本门禁与说明增量沿用 CI-04/CI-05：包与锁文件三处版本必须一致，稳定版本按 major/minor/patch 数值比较；Latest 查询异常或标签格式不可识别时拒绝规划发布。串行发布前再次比较 Latest，避免较早 CI 覆盖更高版本。以此前 Latest 标签为起点、当前提交为终点生成版本说明，首次发布不指定前一标签；生成失败或正文为空不得创建或公开 Release。恢复同提交草稿时补齐说明，已公开版本保持不变。回归见 `desktop-release-plan.test.ts`、`ci-packaging-contract.test.ts` 与 `desktop-release.test.ts`。
 
 ## 2026-11-15 搭档就绪与路径事实一致性（AC-07/14/44/48/53）
 

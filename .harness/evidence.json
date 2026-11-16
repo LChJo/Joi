@@ -4,12 +4,12 @@
     {
       "id": "8cdafcd8-5645-4e29-a4e6-84a24465e383",
       "kind": "document",
-      "claim": "Product scope: persistent global joi, workbenches, local and A2A partners; cross-platform clients.",
+      "claim": "Product scope: persistent global joi, workbenches, local and A2A partners; cross-platform clients. The release guide requires stable version upgrades, generated notes and immutable published versions.",
       "location": {
         "path": "README.md"
       },
-      "hash": "26b043ca0bb424f0f64fdf0abd1429438c4667855ebb792ae9f668b6d539457d",
-      "observedAt": "2026-11-15T08:40:32.156Z",
+      "hash": "fc2d1f0026ad00c260ddf528f21848a69bd1a37c75954ea58ca45eb2a3275024",
+      "observedAt": "2026-11-16T06:38:13.966Z",
       "range": {
         "startLine": 1,
         "endLine": 490
@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "941ec66504f7946c29621a9be85b05a9b628398736aa4c766af4b5633ae34099",
-      "observedAt": "2026-11-15T08:40:32.158Z",
+      "hash": "f3edc2ccd0bfa3d8cd4fbe71904bc944c332d014fba1e4eaf233e1af371e66b9",
+      "observedAt": "2026-11-16T06:38:13.969Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04 requires quality gates on all refs and native Windows/macOS installers and downloadable artifacts on non-test refs. Push/manual test refs and PRs sourced from test skip installers and uploads; main-only Release publication remains gated by both platforms. AC-07/14/44/48/53 also specify Worker environment casing, current source admission, canonical Work paths and guarded recovery reopening.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04/05 retain quality gates on all refs while restricting installers and main-only releases to stable version upgrades. Generated version notes, repeated Latest checks, consistent package-lock versions and both platforms gate publication. AC-07/14/44/48/53 also specify Worker environment casing, current source admission, canonical Work paths and guarded recovery reopening.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "955b6cb2b10f6c0c7ca9e9ef7ad2ea577f3c78ad8c5074a301cf1df449d64091",
-      "observedAt": "2026-11-16T05:38:53.928Z",
+      "hash": "3350e9e8bf6f3adedb24bf8cfc789d8bdf0905c4bf78a23d6595e0ed7c0ac29c",
+      "observedAt": "2026-11-16T06:38:13.972Z",
       "range": {
         "startLine": 1,
-        "endLine": 719
+        "endLine": 720
       }
     },
     {
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "c91b5fe745361bed78214cf48a46a9566882a1c5ee13ffe52c1aa034dd47493b",
-      "observedAt": "2026-11-15T08:40:32.159Z",
+      "hash": "a15ea5ed65d0ef148b7849688f6ec2ff6dab7d8dfcd456304d90d4cfeb0ced1f",
+      "observedAt": "2026-11-16T06:38:13.970Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
@@ -2216,29 +2216,29 @@
     {
       "id": "8dac9f09-aa75-4064-9754-8888b2337446",
       "kind": "source-code",
-      "claim": "Windows and macOS quality runners retain install, i18n, types, lint, production build, coverage and Electron E2E on all triggers. Push/manual test refs and PRs sourced from test skip native installer generation and artifact upload. Other refs retain native host packaging and distinct 14-day artifacts with missing-file failures. Only the independent serialized main job can publish GitHub Releases.",
+      "claim": "Read-only version planning gates native installer build/upload and main-only serialized publication on a stable version upgrade. All refs retain the Windows/macOS quality matrix; only publication has contents-write permission.",
       "location": {
         "path": ".github/workflows/ci.yml"
       },
-      "hash": "094b0ff1eba68d76fe34d6f62f29ac54c743e168faea6be691ffba5389376ded",
-      "observedAt": "2026-11-16T03:20:04.486Z",
+      "hash": "6b5dc88d34a640c6585bf0700de2bcdfd85e82b88c096d3c0ee08bce17ba3119",
+      "observedAt": "2026-11-16T06:30:05.699Z",
       "range": {
         "startLine": 1,
-        "endLine": 89
+        "endLine": 105
       }
     },
     {
       "id": "7aee14ac-686a-4775-8339-6bb7a0b492de",
       "kind": "source-code",
-      "claim": "Parsed-YAML contracts require native host/installer mapping, matching test-branch and PR-source guards for both packaging and upload, unconditional quality commands, default success gates, retained manual triggers and a serialized main-only release with contents-write permission.",
+      "claim": "Parsed-YAML contracts require planning outputs to gate packaging/upload/publication, unconditional quality commands, platform artifact mapping, retained manual triggers and serialized contents-write publication.",
       "location": {
         "path": "tests/contract/ci-packaging-contract.test.ts"
       },
-      "hash": "3c3e62318675102ccdf72a0cc6e7e3cb7509b79ad2ccfb055edda23495fe9124",
-      "observedAt": "2026-11-16T03:20:04.486Z",
+      "hash": "148bcb73e16961159fc56e565f2ac59acd9452f47a2e97cdf1dcd0467a825034",
+      "observedAt": "2026-11-16T06:30:05.702Z",
       "range": {
         "startLine": 1,
-        "endLine": 100
+        "endLine": 111
       }
     },
     {
@@ -2272,15 +2272,15 @@
     {
       "id": "c2d55d69-2d3c-485d-b26b-4254884fa6e1",
       "kind": "source-code",
-      "claim": "Publishes complete versioned desktop installer pairs through draft releases, preserves published versions and rejects commit conflicts.",
+      "claim": "Publishes complete installer pairs and generated version notes through drafts; rechecks Latest after quality gates, preserves published releases and rejects commit conflicts, empty notes and generation failures.",
       "location": {
         "path": "scripts/publish-desktop-release.mjs"
       },
-      "hash": "d5435c9cdad6ea1147af483f1b73c926f2256c66657960c5361b8832daaab9e6",
-      "observedAt": "2026-11-15T08:40:32.161Z",
+      "hash": "9e171eccab7a5ddeee16fc6a1ad04272fedec905259b6ef71fcb4febbf91e94c",
+      "observedAt": "2026-11-16T06:30:05.701Z",
       "range": {
         "startLine": 1,
-        "endLine": 108
+        "endLine": 122
       }
     },
     {
@@ -2300,29 +2300,29 @@
     {
       "id": "a17701d0-3d75-4b50-94c9-2a725a9c0454",
       "kind": "source-code",
-      "claim": "Disposable release contracts cover complete publication, upload failure, draft recovery, version conflicts and desktop version consistency.",
+      "claim": "Disposable GitHub transport contracts cover installer integrity, complete draft publication, version notes and their failure paths, draft recovery, immutable releases, version races and package-lock consistency.",
       "location": {
         "path": "tests/contract/desktop-release.test.ts"
       },
-      "hash": "cc66b7bc6991522b86026ebdfe4194c053e2586d9d348af7487a656054fde50a",
-      "observedAt": "2026-11-15T08:40:32.162Z",
+      "hash": "13ff2c62b0c2ce94daa5f005e4276722b895c22a62fefbc73c1c4ef717e46563",
+      "observedAt": "2026-11-16T06:30:05.701Z",
       "range": {
         "startLine": 1,
-        "endLine": 158
+        "endLine": 195
       }
     },
     {
       "id": "b2476fea-d7de-4dc4-9db1-ff980a32fc8f",
       "kind": "document",
-      "claim": "Desktop package and versioned GitHub Release operating commands and signing limitations.",
+      "claim": "Desktop package operating commands, stable version-upgrade release gates, generated notes, draft recovery, downloadable artifacts and signing limitations.",
       "location": {
         "path": ".agent/commands/package.md"
       },
-      "hash": "338183cb24643e0bf574ec4052a2e477d3fb92b410b2fb51adbd8c1371871eaf",
-      "observedAt": "2026-11-16T03:40:54.003Z",
+      "hash": "332b33d4effdef9975bbc18b4e3c8fa3a064d51ac13381087999d76ba8dea8aa",
+      "observedAt": "2026-11-16T06:30:05.702Z",
       "range": {
         "startLine": 1,
-        "endLine": 57
+        "endLine": 59
       }
     },
     {
@@ -2813,6 +2813,62 @@
       "range": {
         "startLine": 1,
         "endLine": 88
+      }
+    },
+    {
+      "id": "bf16f78a-8cce-4e71-bff3-1865f261272c",
+      "kind": "source-code",
+      "claim": "Read-only planning compares numeric stable package and Latest versions for main push/manual events, skips other refs, validates package-lock consistency and emits GitHub Actions outputs.",
+      "location": {
+        "path": "scripts/plan-desktop-release.mjs"
+      },
+      "hash": "b70a468071af55b51ab2592683349549a750b5ef033e4102327ee39142a2a593",
+      "observedAt": "2026-11-16T06:30:05.702Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 62
+      }
+    },
+    {
+      "id": "5a292c57-9057-40c7-91ca-9de6147ba773",
+      "kind": "source-code",
+      "claim": "Typed read-only release planning boundary exposes isolated GitHub transport and optional previous-release metadata.",
+      "location": {
+        "path": "scripts/plan-desktop-release.d.mts"
+      },
+      "hash": "f389b15633091d897d26cc172e967c11491a04dd9fee97e5062a230c6b79bdfb",
+      "observedAt": "2026-11-16T06:30:05.703Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 8
+      }
+    },
+    {
+      "id": "f6c6e563-612e-4a63-a2da-a5b4038ddd82",
+      "kind": "source-code",
+      "claim": "Synthetic GitHub and real CLI regressions cover version ordering, initial release, same/older versions, non-release refs, manual gates, errors, lock mismatch and Actions outputs.",
+      "location": {
+        "path": "tests/contract/desktop-release-plan.test.ts"
+      },
+      "hash": "82213837d0cd4969ccabd4f0e991cb2b719b9acd0eecbefd00c0388e9e558ff5",
+      "observedAt": "2026-11-16T06:30:05.703Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 88
+      }
+    },
+    {
+      "id": "3f0efe54-10bd-456c-9c66-d43bfd13c963",
+      "kind": "document",
+      "claim": "Chinese product guide documents quality gates on all refs, version-gated native installers, generated notes and immutable GitHub releases.",
+      "location": {
+        "path": "README.zh-CN.md"
+      },
+      "hash": "fadc02008c9d2f6c9bb982e4a6435309750aa6737e999a460d35db130688e9c7",
+      "observedAt": "2026-11-16T06:38:13.969Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 488
       }
     }
   ]

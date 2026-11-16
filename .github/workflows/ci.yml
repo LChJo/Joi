@@ -9,7 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  release-plan:
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check desktop version upgrade
+        id: plan
+        run: node scripts/plan-desktop-release.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   verify:
+    needs: release-plan
     strategy:
       fail-fast: false
       matrix:
@@ -47,12 +63,12 @@ jobs:
       - name: Electron E2E
         run: npx playwright test
       - name: Build native installer
-        if: github.ref != 'refs/heads/test' && github.head_ref != 'test'
+        if: needs.release-plan.outputs.publish == 'true'
         run: npm run ${{ matrix.package }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Upload installer
-        if: github.ref != 'refs/heads/test' && github.head_ref != 'test'
+        if: needs.release-plan.outputs.publish == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
@@ -62,8 +78,8 @@ jobs:
           retention-days: 14
 
   release:
-    needs: verify
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [release-plan, verify]
+    if: needs.release-plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -35,12 +35,18 @@ describe("desktop release publication", () => {
     const fetchImpl = fakeGithub((url, init) => {
       const method = init?.method ?? "GET";
       calls.push({ method, url, body: init?.body });
+      if (url.endsWith("/releases/latest")) return Response.json({ tag_name: "v0.1.0" });
+      if (url.endsWith("/releases/generate-notes")) {
+        expect(jsonBody(init)).toEqual({ tag_name: "v0.1.1", target_commitish: sha, previous_tag_name: "v0.1.0" });
+        return Response.json({ body: "## What's Changed\n\n* Improve goal recovery and timeline paging." });
+      }
       if (url.endsWith("/releases/tags/v0.1.1")) return Response.json({}, { status: 404 });
       if (url.includes("/git/ref/tags/")) return Response.json({}, { status: 404 });
       if (method === "POST" && url.endsWith("/releases")) {
         expect(jsonBody(init)).toMatchObject({
           tag_name: "v0.1.1", target_commitish: sha, draft: true, name: "joi 0.1.1",
         });
+        expect((jsonBody(init) as { body: string }).body).toContain("Improve goal recovery and timeline paging.");
         return Response.json({ id: 123, draft: true, target_commitish: sha, assets: [] }, { status: 201 });
       }
       if (url.includes("/releases?")) return undefined;
@@ -51,7 +57,8 @@ describe("desktop release publication", () => {
         return Response.json({ name, state: "uploaded", size: Buffer.byteLength(body as Buffer) }, { status: 201 });
       }
       expect(method).toBe("PATCH");
-      expect(jsonBody(init)).toEqual({ draft: false, make_latest: "true" });
+      expect(jsonBody(init)).toMatchObject({ draft: false, make_latest: "true" });
+      expect((jsonBody(init) as { body: string }).body).toContain("SHA256SUMS.txt");
       return Response.json({ html_url: "https://github.com/example/joi/releases/tag/v0.1.1" });
     });
     await publishDesktopRelease({ directory, version: "0.1.1", repository: "example/joi", sha, token: "fixture", fetchImpl });
@@ -65,6 +72,17 @@ describe("desktop release publication", () => {
   function options(fetchImpl: typeof fetch) {
     return { directory, version: "0.1.1", repository: "example/joi", sha, token: "fixture", fetchImpl };
   }
+
+  it("does not publish an older version if a newer release finishes while CI is running", async () => {
+    const methods: string[] = [];
+    const fetchImpl = fakeGithub((url, init) => {
+      methods.push(init?.method ?? "GET");
+      if (url.endsWith("/releases/latest")) return Response.json({ tag_name: "v0.2.0", html_url: "https://github.com/example/joi/releases/tag/v0.2.0" });
+      return undefined;
+    });
+    expect(await publishDesktopRelease(options(fetchImpl))).toMatchObject({ skipped: true });
+    expect(methods.every(method => method === "GET")).toBe(true);
+  });
 
   it("preserves published assets on subsequent commits and workflow reruns", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
@@ -82,8 +100,9 @@ describe("desktop release publication", () => {
     }
     if (scenario === "empty") await writeFile(path.join(directory, mac), "");
     const methods: string[] = [];
-    const fetchImpl = fakeGithub((_url, init) => {
+    const fetchImpl = fakeGithub((url, init) => {
       methods.push(init?.method ?? "GET");
+      if (url.endsWith("/releases/latest")) return Response.json({}, { status: 404 });
       return undefined;
     });
     await expect(publishDesktopRelease(options(fetchImpl))).rejects.toThrow(/installer|EXE/);
@@ -94,6 +113,8 @@ describe("desktop release publication", () => {
     const methods: string[] = [];
     const fetchImpl = fakeGithub((url, init) => {
       methods.push(init?.method ?? "GET");
+      if (url.endsWith("/releases/latest")) return Response.json({}, { status: 404 });
+      if (url.endsWith("/releases/generate-notes")) return Response.json({ body: "Initial release." });
       if (url.includes("/tags/")) return Response.json({}, { status: 404 });
       if (url.includes("/releases?")) return undefined;
       if (url.endsWith("/releases")) return Response.json({ id: 123, assets: [] }, { status: 201 });
@@ -111,6 +132,8 @@ describe("desktop release publication", () => {
     const fetchImpl = fakeGithub((url, init) => {
       const method = init?.method ?? "GET";
       methods.push(method);
+      if (url.endsWith("/releases/latest")) return Response.json({}, { status: 404 });
+      if (url.endsWith("/releases/generate-notes")) return Response.json({ body: "Recovered release notes." });
       if (url.endsWith("/releases/tags/v0.1.1")) return undefined;
       if (url.includes("/releases?")) {
         return Response.json([{ id: 123, tag_name: "v0.1.1", draft: true, target_commitish: sha, assets: [{ id: 7, name: mac }] }]);
@@ -122,11 +145,25 @@ describe("desktop release publication", () => {
           name: new URL(url).searchParams.get("name"), state: "uploaded", size: Buffer.byteLength(init?.body as Buffer),
         });
       }
+      expect((jsonBody(init) as { body: string }).body).toContain("Recovered release notes.");
       return Response.json({ html_url: "https://github.com/example/joi/releases/tag/v0.1.1" });
     });
     expect(await publishDesktopRelease(options(fetchImpl))).toMatchObject({ skipped: false });
     expect(methods).toContain("DELETE");
     expect(methods.at(-1)).toBe("PATCH");
+  });
+
+  it.each(["empty", "unavailable"])("does not create or upload a release when generated notes are %s", async (scenario) => {
+    const mutations: string[] = [];
+    const fetchImpl = fakeGithub((url, init) => {
+      if (url.endsWith("/releases/generate-notes")) {
+        return scenario === "empty" ? Response.json({ body: "  " }) : Response.json({}, { status: 503 });
+      }
+      if (init?.method && init.method !== "GET") mutations.push(url);
+      return undefined;
+    });
+    await expect(publishDesktopRelease(options(fetchImpl))).rejects.toThrow(scenario === "empty" ? /notes/ : /HTTP 503/);
+    expect(mutations).toEqual([]);
   });
 
   it.each(["draft", "tag"])("refuses a %s belonging to another commit", async (kind) => {
@@ -146,12 +183,12 @@ describe("desktop release publication", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("uses version 0.1.1 consistently in desktop metadata and the root lock entry", async () => {
+  it("keeps a stable desktop version consistent with the root lock entry", async () => {
     const manifest = JSON.parse(await readFile("package.json", "utf8")) as { version: string };
     const lock = JSON.parse(await readFile("package-lock.json", "utf8")) as {
       version: string; packages: Record<string, { version: string }>;
     };
-    expect(manifest.version).toBe("0.1.1");
+    expect(manifest.version).toMatch(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
     expect(lock.version).toBe(manifest.version);
     expect(lock.packages[""]?.version).toBe(manifest.version);
   });

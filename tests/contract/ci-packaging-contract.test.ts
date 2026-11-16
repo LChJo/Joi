@@ -20,14 +20,19 @@ interface PackagingTarget {
 interface QualityWorkflow {
   permissions: Record<string, string>;
   jobs: {
+    "release-plan": {
+      outputs: Record<string, string>;
+      steps: WorkflowStep[];
+    };
     release?: {
-      needs: string;
+      needs: string[];
       if: string;
       permissions: Record<string, string>;
       concurrency: { group: string; "cancel-in-progress": boolean };
       steps: WorkflowStep[];
     };
     verify: {
+      needs: string;
       "runs-on": string;
       steps: WorkflowStep[];
       strategy: { matrix: { include?: PackagingTarget[] } };
@@ -44,8 +49,8 @@ describe("CI desktop installer contract", () => {
     const release = workflow.jobs.release;
     expect(workflow.permissions).toEqual({ contents: "read" });
     expect(release).toMatchObject({
-      needs: "verify",
-      if: "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+      needs: ["release-plan", "verify"],
+      if: "needs.release-plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
       permissions: { contents: "write" },
       concurrency: { group: "desktop-release", "cancel-in-progress": false },
     });
@@ -80,13 +85,19 @@ describe("CI desktop installer contract", () => {
     expect(verify.steps[uploadIndex]).toMatchObject({
       with: { name: "${{ matrix.artifact }}", path: "${{ matrix.installer }}", "if-no-files-found": "error" },
     });
-    const installerCondition = "github.ref != 'refs/heads/test' && github.head_ref != 'test'";
+    const installerCondition = "needs.release-plan.outputs.publish == 'true'";
     expect(verify.steps[packageIndex]?.if).toBe(installerCondition);
     expect(verify.steps[uploadIndex]?.if).toBe(installerCondition);
   });
 
-  it("supports push, pull requests and manual packaging without removing quality gates", async () => {
+  it("plans version upgrades before packaging while retaining every quality gate", async () => {
     const workflow = await loadWorkflow();
+    expect(workflow.jobs.verify.needs).toBe("release-plan");
+    expect(workflow.jobs["release-plan"].outputs).toEqual({ publish: "${{ steps.plan.outputs.publish }}" });
+    expect(workflow.jobs["release-plan"].steps.at(-1)).toMatchObject({
+      id: "plan", run: "node scripts/plan-desktop-release.mjs",
+      env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" },
+    });
     expect(Object.keys(workflow.on)).toEqual(expect.arrayContaining(["push", "pull_request", "workflow_dispatch"]));
     const commands = workflow.jobs.verify.steps.flatMap(step => step.run ? [step.run] : []);
     expect(commands).toEqual(expect.arrayContaining([

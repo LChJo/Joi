@@ -366,8 +366,9 @@ digital-life/
 
 - 覆盖率门槛为 statements、branches、functions、lines 均 `90`（`vitest.config.ts`）。
 - E2E 用 Playwright 驱动真实 Electron 窗口（`tests/e2e/`）。
-- CI 在 `windows-latest` 与 `macos-latest` 上依次运行 `npm ci`、`i18n:check`、typecheck、lint、coverage、E2E，再通过 `package:win` / `package:mac` 生成 Windows NSIS `.exe` 和 macOS `.dmg`，包含生产重建与包内容审计（`.github/workflows/ci.yml`）。
-- push、pull request 及 **Actions → quality → Run workflow** 均可触发。在该次运行的 **Artifacts** 中下载 `joi-windows` 或 `joi-macos`，安装包保留 14 天。打包命令显式使用 `--publish never`，不要求 `GH_TOKEN` 或创建 GitHub Release。CI 关闭签名身份自动发现，尚未配置正式签名证书或 macOS 公证。
+- push、pull request 及 **Actions → quality → Run workflow** 均触发 Windows/macOS 质量门禁：安装依赖、国际化、typecheck、lint、生产构建、coverage 和 Electron E2E（`.github/workflows/ci.yml`）。
+- 只读版本规划比较包及锁文件根版本与 GitHub Latest；仅 `main` 版本升级或首次发布才生成 Windows NSIS `.exe`、macOS `.dmg` 并上传 `joi-windows` / `joi-macos` Artifacts，保留 14 天。普通提交、PR 及其他分支跳过安装包和 Release，手动运行同样受版本门禁约束。
+- 双平台全部通过后，独立任务再次检查 Latest，自动生成上一版本至当前提交的版本说明，再将两个安装包和 `SHA256SUMS.txt` 上传草稿并公开为 Latest。说明为空或生成失败则停止发布；已公开版本不覆盖，同提交可恢复中断草稿。打包进程保持 `--publish never`，只有发布任务持有自动 `GITHUB_TOKEN` 的写权限，无需个人 Token。Windows 安装包未正式签名，macOS 采用 ad-hoc 签名且未经公证。
 
 ### 国际化
 

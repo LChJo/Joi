@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { planDesktopRelease } from "./plan-desktop-release.mjs";
 
 export async function publishDesktopRelease({
   directory, version, repository, sha, token, fetchImpl = fetch,
@@ -40,6 +41,11 @@ export async function publishDesktopRelease({
   // Published versions remain immutable across later commits and workflow reruns.
   if (release && !release.draft) return { skipped: true, url: release.html_url };
   if (release && release.target_commitish !== sha) throw new Error("Release draft belongs to a different commit.");
+  // Serialized publication rechecks Latest after the potentially long-running quality matrix.
+  const plan = await planDesktopRelease({
+    version, repository, token, ref: "refs/heads/main", eventName: "push", fetchImpl,
+  });
+  if (!plan.publish) return { skipped: true, url: plan.url };
   const ref = await request(`${base}/git/ref/tags/${tag}`, { missing: true });
   if (ref && (ref.object.type !== "commit" || ref.object.sha !== sha)) {
     throw new Error("Release tag already points to a different commit.");
@@ -61,15 +67,23 @@ export async function publishDesktopRelease({
   await writeFile(path.join(directory, "SHA256SUMS.txt"), checksums.join(""));
   names.push("SHA256SUMS.txt");
 
+  const notes = await request(`${base}/releases/generate-notes`, {
+    method: "POST",
+    json: { tag_name: tag, target_commitish: sha, ...(plan.previousTag ? { previous_tag_name: plan.previousTag } : {}) },
+  });
+  if (typeof notes?.body !== "string" || !notes.body.trim()) throw new Error("Release notes must not be empty.");
+  const body = `${notes.body.trim()}\n\n## Downloads\n\n`
+    + "Windows NSIS (.exe) and macOS (.dmg) installers built after both platform quality gates passed.\n\n"
+    + "SHA-256 checksums: SHA256SUMS.txt.\n\n"
+    + "Windows installer is unsigned. macOS app is ad-hoc signed and is not notarized.\n\n"
+    + `Source commit: ${sha}`;
+
   if (!release) {
     release = await request(`${base}/releases`, {
       method: "POST",
       json: {
         tag_name: tag, target_commitish: sha, name: `joi ${version}`, draft: true,
-        body: "Windows NSIS (.exe) and macOS (.dmg) installers built after both platform quality gates passed.\n\n"
-          + "SHA-256 checksums: SHA256SUMS.txt.\n\n"
-          + "Windows installer is unsigned. macOS app is ad-hoc signed and is not notarized.\n\n"
-          + `Source commit: ${sha}`,
+        body,
       },
     });
   }
@@ -87,7 +101,7 @@ export async function publishDesktopRelease({
     }
   }
   const published = await request(`${base}/releases/${release.id}`, {
-    method: "PATCH", json: { draft: false, make_latest: "true" },
+    method: "PATCH", json: { body, draft: false, make_latest: "true" },
   });
   return { skipped: false, url: published.html_url };
 }
