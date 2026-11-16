@@ -47,10 +47,12 @@ jobs:
       - name: Electron E2E
         run: npx playwright test
       - name: Build native installer
+        if: github.ref != 'refs/heads/test' && github.head_ref != 'test'
         run: npm run ${{ matrix.package }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
       - name: Upload installer
+        if: github.ref != 'refs/heads/test' && github.head_ref != 'test'
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}

@@ -11,7 +11,7 @@ const credentials: CredentialStore = {
   modify: async () => undefined, delete: async () => undefined,
 };
 
-function record(protocol: "anthropic" | "openai" = "anthropic"): ModelSourceRecord {
+function record(protocol: "anthropic" | "openai" = "anthropic", maxOutputTokens?: number): ModelSourceRecord {
   return {
     baseUrl: "https://models.example.test/", local: false, order: 0, primary: true,
     source: createModelSource({
@@ -19,6 +19,7 @@ function record(protocol: "anthropic" | "openai" = "anthropic"): ModelSourceReco
       displayName: "Auth test", kind: "generic-openai", modelCapability: "custom-unverified-tools",
       modelId: "deepseek-flash", modelRevisionId: "model-1", protocol, sourceId: "auth-test",
       sourceRevisionId: "source-1", thinkingEffort: "xhigh",
+      ...(maxOutputTokens === undefined ? {} : { contextWindow: 1_000_000, maxOutputTokens }),
     }),
   };
 }
@@ -50,14 +51,14 @@ function validator() {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("Anthropic authentication compatibility over the real Pi SDK", () => {
-  it("proves Bearer with the same no-tool request after a 401 and returns the learned mode", async () => {
+  it.each([16_384, 65_536])("retains the configured %i-token limit across the Bearer retry after a 401", async (maxOutputTokens) => {
     const requests: { headers: Headers; body: unknown; signal: AbortSignal | null | undefined }[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: unknown, init: RequestInit) => {
       if (typeof init.body !== "string") throw new Error("expected JSON request body");
       requests.push({ headers: new Headers(init.headers), body: JSON.parse(init.body) as unknown, signal: init.signal });
       return requests.length === 1 ? failure(401) : textResponse();
     }));
-    const input = record();
+    const input = record("anthropic", maxOutputTokens);
     expect(await validator().validate(input)).toMatchObject({ status: "READY", anthropicAuthMode: "bearer" });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.headers.get("x-api-key")).toBe("fake-auth-token");
@@ -65,7 +66,7 @@ describe("Anthropic authentication compatibility over the real Pi SDK", () => {
     expect(requests[1]?.headers.get("authorization")).toBe("Bearer fake-auth-token");
     expect(requests[1]?.headers.has("x-api-key")).toBe(false);
     expect(requests[1]?.body).toEqual(requests[0]?.body);
-    expect(requests[1]?.body).toMatchObject({ model: "deepseek-flash", max_tokens: 256, output_config: { effort: "xhigh" } });
+    expect(requests[1]?.body).toMatchObject({ model: "deepseek-flash", max_tokens: maxOutputTokens, output_config: { effort: "xhigh" } });
     expect(requests[1]?.body).not.toHaveProperty("tools");
     expect(input).not.toHaveProperty("anthropicAuthMode");
   });

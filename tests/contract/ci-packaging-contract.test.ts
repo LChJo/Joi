@@ -80,8 +80,9 @@ describe("CI desktop installer contract", () => {
     expect(verify.steps[uploadIndex]).toMatchObject({
       with: { name: "${{ matrix.artifact }}", path: "${{ matrix.installer }}", "if-no-files-found": "error" },
     });
-    expect(verify.steps[packageIndex]?.if).toBeUndefined();
-    expect(verify.steps[uploadIndex]?.if).toBeUndefined();
+    const installerCondition = "github.ref != 'refs/heads/test' && github.head_ref != 'test'";
+    expect(verify.steps[packageIndex]?.if).toBe(installerCondition);
+    expect(verify.steps[uploadIndex]?.if).toBe(installerCondition);
   });
 
   it("supports push, pull requests and manual packaging without removing quality gates", async () => {
@@ -92,5 +93,8 @@ describe("CI desktop installer contract", () => {
       "npm ci", "npm run i18n:check", "npm run typecheck", "npm run lint",
       "node scripts/ci-build.mjs", "npm run test:coverage", "npx playwright test",
     ]));
+    for (const step of workflow.jobs.verify.steps.filter(step => step.run && step.run !== "npm run ${{ matrix.package }}")) {
+      expect(step.if).toBeUndefined();
+    }
   });
 });
