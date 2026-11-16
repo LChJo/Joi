@@ -7,6 +7,17 @@ import type { JoiHomeFeedDto } from "../../src/shared/joi.js";
 import type { RemoteCommand } from "../../src/shared/remote";
 
 describe("RemoteJoiApp", () => {
+  it("projects queued synthesis recovery in the paired browser", async () => {
+    const connection: RemoteJoiConnection = { sendMessage: vi.fn(), status: () => "connected", feed: vi.fn().mockResolvedValue({
+      goals: [{ goalId: "goal", title: "Queued report", agentCount: 0, canDelete: false, status: "FINALIZING", updatedAt: "2026-11-16T00:00:00Z",
+        work: { active: 0, completed: 1, failed: 0, total: 1 }, workbench: { workbenchId: "wb", name: "Test" }, recovery: { phase: "QUEUED", attempts: 1 } }],
+      thinking: [], unassignedActions: [],
+    }) };
+    render(<RemoteJoiApp connection={connection} />);
+    expect(await screen.findByText("等待总结")).toBeInTheDocument();
+    expect(screen.queryByText("正在总结")).not.toBeInTheDocument();
+  });
+
   it("loads shared conversation history and sends through the paired channel without desktop controls", async () => {
     const chat = { conversationId: "chat",workbenchId: "wb",title: "已有对话",updatedAt: "2026-11-14",turns: [{ turnId: "turn",text: "原问题",status: "COMPLETED",createdAt: "2026-11-14",config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "网络",modelName: "Model",skills: [],attachmentIds: [] },artifacts: [],entries: [{ entryId: "entry",kind: "MARKDOWN",role: "AGENT",text: "已有回复" }] }] };
     const invoke = vi.fn().mockImplementation((command: RemoteCommand) => {

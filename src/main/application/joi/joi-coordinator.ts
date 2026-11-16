@@ -1,11 +1,12 @@
 import { DomainError } from "../../domain/errors.js";
+import { isSynthesisStateCorrection } from "../../domain/work/joi-turn-recovery.js";
 import type { EvolutionService } from "../evolution/evolution-service.js";
 import type { WorkbenchCatalog } from "../ports/workbench-context.js";
 import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
 import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
 import { composeJoiContinuationBackground } from "./joi-continuation-prompt.js";
-import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
+import { sourceFailureNeedsCorrection, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { JoiReasoningOutcome, PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import {
   emitRuntimeDiagnostic,
@@ -17,7 +18,7 @@ import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import type { WorkbenchWorkspaceService } from "./workbench-workspace-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 import { resolveWorkbenchAssignment } from "./workbench-assignment.js";
-import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
+import { normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 import type { WorkOrchestrationService } from "../work/work-orchestration-service.js";
 import type { GoalRequirementsRepository } from "../ports/goal-requirements.js";
@@ -402,12 +403,13 @@ export class JoiCoordinator {
       turnId,
     });
     await this.dependencies.events?.emit("joi.turn.started", turnId, { workbenchId, inputId, turnId });
-    let formalOutputStarted = false;
+    const outputProgress = { started: false };
     // Only a trusted pre-submission rejection resolves a mutating call as having no effect.
     // SDK errors and unfinished calls retain their protection, including postcommit failures.
     const unsafeToReplayToolCalls = new Set<string>();
     const replayState = { uncertain: false, rejected: false };
     const sideEffectStarted = () => replayState.uncertain || unsafeToReplayToolCalls.size > 0;
+    const replaySafeTool = (name: string) => REPLAY_SAFE_TOOL_NAMES.has(name) || isGoalSynthesis && name === "turn_complete";
     const pendingReviewEffects = new Map<string, string>();
     const reviewEffects = { unsafe: false };
     const observedToolCalls = new Set<string>();
@@ -420,6 +422,8 @@ export class JoiCoordinator {
     let toolLeakRepairAttempted = false;
     let requirementsRepairAttempted = false;
     let toolCapabilityRepairAttempted = false;
+    let synthesisValidationRepairAttempted = false;
+    let synthesisCompletionFailure: string | undefined;
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
@@ -471,13 +475,11 @@ export class JoiCoordinator {
             onEvent: (event) => {
               if (event.type === "turn_finished") finishedTurnIds.add(event.turnId);
               if (event.type === "text_delta" && event.delta.length > 0) {
-                formalOutputStarted = true;
-                if (attemptCompletionText.length < COMPLETION_SUMMARY_LIMIT) {
-                  attemptCompletionText += event.delta.slice(0, COMPLETION_SUMMARY_LIMIT - attemptCompletionText.length);
-                }
+                outputProgress.started = true;
+                attemptCompletionText += event.delta;
               }
               if (event.type === "tool_started") {
-                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
+                if (!replaySafeTool(event.toolName)) {
                   if (pendingReviewEffects.has(event.toolCallId)) reviewEffects.unsafe = true;
                   if (unsafeToReplayToolCalls.has(event.toolCallId)) replayState.uncertain = true;
                   pendingReviewEffects.set(event.toolCallId, event.toolName);
@@ -485,7 +487,7 @@ export class JoiCoordinator {
                 observedToolCalls.add(event.toolCallId);
                 pass.observedToolCalls += 1;
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
-                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) unsafeToReplayToolCalls.add(event.toolCallId);
+                if (!replaySafeTool(event.toolName)) unsafeToReplayToolCalls.add(event.toolCallId);
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.started", {
                   workbenchId,
                   inputId,
@@ -496,7 +498,7 @@ export class JoiCoordinator {
                 });
               }
               if (event.type === "tool_finished") {
-                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
+                if (!replaySafeTool(event.toolName)) {
                   const startedTool = pendingReviewEffects.get(event.toolCallId);
                   pendingReviewEffects.delete(event.toolCallId);
                   const rejected = startedTool === event.toolName && event.replaySafeRejection === true;
@@ -522,6 +524,14 @@ export class JoiCoordinator {
                   turnId,
                 });
                 toolStartedAt.delete(event.toolCallId);
+                if (isGoalSynthesis && event.toolName === "turn_complete") {
+                  synthesisCompletionFailure = event.isError ? event.reasonCode : undefined;
+                  if (event.isError) {
+                    committedTurnOutcome = undefined;
+                    committedSynthesisState = undefined;
+                    committedOutcomeTools.delete("turn_complete");
+                  }
+                }
                 if (event.toolName === "work_dispatch") {
                   // Reflect the latest dispatch outcome: a later successful dispatch in the same
                   // Turn clears an earlier failure so a corrected retry is not wrongly failed.
@@ -536,8 +546,8 @@ export class JoiCoordinator {
                 if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
                 if (event.toolName === "turn_complete") committedSynthesisState = event.synthesisState;
               }
-              if (formalOutputStarted || sideEffectStarted()) {
-                void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted, sideEffectStarted: sideEffectStarted() });
+              if (outputProgress.started || sideEffectStarted()) {
+                void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted: outputProgress.started, sideEffectStarted: sideEffectStarted() });
               }
             },
             prompt,
@@ -560,6 +570,9 @@ export class JoiCoordinator {
           });
           if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
+          if (synthesisCompletionFailure === "goal_synthesis_correction_exhausted") {
+            throw new DomainError(synthesisCompletionFailure, "Synthesis correction requires a valid evidence state.");
+          }
           if (dispatchFailureReason !== undefined) {
             if (!DISPATCH_CLARIFICATION_REASONS.has(dispatchFailureReason)) {
               throw new DomainError(dispatchFailureReason, "Work dispatch failed before a recoverable plan was committed.");
@@ -665,18 +678,40 @@ export class JoiCoordinator {
             turnImages = undefined;
             continue;
           }
+          if (isGoalSynthesis) {
+            await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState);
+          }
           break;
         } catch (error) {
           if (signal?.aborted) throw error;
+          if (isGoalSynthesis && error instanceof DomainError && isSynthesisStateCorrection(error.code)
+            && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
+            synthesisValidationRepairAttempted = true;
+            committedSynthesisState = undefined;
+            committedTurnOutcome = undefined;
+            committedOutcomeTools.delete("turn_complete");
+            completionText = "";
+            prompt = "The synthesis has not been committed because its private evidence state is invalid. Read work_read_evidence for the current goal, use only actual resultId values and current requirement ids, then submit a corrected synthesisState with turn_complete and the complete deliverable. Do not repeat completed Work.";
+            turnImages = undefined;
+            continue;
+          }
           const failure = this.dependencies.failureClassifier?.classify(error) ?? null;
           const fallback = failure === null ? null : await this.dependencies.sources.selectFallback?.({
             currentSourceId: pin.sourceId,
             failure,
-            formalOutputStarted,
+            // Synthesis text is a draft until its outcome transaction commits.
+            formalOutputStarted: outputProgress.started && !isGoalSynthesis,
             sideEffectStarted: sideEffectStarted(),
             turnId,
           }) ?? null;
           if (fallback === null || attemptedSources.has(fallback.sourceId)) throw error;
+          if (isGoalSynthesis) {
+            completionText = "";
+            committedSynthesisState = undefined;
+            committedTurnOutcome = undefined;
+            synthesisCompletionFailure = undefined;
+            committedOutcomeTools.delete("turn_complete");
+          }
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.source_fallback", {
             workbenchId,
             fromSourceId: pin.sourceId,
@@ -795,7 +830,9 @@ export class JoiCoordinator {
           });
         }
       }
-      const failureReasonCode = runtimeDiagnosticErrorCode(error);
+      const sourceFailure = this.dependencies.failureClassifier?.classify(error) ?? null;
+      const failureReasonCode = sourceFailure !== null && sourceFailureNeedsCorrection(sourceFailure)
+        ? `source_${sourceFailure}` : runtimeDiagnosticErrorCode(error);
       const replayProof = replayState.rejected ? {
         replaySafe: !signal?.aborted && !sideEffectStarted() && pendingReviewEffects.size === 0,
       } : {};
@@ -815,7 +852,7 @@ export class JoiCoordinator {
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {
         workbenchId,
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
-        errorCode: runtimeDiagnosticErrorCode(error),
+        errorCode: failureReasonCode,
         inputId,
         observedToolCount: observedToolCalls.size,
         outcomeTools: [...committedOutcomeTools].sort(),
@@ -824,6 +861,9 @@ export class JoiCoordinator {
         turnId,
       });
       await this.dependencies.events?.emit("joi.turn.failed", turnId, { workbenchId, inputId, turnId });
+      if (sourceFailure !== null && sourceFailureNeedsCorrection(sourceFailure)) {
+        throw new DomainError(failureReasonCode, "The request requires correction before another model attempt.");
+      }
       throw error;
     } finally {
       signal?.removeEventListener("abort", abortRuntime);

@@ -9,7 +9,7 @@ export type ModelSourceProtocol = "openai" | "anthropic";
 export type ModelCapability = "release-tested" | "custom-unverified-tools";
 export type SourceFailureKind =
   | "timeout" | "connect" | "rate_limited" | "server_error"
-  | "auth" | "balance" | "configuration"
+  | "auth" | "balance" | "configuration" | "access"
   | "safety_refusal" | "content_refusal"
   | "protocol";
 
@@ -219,6 +219,7 @@ export function pinModelSourceForTurn(source: ModelSource, turnId: string): Mode
 }
 
 export function classifySourceFailure(failure: SourceFailureKind): { fallbackAllowed: boolean; sourceNeedsAttention: boolean } {
+  if (failure === "access") return { fallbackAllowed: true, sourceNeedsAttention: true };
   if (failure === "timeout" || failure === "connect" || failure === "rate_limited" || failure === "server_error" || failure === "protocol") {
     return { fallbackAllowed: true, sourceNeedsAttention: false };
   }
@@ -226,4 +227,9 @@ export function classifySourceFailure(failure: SourceFailureKind): { fallbackAll
     return { fallbackAllowed: false, sourceNeedsAttention: true };
   }
   return { fallbackAllowed: false, sourceNeedsAttention: false };
+}
+
+/** An unchanged request cannot resolve these failures once eligible fallback sources are exhausted. */
+export function sourceFailureNeedsCorrection(failure: SourceFailureKind): boolean {
+  return ["auth", "balance", "configuration", "access", "safety_refusal", "content_refusal"].includes(failure);
 }

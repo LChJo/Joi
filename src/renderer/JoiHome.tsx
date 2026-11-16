@@ -1101,8 +1101,18 @@ function GoalStatusBadge({ goal }: { goal: JoiGoalCardDto }) {
   useI18n();
   const status = goal.status;
   const label = status === "NEEDS_ATTENTION" && goal.clarification.reasonCode === "harness_review_unrecoverable"
-    ? t("home.reviewInterrupted") : goalStatusLabel(status);
+    ? t("home.reviewInterrupted") : goal.recovery?.phase === "WAITING_RETRY" ? t("home.synthesisRetryWaiting")
+      : goal.recovery?.phase === "QUEUED" ? t("home.synthesisQueued") : goalStatusLabel(status);
   return <span className={`joi-goal-status ${status.toLowerCase()}`}>{ACTIVE_GOAL_STATUSES.has(status) ? <i aria-hidden="true" className="joi-goal-status-dot" /> : null}{label}</span>;
+}
+
+function GoalRecoveryNotice({ goal }: { goal: JoiGoalCardDto }) {
+  useI18n();
+  const recovery = goal.recovery;
+  if (recovery === undefined) return null;
+  return <p role="status" className="joi-goal-recovery">{recovery.phase === "WAITING_RETRY"
+    ? t("home.synthesisRetryScheduled", { attempts: recovery.attempts, time: new Date(recovery.retryAt).toLocaleString(currentLocale()) })
+    : t("home.synthesisQueuedHint")}</p>;
 }
 
 function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
@@ -1482,6 +1492,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         </article>}
         {detailState.failed && detailState.detail?.harness === undefined ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
+        <GoalRecoveryNotice goal={goal} />
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} key={artifactVersion} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} key={artifactVersion} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} />}
@@ -1791,6 +1802,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
         </div>
         <GoalResultPreview goal={goal} onOpen={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
+        <GoalRecoveryNotice goal={goal} />
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refreshAfterMutation().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} onShowContinuationResult={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}
       </article>)}

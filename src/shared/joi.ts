@@ -457,6 +457,8 @@ export interface JoiGoalCardBaseDto {
   completionSummary?: string;
   resultId?: string;
   failure?: JoiGoalFailureDto;
+  /** Durable synthesis scheduling facts; an active reasoning turn has no recovery notice. */
+  recovery?: { phase: "WAITING_RETRY"; attempts: number; retryAt: string } | { phase: "QUEUED"; attempts: number };
   goalId: string;
   harness?: JoiGoalHarnessDto;
   title: string;

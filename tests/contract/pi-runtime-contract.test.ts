@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-ai";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
+import { PiReasoningFailureClassifier } from "../../src/main/infrastructure/pi/pi-reasoning-failure-classifier.js";
 
 import type {
   JoiReasoningSessionSnapshot,
@@ -1224,6 +1225,23 @@ describe("Pi reasoning runtime contract", () => {
       systemPrompt: "You are joi.",
       turnId: "turn_stream_error",
     })).rejects.toMatchObject({ code: "reasoning_stream_error" });
+  });
+
+  it.each([
+    ["HTTP 503 PRIVATE_PROVIDER_DETAIL", "server_error"],
+    ["HTTP 403 model deployment access denied PRIVATE_PROVIDER_DETAIL", "access"],
+    ["HTTP 403 content blocked by safety policy PRIVATE_PROVIDER_DETAIL", "safety_refusal"],
+    ["ECONNRESET PRIVATE_PROVIDER_DETAIL", "connect"],
+  ])("retains a safe recovery category for a provider stream error: %s", async (detail, expected) => {
+    const faux = fauxProvider({ provider: "joi-safe-stream-failure" });
+    const models = createModels(); models.setProvider(faux.provider);
+    faux.setResponses([fauxAssistantMessage([], { errorMessage: detail, stopReason: "error" })]);
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools: [] });
+    let failure: unknown;
+    try { await runtime.startTurn(rollbackTurnInput("safe-failure", "hi")); } catch (error) { failure = error; }
+    expect(new PiReasoningFailureClassifier().classify(failure)).toBe(expected);
+    expect(String(failure)).not.toContain("PRIVATE_PROVIDER_DETAIL");
+    expect(JSON.stringify(failure)).not.toContain("PRIVATE_PROVIDER_DETAIL");
   });
 
   // A failed Turn is re-queued and prompted again on the same session, so whatever it wrote is

@@ -5962,6 +5962,33 @@
       }
     }
   },
+  "homeSynthesisRetryWaiting": "Waiting to retry",
+  "@homeSynthesisRetryWaiting": {
+    "description": "Synthesis recovery scheduling",
+    "placeholders": {}
+  },
+  "homeSynthesisQueued": "Waiting to summarize",
+  "@homeSynthesisQueued": {
+    "description": "Synthesis recovery scheduling",
+    "placeholders": {}
+  },
+  "homeSynthesisRetryScheduled": "Synthesis temporarily failed after {attempts} attempts. It will retry automatically at {time}.",
+  "@homeSynthesisRetryScheduled": {
+    "description": "Synthesis recovery scheduling",
+    "placeholders": {
+      "attempts": {
+        "type": "num"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "homeSynthesisQueuedHint": "Synthesis is queued and will continue automatically.",
+  "@homeSynthesisQueuedHint": {
+    "description": "Synthesis recovery scheduling",
+    "placeholders": {}
+  },
   "mobileHomeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
   "@mobileHomeSyncFailedRetrying": {
     "description": "A failed home read keeps the session and previous content available while retrying.",

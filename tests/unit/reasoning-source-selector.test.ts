@@ -398,7 +398,7 @@ describe("deterministic-source-fallback-classification", () => {
     expect(validate).not.toHaveBeenCalled();
   });
 
-  it.each(["timeout", "connect", "rate_limited", "server_error"] as SourceFailureKind[])("falls back for %s before output or side effects", async (failure) => {
+  it.each(["timeout", "connect", "rate_limited", "server_error", "access"] as SourceFailureKind[])("falls back for %s before output or side effects", async (failure) => {
     const selector = new ReasoningSourceSelector(repository);
     expect(await selector.selectInitial("turn-1")).toMatchObject({ modelId: "first-model", sourceId: "first", turnId: "turn-1" });
     expect(await selector.selectFallback({ currentSourceId: "first", failure, formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-1" }))

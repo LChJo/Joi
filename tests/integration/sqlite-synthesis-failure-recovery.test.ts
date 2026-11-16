@@ -2,6 +2,7 @@ import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persis
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
 import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-requirements-repository.js";
+import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture.js";
 
 async function seedSynthesis(fixture: RuntimeFixture) {
@@ -23,11 +24,56 @@ async function seedSynthesis(fixture: RuntimeFixture) {
       VALUES ('goal',1,0,?,?)`).run(synthesisId, now);
   });
   const park = () => inbox.park(synthesisId, { failureCount: 8, reasonCode: "joi_turn_outcome_uncommitted" });
-  const scan = () => harness.listStalledSyntheses({ now: fixture.clock.now().toISOString(), cooldownMillis: 600_000 });
+  const scan = () => harness.listStalledSyntheses({ now: fixture.clock.now().toISOString() });
   return { inbox, harness, synthesisId, wb, park, scan };
 }
 
 describe("synthesis failure convergence", () => {
+  it("projects a persisted retry deadline across repository reconstruction", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { inbox, synthesisId, wb } = await seedSynthesis(fixture);
+      await inbox.createTurn({ inputId: synthesisId, turnId: "transient", sessionId: "synthesis", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
+      await inbox.failTurn(synthesisId, "transient", { reasonCode: "ETIMEDOUT" });
+      const retryAt = new Date(fixture.clock.now().getTime() + 30_000).toISOString();
+      const reader = new SqliteJoiTaskReader({ database: fixture.database,
+        failTurn: (id, turnId) => inbox.failTurn(id, turnId),
+        park: async (id, failure) => { await inbox.park(id, failure); } });
+      expect(await reader.deferRetry(synthesisId, { failureCount: 1, retryAt })).toBe(true);
+      expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({ status: "FINALIZING", recovery: { phase: "WAITING_RETRY", attempts: 1, retryAt } });
+      fixture.clock.advance(30_000);
+      expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({ recovery: { phase: "QUEUED", attempts: 1 } });
+      await inbox.createTurn({ inputId: synthesisId, turnId: "retry", sessionId: "retry", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
+      expect((await fixture.joiHomeFeed.load()).goals[0]?.recovery).toBeUndefined();
+    } finally { await fixture.close(); }
+  });
+
+  it("reclaims an ownerless safe synthesis on the next scan without a fixed cooldown", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { synthesisId, harness, scan } = await seedSynthesis(fixture);
+      fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET status='CONSUMED' WHERE input_id=?").run(synthesisId));
+      const [seed] = await scan();
+      expect(seed).toEqual({ goalInputId: "goal", resultRevision: 1 });
+      if (seed === undefined) throw new Error("Missing recovery candidate");
+      expect(await harness.redriveSynthesis({ now: fixture.clock.now().toISOString(), seed })).toBe(true);
+    } finally { await fixture.close(); }
+  });
+
+  it("does not revive a consumed synthesis whose external effects are not proven replay-safe", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { inbox, synthesisId, wb, harness, scan } = await seedSynthesis(fixture);
+      await inbox.createTurn({ inputId: synthesisId, turnId: "unsafe", sessionId: "synthesis", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
+      await inbox.recordTurnProgress("unsafe", { formalOutputStarted: true, sideEffectStarted: true });
+      await inbox.failTurn(synthesisId, "unsafe", { reasonCode: "ETIMEDOUT" });
+      fixture.clock.advance(3_600_000);
+      expect(await scan()).toEqual([]);
+      expect(await harness.redriveSynthesis({ now: fixture.clock.now().toISOString(), seed: { goalInputId: "goal", resultRevision: 1 } })).toBe(false);
+      expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({ status: "FAILED" });
+    } finally { await fixture.close(); }
+  });
+
   it("keeps a current synthesis failure visible when requirements still need processing", async () => {
     const fixture = await createRuntimeFixture();
     try {
@@ -134,7 +180,7 @@ describe("synthesis failure convergence", () => {
     } finally { await fixture.close(); }
   });
 
-  it.each(["park", "cancel", "new-revision", "live-work", "live-turn", "question"] as const)("rechecks a %s change between scanning and re-driving", async change => {
+  it.each(["park", "cancel", "new-revision", "live-work", "live-turn", "question", "unsafe-effects"] as const)("rechecks a %s change between scanning and re-driving", async change => {
     const fixture = await createRuntimeFixture();
     try {
       const { inbox, harness, synthesisId, wb, park, scan } = await seedSynthesis(fixture);
@@ -151,6 +197,12 @@ describe("synthesis failure convergence", () => {
       if (change === "live-work") fixture.database.transaction(db => db.prepare("UPDATE work_items SET status='RUNNING' WHERE work_id='work'").run());
       if (change === "live-turn") await inbox.createTurn({ inputId: "goal", turnId: "live", sessionId: "live", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
       if (change === "question") await inbox.requireClarification("goal", "question_required", "Choose a scope");
+      if (change === "unsafe-effects") {
+        await inbox.createTurn({ inputId: synthesisId, turnId: "effect", sessionId: "effect", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
+        await inbox.recordTurnProgress("effect", { formalOutputStarted: false, sideEffectStarted: true });
+        await inbox.failTurn(synthesisId, "effect", { reasonCode: "ETIMEDOUT" });
+        fixture.clock.advance(3_600_000);
+      }
       expect(await harness.redriveSynthesis({ now: fixture.clock.now().toISOString(), seed })).toBe(false);
     } finally { await fixture.close(); }
   });

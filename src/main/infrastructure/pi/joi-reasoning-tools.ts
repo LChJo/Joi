@@ -124,7 +124,7 @@ export function createJoiReasoningTools(input: {
   attachmentIds?: readonly string[];
   /** Verified attachment reader; attachment_read is only registered together with attachmentIds. */
   attachments?: Pick<JoiAttachmentPort, "read">;
-  clarifications: Pick<JoiCoordinatorStore, "requireClarification" | "resumeGoal">;
+  clarifications: Pick<JoiCoordinatorStore, "requireClarification" | "resumeGoal" | "validateSynthesisState">;
   diagnostics?: RuntimeDiagnostics;
   /** Original goal input id; harness tools and goal-binding fall back to inputId when absent. */
   goalInputId?: string | undefined;
@@ -142,6 +142,7 @@ export function createJoiReasoningTools(input: {
   let dispatchCorrectionOffered = false;
   let acceptanceCorrectionOffered = false;
   let evidenceCorrectionOffered = false;
+  let synthesisCorrections = 0;
   const accessCorrections = new Set<string>();
   const accessFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
     if (!(error instanceof DomainError) || !["work_execution_access_conflict", "work_execution_needs_invalid"].includes(error.code)) return undefined;
@@ -802,7 +803,19 @@ export function createJoiReasoningTools(input: {
         }
         return result({ cleared, outcome: arguments_.outcome, status: "COMMITTED" });
       }
-      return { ...result({ outcome: arguments_.outcome, status: "COMMITTED" }), details: synthesisState === undefined ? {} : { synthesisState } };
+      if (input.inputId.startsWith("joi_result_input:goal:")) {
+        try {
+          await input.clarifications.validateSynthesisState?.(input.inputId, synthesisState);
+        } catch (error) {
+          if (!(error instanceof DomainError) || !["goal_synthesis_reference_invalid", "goal_synthesis_state_invalid"].includes(error.code)) throw error;
+          synthesisCorrections++;
+          const exhausted = synthesisCorrections >= 2;
+          return { ...result({ reasonCode: error.code, status: exhausted ? "FAILED" : "RETRY_REQUIRED",
+            hint: "The synthesis has not been committed. Read work_read_evidence for the current goal and use only its actual resultId values and current requirement ids. Correct synthesisState and submit turn_complete again; preserve the complete deliverable and do not repeat completed Work." }, exhausted),
+            isError: true, details: { reasonCode: error.code, ...(exhausted ? { correctionExhausted: true } : {}) } };
+        }
+      }
+      return { ...result({ outcome: arguments_.outcome, status: input.inputId.startsWith("joi_result_input:goal:") ? "VALIDATED" : "COMMITTED" }), details: synthesisState === undefined ? {} : { synthesisState } };
     },
     label: "Complete this Turn",
     name: "turn_complete",

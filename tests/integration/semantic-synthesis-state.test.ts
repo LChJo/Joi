@@ -15,22 +15,24 @@ const state = { version: 1 as const,
   conflicts: [{ description: "CONFLICT_REQUIRES_REVIEW", resultIds: ["result-1", "result-2"] }] };
 
 describe("semantic incremental synthesis state", () => {
-  it("commits private state from one real Pi completion through the coordinator without publishing it", async () => {
+  it.each([false, true])("commits validated private state through real Pi without publishing it (correction=%s)", async correction => {
     const fixture = await createGoalEvidenceFixture([{ handoff }, { handoff }]);
     const faux = fauxProvider({ provider: "synthesis-state-flow" });
     const models = createModels(); models.setProvider(faux.provider);
     let modelCalls = 0;
     const observed: unknown[] = [];
-    faux.setResponses([() => {
+    const response = () => {
       modelCalls++;
       return fauxAssistantMessage([fauxText("The deliverable preserves the unresolved conflict."),
         fauxToolCall("turn_complete", { outcome: "RESULT_CONTINUE" })], { stopReason: "toolUse" });
-    }]);
+    };
+    faux.setResponses([response, response]);
     const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, thinkingLevel: "off",
       sessionStore: new SqlitePiReasoningSessionStore(fixture.database),
       tools: () => [{ name: "turn_complete", label: "Complete", description: "Complete", parameters: Type.Object({ outcome: Type.String() }),
         execute: () => Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ outcome: "RESULT_CONTINUE", status: "COMMITTED" }) }],
-          details: { synthesisState: state }, terminate: true }) }] });
+          details: { synthesisState: correction && modelCalls === 1
+            ? { ...state, claims: [{ statement: "PRIVATE_REJECTED_CLAIM", requirementIds: [], resultIds: ["invented-result"] }] } : state }, terminate: true }) }] });
     try {
       fixture.database.transaction(db => db.prepare("UPDATE joi_turns SET status='COMPLETED' WHERE turn_id='synthesis-turn'").run());
       const coordinator = new JoiCoordinator({ clock: fixture.clock, ids: fixture.ids, runtime, workbenches: fixture.workbenches,
@@ -43,15 +45,16 @@ describe("semantic incremental synthesis state", () => {
           createTurn: input => fixture.inbox.createTurn({ inputId: input.inputId, turnId: input.turnId, sessionId: input.sessionId,
             workbenchId: input.workbenchId, createdAt: input.createdAt }),
           completeInput: (id, turnId, completion) => fixture.inbox.completeInput(id, turnId, completion),
+          validateSynthesisState: (id, draft) => fixture.inbox.validateSynthesisState(id, draft),
           requireClarification: (id, reason) => fixture.inbox.requireClarification(id, reason),
         } });
       await coordinator.handle(fixture.inputId);
-      expect(modelCalls).toBe(1);
+      expect(modelCalls).toBe(correction ? 2 : 1);
       const saved = fixture.database.transaction(db => db.prepare("SELECT synthesis_state_json,completion_summary FROM joi_goal_outcomes WHERE input_id='goal'").get());
       expect(String(saved?.synthesis_state_json)).toContain("CONFLICT_REQUIRES_REVIEW");
       expect(String(saved?.synthesis_state_json)).toContain("MIDDLE_GAP");
       expect(saved?.completion_summary).toBe("The deliverable preserves the unresolved conflict.");
-      expect(JSON.stringify(observed)).not.toMatch(/MIDDLE_GAP|CONFLICT_REQUIRES_REVIEW|SEMANTIC_CONCLUSION/u);
+      expect(JSON.stringify(observed)).not.toMatch(/MIDDLE_GAP|CONFLICT_REQUIRES_REVIEW|SEMANTIC_CONCLUSION|PRIVATE_REJECTED_CLAIM/u);
     } finally { await fixture.close(); }
   });
   it("retrieves a revised private state when an explicit review preserves the visible conclusion", async () => {

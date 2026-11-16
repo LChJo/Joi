@@ -2491,5 +2491,29 @@
     "placeholders": {
       "count": "string"
     }
+  },
+  "synthesisRetryWaiting": {
+    "message": "Waiting to retry",
+    "description": "Synthesis recovery scheduling",
+    "sourceText": "等待自动重试"
+  },
+  "synthesisQueued": {
+    "message": "Waiting to summarize",
+    "description": "Synthesis recovery scheduling",
+    "sourceText": "等待总结"
+  },
+  "synthesisRetryScheduled": {
+    "message": "Synthesis temporarily failed after {attempts} attempts. It will retry automatically at {time}.",
+    "description": "Synthesis recovery scheduling",
+    "sourceText": "总结暂时失败，已尝试 {attempts} 次，将于 {time} 自动重试。",
+    "placeholders": {
+      "attempts": "number",
+      "time": "string"
+    }
+  },
+  "synthesisQueuedHint": {
+    "message": "Synthesis is queued and will continue automatically.",
+    "description": "Synthesis recovery scheduling",
+    "sourceText": "总结已排队，将自动继续。"
   }
 }

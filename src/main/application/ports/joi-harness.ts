@@ -144,7 +144,7 @@ export interface JoiHarnessScan {
   loadGoalProjections(): Promise<HarnessGoalProjection[]>;
   listWorkRecoverySeeds?(): Promise<HarnessWorkRecoverySeed[]>;
   listContinuationDecisionSeeds?(): Promise<HarnessContinuationDecisionSeed[]>;
-  listStalledSyntheses?(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]>;
+  listStalledSyntheses?(input: { now: string }): Promise<HarnessStalledSynthesisSeed[]>;
   listUnreviewedClearedMaps?(): Promise<HarnessUnreviewedMapSeed[]>;
   listFinishedGoalsWithOpenPaths?(): Promise<HarnessFinishedGoalSeed[]>;
 }

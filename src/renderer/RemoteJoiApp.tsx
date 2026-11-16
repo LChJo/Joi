@@ -24,7 +24,10 @@ function statusLabel(status: RemoteJoiConnection["status"] extends () => infer T
   return t("remote.disconnected");
 }
 
-function goalStatus(status: JoiHomeFeedDto["goals"][number]["status"]): string {
+function goalStatus(goal: JoiHomeFeedDto["goals"][number]): string {
+  if (goal.recovery?.phase === "WAITING_RETRY") return t("home.synthesisRetryWaiting");
+  if (goal.recovery?.phase === "QUEUED") return t("home.synthesisQueued");
+  const status = goal.status;
   if (status === "RUNNING") return t("home.executing");
   if (status === "ARRANGING") return t("home.planning");
   if (status === "ARRANGED") return t("home.queued");
@@ -111,7 +114,7 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     {section === "conversations" ? <ConversationPage api={conversationApi} /> : section === "archived" ? <ArchivedConversations api={conversationApi} /> : <>
     <section aria-label={t("remote.joiTasks")} className="remote-goal-list">
       {feed.goals.length === 0 ? <div className="remote-empty"><CircleNotchIcon aria-hidden /><h1>{t("remote.noTasksToShowYet")}</h1><p>{t("remote.tellJoiWhatYouWantToDoBelow")}</p></div> : feed.goals.map((goal) => <article className={`remote-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
-        <div className="remote-goal-top"><span>{goal.workbench.name}</span><strong>{goalStatus(goal.status)}</strong></div>
+        <div className="remote-goal-top"><span>{goal.workbench.name}</span><strong>{goalStatus(goal)}</strong></div>
         <h1>{goal.title}</h1>
         <p>{workSummary(goal.work)}</p>
         {goal.completionSummary === undefined ? null : <div className="remote-goal-result"><CheckCircleIcon aria-hidden /><span>{goal.completionSummary}</span></div>}

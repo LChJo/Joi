@@ -1,4 +1,4 @@
-import { COMPLETION_SUMMARY_LIMIT, draftAgentConversation, maskSecretText, normalizeAgentConversationEntries, normalizeCompletionSummary, sanitizeAgentConversationText, stripPathRedactions } from "../../src/main/application/partners/agent-conversation-presentation.js";
+import { draftAgentConversation, maskSecretText, normalizeAgentConversationEntries, normalizeCompletionSummary, sanitizeAgentConversationText, stripPathRedactions } from "../../src/main/application/partners/agent-conversation-presentation.js";
 
 describe("Agent conversation presentation", () => {
   it("redacts private values, preserves display kinds and splits large markdown", () => {
@@ -110,19 +110,14 @@ describe("Agent conversation presentation", () => {
     const article = Array.from({ length: 120 }, (_, index) =>
       `## 项 ${String(index)}\n\n这一段总结第 ${String(index)} 个项目的价值与技术要点，长度足够把全文推过旧的 4096 字符截断线。`).join("\n\n");
     expect(article.length).toBeGreaterThan(4_096);
-    expect(article.length).toBeLessThan(COMPLETION_SUMMARY_LIMIT);
     const summary = normalizeCompletionSummary(article);
     expect(summary).toBe(article);
   });
 
-  it("bounds completion summaries at a line boundary and closes dangling code fences", () => {
-    const rows = Array.from({ length: 400 }, (_, index) => `| 行${String(index)} | 结果 |`).join("\n");
-    const truncated = normalizeCompletionSummary(`| 维度 | 结果 |\n| --- | --- |\n${rows}`);
-    expect(truncated.length).toBeLessThanOrEqual(COMPLETION_SUMMARY_LIMIT);
-    expect(truncated.split("\n").at(-1)).toMatch(/^\| 行\d+ \| 结果 \|$/u);
-
-    const fenced = normalizeCompletionSummary(`前置\n\n\`\`\`text\n${"代码行\n".repeat(9_000)}`);
-    expect(fenced.length).toBeLessThanOrEqual(COMPLETION_SUMMARY_LIMIT + 4);
-    expect((fenced.match(/^```/gmu) ?? []).length % 2).toBe(0);
+  it("preserves a complete long deliverable without adding or truncating model text", () => {
+    const rows = Array.from({ length: 4_000 }, (_, index) => `| Row ${String(index)} | Complete evidence |`).join("\n");
+    const article = `| Item | Finding |\n| --- | --- |\n${rows}\n\n\`\`\`text\n${"Code line\n".repeat(9_000)}\`\`\`\n\nFINAL_DELIVERABLE_END`;
+    expect(article.length).toBeGreaterThan(32_768);
+    expect(normalizeCompletionSummary(article)).toBe(article);
   });
 });

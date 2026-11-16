@@ -1114,6 +1114,10 @@ export interface MessageParameters {
   "home.artifactPageFailed": undefined;
   "home.changedFiles": undefined;
   "home.artifactCount": { "count": string };
+  "home.synthesisRetryWaiting": undefined;
+  "home.synthesisQueued": undefined;
+  "home.synthesisRetryScheduled": { "attempts": number; "time": string };
+  "home.synthesisQueuedHint": undefined;
   "mobile.homeSyncFailedRetrying": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
@@ -2901,6 +2905,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.artifactPageFailed": "Could not load files. Try again.",
     "home.changedFiles": "Files changed this round",
     "home.artifactCount": "{count} files",
+    "home.synthesisRetryWaiting": "Waiting to retry",
+    "home.synthesisQueued": "Waiting to summarize",
+    "home.synthesisRetryScheduled": "Synthesis temporarily failed after {attempts} attempts. It will retry automatically at {time}.",
+    "home.synthesisQueuedHint": "Synthesis is queued and will continue automatically.",
     "mobile.homeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
@@ -4686,6 +4694,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.artifactPageFailed": "文件加载失败，请重试。",
     "home.changedFiles": "本轮修改文件",
     "home.artifactCount": "{count} 个文件",
+    "home.synthesisRetryWaiting": "等待自动重试",
+    "home.synthesisQueued": "等待总结",
+    "home.synthesisRetryScheduled": "总结暂时失败，已尝试 {attempts} 次，将于 {time} 自动重试。",
+    "home.synthesisQueuedHint": "总结已排队，将自动继续。",
     "mobile.homeSyncFailedRetrying": "首页同步失败，将自动重试；也可下拉立即重试。",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
@@ -7357,6 +7369,12 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "文件加载失败，请重试。": "home.artifactPageFailed",
   "Files changed this round": "home.changedFiles",
   "本轮修改文件": "home.changedFiles",
+  "Waiting to retry": "home.synthesisRetryWaiting",
+  "等待自动重试": "home.synthesisRetryWaiting",
+  "Waiting to summarize": "home.synthesisQueued",
+  "等待总结": "home.synthesisQueued",
+  "Synthesis is queued and will continue automatically.": "home.synthesisQueuedHint",
+  "总结已排队，将自动继续。": "home.synthesisQueuedHint",
   "Home sync failed. Retrying automatically; pull down to retry now.": "mobile.homeSyncFailedRetrying",
   "首页同步失败，将自动重试；也可下拉立即重试。": "mobile.homeSyncFailedRetrying",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",

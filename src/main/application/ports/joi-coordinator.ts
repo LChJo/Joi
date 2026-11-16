@@ -67,6 +67,7 @@ export interface JoiInputCompletion {
 }
 
 export interface JoiCoordinatorStore {
+  validateSynthesisState?(inputId: string, draft?: GoalSynthesisDraft): Promise<void>;
   completeResolvedAction?(input: { actionId: string; inputId: string; turnId: string }): Promise<void>;
   completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion): Promise<unknown>;
   createTurn(input: {

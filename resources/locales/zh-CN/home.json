@@ -461,5 +461,9 @@
   "resultAt": "完成于 {p0}",
   "artifactPageFailed": "文件加载失败，请重试。",
   "artifactCount": "{count} 个文件",
-  "changedFiles": "本轮修改文件"
+  "changedFiles": "本轮修改文件",
+  "synthesisRetryWaiting": "等待自动重试",
+  "synthesisQueued": "等待总结",
+  "synthesisRetryScheduled": "总结暂时失败，已尝试 {attempts} 次，将于 {time} 自动重试。",
+  "synthesisQueuedHint": "总结已排队，将自动继续。"
 }

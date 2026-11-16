@@ -4,6 +4,7 @@ import {
 } from "../../ports/runtime-diagnostics.js";
 import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime.js";
 import type { JoiTaskInbox, JoiTurnDriver, ModelSourceGate } from "../../ports/joi-task.js";
+import { isSynthesisOutputFailure, isTerminalTurnFailure, JOI_TURN_FAILURE_LIMIT, JOI_TURN_RETRY_BASE_MILLIS, JOI_TURN_RETRY_MAX_MILLIS } from "../../../domain/work/joi-turn-recovery.js";
 
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 // The stale-turn orphan sweep must run strictly after the in-memory stall abort so a
@@ -11,18 +12,12 @@ const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 // (orphan detection 20 min > stall abort 15 min).
 const DEFAULT_STALE_TURN_OLDER_THAN_MILLIS = 20 * 60_000;
 const DEFAULT_STALLED_TURN_AFTER_MILLIS = 15 * 60_000;
-const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
+const DEFAULT_MAX_CONSECUTIVE_FAILURES = JOI_TURN_FAILURE_LIMIT;
 // A deterministic failure re-claimed the very next tick would burn the whole crash-loop
 // budget in seconds while reproducing itself. Back each retry off exponentially so the
 // breaker measures patience in minutes, not milliseconds.
-const DEFAULT_RETRY_BACKOFF_BASE_MILLIS = 30_000;
-const DEFAULT_RETRY_BACKOFF_MAX_MILLIS = 10 * 60_000;
-
-/** Repeating a synthesis cannot repair the protocol after its bounded in-turn correction. */
-const SYNTHESIS_PROTOCOL_FAILURES: ReadonlySet<string> = new Set([
-  "joi_turn_outcome_uncommitted", "joi_goal_synthesis_outcome_uncommitted", "joi_turn_completion_empty",
-  "joi_model_toolcall_leak", "custom_model_tool_capability_unverified",
-]);
+const DEFAULT_RETRY_BACKOFF_BASE_MILLIS = JOI_TURN_RETRY_BASE_MILLIS;
+const DEFAULT_RETRY_BACKOFF_MAX_MILLIS = JOI_TURN_RETRY_MAX_MILLIS;
 
 interface InFlightTurn {
   abortController: AbortController;
@@ -128,12 +123,13 @@ export class JoiTaskComponent implements ActorComponent {
       });
       const retryState = await this.dependencies.inbox.getRetryState?.(turn.inputId);
       const failures = retryState?.failureCount ?? (this.#failures.get(turn.inputId) ?? 0) + 1;
-      const synthesisProtocolFailed = turn.inputId.startsWith("joi_result_input:") && SYNTHESIS_PROTOCOL_FAILURES.has(errorCode ?? "");
+      const terminalFailure = isTerminalTurnFailure(errorCode ?? "")
+        || turn.inputId.startsWith("joi_result_input:") && isSynthesisOutputFailure(errorCode ?? "");
       const superseded = turn.retryEpoch !== undefined && retryState !== undefined && turn.retryEpoch !== retryState.epoch;
-      if (superseded || retryState?.failureCount === 0 || !synthesisProtocolFailed && retryState?.queued === false) {
+      if (superseded || retryState?.failureCount === 0 || !terminalFailure && retryState?.queued === false) {
         this.#failures.delete(turn.inputId);
         this.#backoffUntil.delete(turn.inputId);
-      } else if (synthesisProtocolFailed || failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
+      } else if (terminalFailure || failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         this.#failures.delete(turn.inputId);
         this.#backoffUntil.delete(turn.inputId);
         await this.dependencies.inbox.park(turn.inputId, {
@@ -189,7 +185,9 @@ export class JoiTaskComponent implements ActorComponent {
         this.#failures.delete(candidate.inputId);
         continue;
       }
-      if (state.failureCount >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
+      if (isTerminalTurnFailure(state.reasonCode ?? "")
+        || candidate.inputId.startsWith("joi_result_input:") && isSynthesisOutputFailure(state.reasonCode ?? "")
+        || state.failureCount >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         await this.dependencies.inbox.park(candidate.inputId, { failureCount: state.failureCount, reasonCode: state.reasonCode ?? "joi_task_turn_failed" });
         this.#backoffUntil.set(candidate.inputId, Number.POSITIVE_INFINITY);
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_parked", {

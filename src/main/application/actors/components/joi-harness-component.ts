@@ -10,7 +10,6 @@ const DEFAULT_SLOW_SCAN_MILLIS = 50;
 const SLOW_SCAN_REPORT_EVERY_MILLIS = 5 * 60_000;
 const FEEDBACK_ENTRY_SUMMARY_LIMIT = 160;
 /** How long a re-driven synthesis is given to run before the scan may re-drive it again. */
-const STALLED_SYNTHESIS_COOLDOWN_MILLIS = 10 * 60_000;
 
 /**
  * Traversal over harness map facts: adopts goals into maps on their first turn,
@@ -174,7 +173,6 @@ export class JoiHarnessComponent implements ActorComponent {
     if (this.dependencies.scan.listStalledSyntheses === undefined
       || this.dependencies.writer.redriveSynthesis === undefined) return;
     const stalled = await this.dependencies.scan.listStalledSyntheses({
-      cooldownMillis: STALLED_SYNTHESIS_COOLDOWN_MILLIS,
       now: ctx.now.toISOString(),
     });
     for (const seed of stalled) {

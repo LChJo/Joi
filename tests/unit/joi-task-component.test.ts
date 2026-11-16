@@ -81,7 +81,17 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failure
 }
 
 describe("JoiTaskComponent traversal scheduling", () => {
-  it.each(["joi_turn_outcome_uncommitted", "joi_model_toolcall_leak", "custom_model_tool_capability_unverified"])("stops a synthesis after bounded model repair fails with %s", async failureCode => {
+  it.each(["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal"])("parks %s without repeating an unchanged request", async failureCode => {
+    const harness = makeHarness({ failureCode });
+    const inputId = "goal";
+    harness.state.pending = [{ createdAt: BASE, inputId }];
+    await harness.component.update(ctxAt(0)); harness.settle(inputId, "fail"); await flush();
+    await harness.component.update(ctxAt(1_000)); await harness.component.update(ctxAt(3_600_000));
+    expect(harness.parks).toEqual([{ failureCount: 1, inputId, reasonCode: failureCode }]);
+    expect(harness.calls).toEqual([inputId]);
+  });
+
+  it.each(["joi_turn_outcome_uncommitted", "joi_model_toolcall_leak", "custom_model_tool_capability_unverified", "goal_synthesis_reference_invalid", "goal_synthesis_state_invalid", "goal_synthesis_correction_exhausted"])("stops a synthesis after bounded model repair fails with %s", async failureCode => {
     const harness = makeHarness({ failureCode });
     const inputId = "joi_result_input:goal:goal:r1:q0";
     harness.state.pending = [{ createdAt: BASE, inputId }];

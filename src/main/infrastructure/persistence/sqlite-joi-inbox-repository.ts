@@ -9,6 +9,7 @@ import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.j
 import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
 import { buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
+import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
@@ -889,6 +890,19 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ?, updated_at = ?,
         session_generation=MAX(session_generation,?) WHERE input_id = ? AND status <> 'CONSUMED'`)
         .run(input.workbenchId, input.createdAt, input.sessionGeneration ?? 0, input.inputId);
+    });
+  }
+
+  async validateSynthesisState(inputId: string, draft?: GoalSynthesisDraft): Promise<void> {
+    this.database.transaction(connection => {
+      const input = connection.prepare(`SELECT goal_input_id,workbench_id,result_revision,requirements_revision
+        FROM joi_inbox_messages WHERE input_id=? AND input_id LIKE 'joi_result_input:goal:%'`).get(inputId);
+      if (typeof input?.goal_input_id !== "string" || typeof input.workbench_id !== "string" || typeof input.result_revision !== "number") {
+        throw new DomainError("goal_synthesis_state_invalid", "Synthesis requires a versioned goal input.");
+      }
+      buildGoalSynthesisState(connection, { goalInputId: input.goal_input_id, workbenchId: input.workbench_id,
+        resultRevision: input.result_revision, requirementsRevision: Number(input.requirements_revision ?? 0),
+        ...(draft === undefined ? {} : { draft }) });
     });
   }
 

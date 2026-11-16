@@ -176,11 +176,11 @@
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "0007f2941324f7a26ad9f150672f3a88514f73cdffdf9c4bcc964d49ed8f3fa2",
-      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "hash": "168c6f203705acb794aa3fc30ecf59aa9b8ca8e7f2699ad21948ef28e2a70df0",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 771
+        "endLine": 773
       }
     },
     {
@@ -567,12 +567,12 @@
       "location": {
         "path": "src/main/application/partners/agent-conversation-presentation.ts"
       },
-      "claim": "Conversation normalization preserves explicit tool lifecycle facts alongside bounded secret-masked presentation text.",
-      "hash": "4dc6058e1c7c7d535f0cfa64045731d3fc6eda530aacc296c16931b1a3f28497",
-      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "claim": "Conversation normalization preserves explicit tool lifecycle facts alongside bounded secret-masked presentation text. Complete final goal answers retain Markdown and public sanitization without fixed character truncation.",
+      "hash": "2780d3252f24cf14cd03501a6bef0f698b7394f6f664e296711990312b0172d2",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 207
+        "endLine": 194
       }
     },
     {
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "669e76655843c1a5bcdc65a9445fcfae197654def46284c73167649211d0b189",
-      "observedAt": "2026-11-16T03:20:04.486Z",
+      "hash": "9c961e143b812b9ff302f6864f64c84956efb16df574ce9ae3aa887b68dd4da3",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 708
+        "endLine": 718
       }
     },
     {
@@ -946,11 +946,11 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "f8faba7731cbf7a7956f4143fca95fd98f26ad0b55c6e158baac33b58e2b530a",
-      "observedAt": "2026-11-14T10:04:45.814Z",
+      "hash": "bd2a53e7b63cdf356fd4534c9b886bee1196a7589bc3af154f6de6c14141779a",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
-        "startLine": 945,
-        "endLine": 955
+        "startLine": 1,
+        "endLine": 1598
       }
     },
     {
@@ -1072,8 +1072,8 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "01c86d228a4cc4c2896e71d660b3273fe537cf5f63c127b388acd20ab09314da",
-      "observedAt": "2026-11-12T17:43:19.470Z",
+      "hash": "5a5597d9142714f5fd9abb0a5cd2936c28a9b66a41737082240bdee0e4ea6b89",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
         "endLine": 892
@@ -1114,11 +1114,11 @@
       "location": {
         "path": "tests/contract/pi-runtime-contract.test.ts"
       },
-      "hash": "490a9c521b0f651ee60715e226ffd8f010d8b94f2ff871d89cd7f2ed71177113",
-      "observedAt": "2026-11-12T17:43:19.472Z",
+      "hash": "12f7c932798341423e629c548230aa0a5ee4c1a0e562a2057030ead98a6c63cd",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 1406
+        "endLine": 1424
       }
     },
     {
@@ -1618,11 +1618,11 @@
         "path": "src/renderer/JoiHome.tsx"
       },
       "claim": "New model forms select 1M context and binary 128K output. Shared create/edit ladders offer 2M/3M context and binary 256K/300K/512K output while preserving explicit recommended resets and nonstandard stored values.",
-      "hash": "341871ce7bc4b03a566d1127f347cec5d1388afee9a596b4029a47fd2d89d3f3",
-      "observedAt": "2026-11-14T10:03:13.839Z",
+      "hash": "6d0ddb6480c8ac16091df5ae4730e847116e2c5d3b1a23c4a12a5334c477188b",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
-        "startLine": 18,
-        "endLine": 363
+        "startLine": 1,
+        "endLine": 1929
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "5c24da2178de1c420bf963bde471048a41a4d991371128543693a4b498d980ba",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "67a00eded0511c8c0ea93d2644b771b49dbfe794ffa16921dc925551a78cc7de",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 9710
+        "endLine": 9736
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "ebacc32004fa69c91127b5d774201f07686a25035eb8b4a85437cae78107ca88",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "7a55f7b25d3b3321bbb4eeca6222c4d4927f72e42bb45a18ce051bc72408a58e",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 6833
+        "endLine": 6846
       }
     },
     {
@@ -1814,11 +1814,11 @@
       "location": {
         "path": "src/renderer/RemoteJoiApp.tsx"
       },
-      "hash": "a5c19dd224c352d80fbb5b38e99c7d90522a678d62d5d150e2beae931e3a0e85",
-      "observedAt": "2026-11-14T11:23:51.965Z",
+      "hash": "c777d249e752d61d23624044218720fea64d8812c68cd30f785c362fb298de1e",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 132
+        "endLine": 134
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "aa71f95920a8404d013c8df36aaab0b9053bbea6215d7ecb2d2c1c386400e3df",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "31107c52c89531a64dd6ccaac34631d67e6e45150af903711d490e9efa3f7818",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 8629
+        "endLine": 8646
       }
     },
     {
@@ -1870,11 +1870,11 @@
       "location": {
         "path": "tests/renderer/remote-joi-app.test.tsx"
       },
-      "hash": "5919e238849c741063a49945a8fa95dd203a8297cd857caa5ba514d16a02e8d4",
-      "observedAt": "2026-11-14T11:23:51.969Z",
+      "hash": "6235b70aa3a5604094662b393ba3e1aa65f2ebf77606a8cc9884eab8c2a8f3cd",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 143
+        "endLine": 153
       }
     },
     {
@@ -1884,8 +1884,8 @@
       "location": {
         "path": "apps/joi_mobile/lib/conversation_screen.dart"
       },
-      "hash": "87ddec5158390f567af8143da8ff04fbe00062b5662c4b6fb412164261dd542b",
-      "observedAt": "2026-11-14T11:23:51.969Z",
+      "hash": "91a046bdea40202417ff0302aeb6bf64646682fd52a95672775c4c0f6d069283",
+      "observedAt": "2026-11-16T03:40:54.003Z",
       "range": {
         "startLine": 1,
         "endLine": 965
@@ -1898,8 +1898,8 @@
       "location": {
         "path": "apps/joi_mobile/test/conversation_screen_test.dart"
       },
-      "hash": "f799e047dc5ef6d10699706abf8f6a552c91653180427a4a4f0857b2d1622666",
-      "observedAt": "2026-11-14T11:23:51.971Z",
+      "hash": "160806e78f4318d6ae7c286485fcdebf710481c8d6057e2f6cee57a7b4cf04ae",
+      "observedAt": "2026-11-16T03:40:54.003Z",
       "range": {
         "startLine": 1,
         "endLine": 270
@@ -2076,15 +2076,15 @@
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Available dispatch candidates include only ACTIVE partners without ACTION_REQUIRED configuration; the management catalog retains all records.",
+      "claim": "Available dispatch candidates include only ACTIVE partners without ACTION_REQUIRED configuration; the management catalog retains all records. Synthesis completion prevalidates evidence, returns safe bounded correction hints, and reports validated status before the final outcome transaction.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "42148c7de8a4d6f7188f0448b5db90a07d665119b7d22d7d0db9fcd38792de75",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "82983ccc3e647301d6815439461e720a16a50ed79fdf533340c743ede8fa4e73",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 1086
+        "endLine": 1099
       }
     },
     {
@@ -2122,11 +2122,11 @@
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "f0995e0a51e4d42bdf42316026fe5f0c974e120a9a324eb687efca087eb90059",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "b7674f58ad12c5177505fb8cdbcc3b6ebedba335eb061e823695797048479639",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 1066
+        "endLine": 1099
       }
     },
     {
@@ -2164,8 +2164,8 @@
       "location": {
         "path": ".agent/commands/verify.md"
       },
-      "hash": "75153786dd344ff9179b2edcdf6071eea1966e489a4f1f3da892c78ecc9c01a0",
-      "observedAt": "2026-11-14T15:29:28.513Z",
+      "hash": "d2b36befc3fcb26147ce085cc46f5cbd8953d627e8e4d2fd7cedb70f35158279",
+      "observedAt": "2026-11-16T03:40:54.003Z",
       "range": {
         "startLine": 1,
         "endLine": 105
@@ -2318,8 +2318,8 @@
       "location": {
         "path": ".agent/commands/package.md"
       },
-      "hash": "b73d4cfc3dc22c855cfb919dde00512b9141b2b897b41d887490a298d7a883f4",
-      "observedAt": "2026-11-15T08:40:32.162Z",
+      "hash": "338183cb24643e0bf574ec4052a2e477d3fb92b410b2fb51adbd8c1371871eaf",
+      "observedAt": "2026-11-16T03:40:54.003Z",
       "range": {
         "startLine": 1,
         "endLine": 57
@@ -2388,11 +2388,11 @@
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "13718f3605bded43c272a2a6cbe516abc2ed75f7bd02f296ab2f507856bbd5d6",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "2df00e118d72275287f3b372d91639b49e64acce860ae5597573750bbaa4d501",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 1390
+        "endLine": 1403
       }
     },
     {
@@ -2430,8 +2430,8 @@
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "020674847153192b78ff4d594be32536e673ab69914620a91949dd8bbc39ba78",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "53a15593991bb89d76543c023fbf1d2019f4e34cc729c3826f5642d049fd2570",
+      "observedAt": "2026-11-16T04:37:28.758Z",
       "range": {
         "startLine": 1,
         "endLine": 2075
@@ -2645,6 +2645,146 @@
       "range": {
         "startLine": 1,
         "endLine": 195
+      }
+    },
+    {
+      "id": "f28b28ea-c8d1-4aca-a65d-383bebe86300",
+      "kind": "source-code",
+      "claim": "Shared synthesis recovery distinguishes bounded output correction, terminal source failures, replay proof and durable failure budgets.",
+      "location": {
+        "path": "src/main/domain/work/joi-turn-recovery.ts"
+      },
+      "hash": "2ca48f5a90cfd027f87a8a1e169a41796091e33a8f3bb2abca9fd0195fe30a0c",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 31
+      }
+    },
+    {
+      "id": "f1be38d3-6986-4482-842c-385096d1c6e2",
+      "kind": "source-code",
+      "claim": "Source access failures allow configured fallback; authentication, configuration and policy failures require correction after eligible alternatives are exhausted.",
+      "location": {
+        "path": "src/main/domain/model-sources/model-source.ts"
+      },
+      "hash": "db3f6038864f17a15b6347976f0b6263b23d2b6b9fbc1d6da5b92ca214930e8b",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 235
+      }
+    },
+    {
+      "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
+      "kind": "source-code",
+      "claim": "Synthesis completion is a safe declaration, validates references before atomic commit, corrects once without external replay, and replaces uncommitted drafts through eligible fallback. Final answer accumulation has no arbitrary character cap.",
+      "location": {
+        "path": "src/main/application/joi/joi-coordinator.ts"
+      },
+      "hash": "fd1bc79e9e027efac5327e34e163a73ff677ce2b044d608e319de18fed2e46ca",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 873
+      }
+    },
+    {
+      "id": "e8632c11-c82b-419b-8d13-3011c3a11f74",
+      "kind": "source-code",
+      "claim": "Durable retry and restart admission stop exhausted synthesis correction and deterministic source failures while retaining transient backoff.",
+      "location": {
+        "path": "src/main/application/actors/components/joi-task-component.ts"
+      },
+      "hash": "813203db0ab0314ac42e960c7a209c7403b1c234287768a82a64d1de5022a176",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 262
+      }
+    },
+    {
+      "id": "bb2f305f-a3a8-48f8-8374-aa0117dcad93",
+      "kind": "source-code",
+      "claim": "Current synthesis projection distinguishes queued work, persisted retry deadline, active execution and unsafe or terminal failure without writing state.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.ts"
+      },
+      "hash": "aaab6eee5d5f541606b311726332ddc67b53fc438d58f228847e09f5970a9657",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 551
+      }
+    },
+    {
+      "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
+      "kind": "source-code",
+      "claim": "Read-only synthesis preflight uses the same evidence validation as the authoritative outcome transaction.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
+      },
+      "hash": "283be984957ec520c3ccebc4dab32fed8cbe22b5b85e32bc7a69356bba8c8a0a",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1490
+      }
+    },
+    {
+      "id": "b42a3410-e5a0-4996-89b9-73b05fa8facb",
+      "kind": "source-code",
+      "claim": "Provider stream error categories stay in private error identity; only safe error codes leave the adapter. HTTP 403 policy rejection takes precedence over model access fallback.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-reasoning-failure-classifier.ts"
+      },
+      "hash": "1ed3f3ec9ccd1a3b7c44b2ac4abda151dbd75183d9b1a86d0a91749bf82c0d27",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 51
+      }
+    },
+    {
+      "id": "42b8045e-50f5-4144-9960-3de0e9b2c402",
+      "kind": "source-code",
+      "claim": "Real synthetic Pi completion and correction pass through SQLite validation without publishing private claims or conflicts.",
+      "location": {
+        "path": "tests/integration/semantic-synthesis-state.test.ts"
+      },
+      "hash": "0ae67c75eaf7b60e6bfd9df56a185aa216bf50195d54b50afcc77b6a1480bd7f",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 113
+      }
+    },
+    {
+      "id": "9aba4449-c651-4c84-abb8-606c627556b8",
+      "kind": "source-code",
+      "claim": "Disposable SQLite verifies immediate safe orphan recovery, unknown-effect exclusion, redrive races, durable retry projection and terminal failure visibility.",
+      "location": {
+        "path": "tests/integration/sqlite-synthesis-failure-recovery.test.ts"
+      },
+      "hash": "1f1e39ead2e88eac01546b4680437a057c2728cbf6b7a4328a25855a69c90d68",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 245
+      }
+    },
+    {
+      "id": "f0062573-1c17-4520-b6bd-3106fb939515",
+      "kind": "source-code",
+      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors.",
+      "location": {
+        "path": "tests/unit/joi-synthesis-validation.test.ts"
+      },
+      "hash": "1b7028fcaaeecf00fa56a46065ee3173006008d08fbcd6a899e0924c7b81c3b8",
+      "observedAt": "2026-11-16T04:37:28.758Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 103
       }
     }
   ]

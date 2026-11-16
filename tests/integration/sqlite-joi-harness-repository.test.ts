@@ -2008,7 +2008,7 @@ describe("SqliteJoiHarnessRepository", () => {
           .run(`joi_result_input:goal:${goalInputId}`, goalInputId);
       });
 
-      const stalled = await repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW });
+      const stalled = await repository.listStalledSyntheses({ now: NOW });
       expect(stalled).toEqual([{ goalInputId, resultRevision: 4 }]);
 
       const [seed] = stalled;
@@ -2019,8 +2019,8 @@ describe("SqliteJoiHarnessRepository", () => {
         .get(`joi_result_input:goal:${goalInputId}`)))
         .toEqual({ result_revision: 4, status: "PENDING" });
 
-      // Re-driving moves it, so the cooldown holds the next scan off until the attempt has run.
-      await expect(repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW })).resolves.toEqual([]);
+      // A pending input belongs to the scheduler and is excluded from orphan recovery.
+      await expect(repository.listStalledSyntheses({ now: NOW })).resolves.toEqual([]);
     });
 
     it("leaves a goal alone while it is still waiting on the user or its Work", async () => {
@@ -2040,7 +2040,7 @@ describe("SqliteJoiHarnessRepository", () => {
           .run(`workbench-${goalInputId}`, goalInputId, NOW, NOW);
       });
 
-      await expect(repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW })).resolves.toEqual([]);
+      await expect(repository.listStalledSyntheses({ now: NOW })).resolves.toEqual([]);
     });
 
     it("finds and re-drives a stalled synthesis whose input carries the requirements revision", async () => {
@@ -2060,7 +2060,7 @@ describe("SqliteJoiHarnessRepository", () => {
           .run(`joi_result_input:goal:${goalInputId}:r3:q1`, goalInputId);
       });
 
-      const stalled = await repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW });
+      const stalled = await repository.listStalledSyntheses({ now: NOW });
       expect(stalled).toEqual([{ goalInputId, resultRevision: 4 }]);
 
       const [seed] = stalled;

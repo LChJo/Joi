@@ -52,31 +52,18 @@ export function stripPathRedactions(value: string): string {
   return value.replace(/\[redacted-path\][ \t]?/gu, "").trim();
 }
 
-export const COMPLETION_SUMMARY_LIMIT = 32_768;
-
 /**
- * Goal-outcome final answer. Unlike flattened feed previews this keeps markdown
- * structure (headings, lists, GFM tables, code fences) intact so the result renders
- * as formatted markdown downstream; over-limit text is cut at a line boundary and
- * any dangling code fence is closed so truncation never breaks rendering.
+ * Goal-outcome answers retain complete model output and Markdown structure.
+ * Only public secret/path sanitization and whitespace normalization apply here.
  */
 export function normalizeCompletionSummary(value: string): string {
-  const normalized = sanitizeAgentConversationText(value)
+  return sanitizeAgentConversationText(value)
     .replace(/\r\n?/gu, "\n")
     .split("\n")
     .map((line) => line.replace(/[ \t]+$/u, ""))
     .join("\n")
     .replace(/\n{3,}/gu, "\n\n")
     .trim();
-  if (normalized.length <= COMPLETION_SUMMARY_LIMIT) return normalized;
-  const sliced = normalized.slice(0, COMPLETION_SUMMARY_LIMIT);
-  const boundary = sliced.lastIndexOf("\n");
-  return closeOpenCodeFence((boundary > 0 ? sliced.slice(0, boundary) : sliced).trimEnd());
-}
-
-function closeOpenCodeFence(value: string): string {
-  const fences = value.match(/^ {0,3}```/gmu);
-  return fences !== null && fences.length % 2 === 1 ? `${value}\n\`\`\`` : value;
 }
 
 /** An engine's own identifier for one tool call, whatever its protocol calls it. */

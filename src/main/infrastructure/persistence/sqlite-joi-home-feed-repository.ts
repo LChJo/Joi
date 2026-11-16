@@ -16,6 +16,7 @@ import { goalDetailPage } from "../../application/joi/goal-detail-page.js";
 import { queryJoiGoalDetail } from "./sqlite-joi-goal-detail.js";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
 import { queryGoalResult, queryGoalResults } from "./sqlite-goal-result-history.js";
+import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
@@ -95,12 +96,24 @@ function stoppedRequirements(row: Row): boolean {
 
 /** Only the current, inactive synthesis may surface its durable failure on the goal. */
 function stoppedSynthesis(row: Row): boolean {
-  return row.synthesis_status === "CONSUMED" && typeof row.synthesis_failed_at === "string"
+  return row.synthesis_status === "CONSUMED" && (typeof row.synthesis_failed_at === "string"
+    || !canRedriveSynthesis({ failureCount: number(row, "synthesis_turn_failure_count"),
+      reasonCode: typeof row.synthesis_turn_failure_reason_code === "string" ? row.synthesis_turn_failure_reason_code : "",
+      unsafeEffects: number(row, "synthesis_unsafe_effects") === 1 }))
     && row.synthesis_result_revision === row.result_revision
     && number(row, "synthesis_requirements_current") === 1
     && text(row, "inbox_status") === "CONSUMED" && number(row, "outcome_current") === 0
     && number(row, "work_active") === 0 && number(row, "active_runs") === 0
     && number(row, "live_turn_count") === 0 && number(row, "pending_child_count") === 0;
+}
+
+function synthesisRecovery(row: Row, now: Date): NonNullable<JoiGoalCardBaseDto["recovery"]> {
+  const attempts = number(row, "synthesis_turn_failure_count");
+  const retryAt = typeof row.synthesis_retry_at === "string" ? row.synthesis_retry_at
+    : typeof row.synthesis_turn_failed_at === "string"
+      ? new Date(Date.parse(row.synthesis_turn_failed_at) + joiTurnRetryDelay(attempts)).toISOString() : undefined;
+  return retryAt !== undefined && Date.parse(retryAt) > now.getTime()
+    ? { phase: "WAITING_RETRY", attempts, retryAt } : { phase: "QUEUED", attempts };
 }
 
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
@@ -276,6 +289,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         CASE WHEN NOT EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
           AND requirements.revision <> COALESCE(synth.requirements_revision, -1)) THEN 1 ELSE 0 END AS synthesis_requirements_current,
         synth.failure_reason_code AS synthesis_failure_reason_code, synth.failure_count AS synthesis_failure_count,
+        synth.turn_failure_count AS synthesis_turn_failure_count, synth.turn_retry_at AS synthesis_retry_at,
+        synth.turn_failed_at AS synthesis_turn_failed_at, synth.turn_failure_reason_code AS synthesis_turn_failure_reason_code,
+        EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id=synth.input_id AND t.side_effect_started=1
+          AND (t.status <> 'FAILED' OR COALESCE(t.failure_replay_safe,0) <> 1)) AS synthesis_unsafe_effects,
         EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
           AND EXISTS (SELECT 1 FROM joi_goal_requirement_sources source WHERE source.goal_input_id = i.input_id
             AND source.kind <> 'LEGACY' AND source.source_revision > requirements.processed_source_revision)) AS requirements_pending,
@@ -384,8 +401,8 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
         const historicalFailure = historicalStoppedGoal(row) || stoppedRequirements(row);
         const synthesisFailure = stoppedSynthesis(row);
-        const failureCode = synthesisFailure ? row.synthesis_failure_reason_code : row.failure_reason_code;
-        const failureCount = synthesisFailure ? row.synthesis_failure_count : row.failure_count;
+        const failureCode = synthesisFailure ? row.synthesis_failure_reason_code ?? row.synthesis_turn_failure_reason_code : row.failure_reason_code;
+        const failureCount = synthesisFailure ? row.synthesis_failure_count ?? row.synthesis_turn_failure_count : row.failure_count;
         const failureReasonCode = normalizeJoiFailureReasonCode(failureCode
           ?? (historicalFailure ? "joi_task_turn_failed" : undefined));
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
@@ -393,6 +410,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           : {};
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
+          ...(status === "FINALIZING" && number(row, "live_turn_count") === 0 && active === 0 && activeRuns === 0
+            && row.synthesis_result_revision === row.result_revision && number(row, "synthesis_requirements_current") === 1
+            && (row.synthesis_status === "PENDING" || row.synthesis_status === "CONSUMED")
+            ? { recovery: synthesisRecovery(row, now) } : {}),
           ...artifacts,
           ...(typeof row.archived_at === "string" ? { archivedAt: row.archived_at } : {}),
           workbench: {

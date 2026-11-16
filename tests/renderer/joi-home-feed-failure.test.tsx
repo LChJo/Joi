@@ -19,6 +19,20 @@ const feed: JoiHomeFeedDto = { goals: [{
 }], thinking: [], unassignedActions: [] };
 
 describe("home feed failure preserves execution truth", () => {
+  it("shows a synthesis retry deadline instead of claiming it is actively summarizing", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot);
+    const goal = feed.goals[0];
+    if (goal === undefined || goal.status === "NEEDS_ATTENTION") throw new Error("invalid fixture");
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ ...feed, goals: [{ ...goal, status: "FINALIZING",
+      recovery: { phase: "WAITING_RETRY", attempts: 1, retryAt: "2026-11-16T04:00:30.000Z" },
+      work: { active: 0, completed: 1, failed: 0, total: 1 } }] });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("等待自动重试")).toBeInTheDocument();
+    expect(screen.getByText(/将于.*自动重试/)).toBeInTheDocument();
+    expect(screen.queryByText("正在总结")).not.toBeInTheDocument();
+  });
+
   it("updates an open result's status and continuation controls when the goal starts running", async () => {
     vi.useFakeTimers();
     try {

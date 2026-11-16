@@ -1,4 +1,5 @@
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
+import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements-repository.js";
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
@@ -797,16 +798,10 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     });
   }
 
-  /**
-   * Goals whose Work is all terminal while their synthesis is behind the result set and the
-   * synthesis input is already consumed. No other scan reaches them — both review and continuation
-   * require the synthesis to have caught up — so without this they sit in "finalizing" forever.
-   * The cooldown keeps a re-driven attempt that fails again from being re-driven in a hot loop.
-   */
-  async listStalledSyntheses(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]> {
-    const staleBefore = new Date(Date.parse(input.now) - input.cooldownMillis).toISOString();
-    return (this.database.transaction((connection) => connection.prepare(`
-      SELECT rs.original_input_id AS goal_input_id, rs.revision AS result_revision
+  /** Ownerless synthesis recovery preserves the execution owner's retry and replay constraints. */
+  async listStalledSyntheses(input: { now: string }): Promise<HarnessStalledSynthesisSeed[]> {
+    return this.database.transaction((connection) => (connection.prepare(`
+      SELECT rs.original_input_id AS goal_input_id, rs.revision AS result_revision, synth.input_id
         FROM joi_goal_result_sets rs
         JOIN joi_inbox_messages goal ON goal.input_id = rs.original_input_id
         JOIN joi_inbox_messages synth ON synth.input_id = rs.synthetic_input_id
@@ -815,7 +810,6 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND goal.clarification_reason_code IS NULL
          AND synth.status = 'CONSUMED'
          AND synth.failed_at IS NULL
-         AND synth.updated_at <= ?
          AND NOT EXISTS (SELECT 1 FROM work_items w
                           WHERE w.input_id = rs.original_input_id
                             AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
@@ -825,16 +819,35 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                             AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))
          AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests action
                           WHERE action.input_id = rs.original_input_id AND action.status = 'OPEN')
-       ORDER BY rs.updated_at, rs.original_input_id LIMIT 20`).all(staleBefore)) as Row[])
+       ORDER BY rs.updated_at, rs.original_input_id`).all() as Row[])
+      .filter(row => this.#canRedriveSynthesis(connection, textValue(row, "input_id"), input.now))
+      .slice(0, 20)
       .map((row) => ({
         goalInputId: textValue(row, "goal_input_id"),
         resultRevision: numberValue(row, "result_revision"),
-      }));
+      })));
+  }
+
+  #canRedriveSynthesis(connection: DatabaseSync, inputId: string, now: string): boolean {
+    const row = connection.prepare(`SELECT i.turn_failure_count, i.turn_failure_reason_code,
+      i.turn_failed_at, i.turn_retry_at,
+      EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id=i.input_id AND t.side_effect_started=1
+        AND (t.status <> 'FAILED' OR COALESCE(t.failure_replay_safe,0) <> 1)) AS unsafe_effects
+      FROM joi_inbox_messages i WHERE i.input_id=?`).get(inputId) as Row | undefined;
+    if (row === undefined) return false;
+    const failureCount = numberValue(row, "turn_failure_count");
+    const retryAt = typeof row.turn_retry_at === "string" ? Date.parse(row.turn_retry_at)
+      : typeof row.turn_failed_at === "string" ? Date.parse(row.turn_failed_at) + joiTurnRetryDelay(failureCount) : 0;
+    return retryAt <= Date.parse(now) && canRedriveSynthesis({ failureCount,
+      reasonCode: typeof row.turn_failure_reason_code === "string" ? row.turn_failure_reason_code : "",
+      unsafeEffects: numberValue(row, "unsafe_effects") === 1 });
   }
 
   /** Returns a stalled synthesis to the scheduler for the revision the result set currently holds. */
   async redriveSynthesis(input: { now: string; seed: HarnessStalledSynthesisSeed }): Promise<boolean> {
     return this.database.transaction((connection) => {
+      const current = connection.prepare("SELECT synthetic_input_id FROM joi_goal_result_sets WHERE original_input_id=?").get(input.seed.goalInputId);
+      if (typeof current?.synthetic_input_id !== "string" || !this.#canRedriveSynthesis(connection, current.synthetic_input_id, input.now)) return false;
       const updated = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'PENDING', result_revision = ?, updated_at = ?
         WHERE input_id = (

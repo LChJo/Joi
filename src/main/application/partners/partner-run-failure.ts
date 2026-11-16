@@ -169,6 +169,9 @@ function reasonCodeOf(error: unknown): string {
 
 /** Classifies transient provider text and returns only a persistence-safe reason code. */
 export function classifyHttp403Detail(detail: string): "auth_forbidden" | "http_403" | "model_access_forbidden" | "region_forbidden" | "request_policy_forbidden" {
+  if (/(?:request|content|prompt)[^\r\n]{0,100}(?:policy|safety|blocked|forbidden|restricted)|(?:policy|safety)[^\r\n]{0,100}(?:request|content|prompt)/iu.test(detail)) {
+    return "request_policy_forbidden";
+  }
   if (/(?:invalid|expired|revoked|missing)[^\r\n]{0,80}(?:api[ _-]?key|token|credential)|(?:api[ _-]?key|token|credential)[^\r\n]{0,80}(?:invalid|expired|revoked|missing)|authentication|unauthori[sz]ed/iu.test(detail)) {
     return "auth_forbidden";
   }
@@ -177,9 +180,6 @@ export function classifyHttp403Detail(detail: string): "auth_forbidden" | "http_
   }
   if (/(?:region|country|geograph|location|territor)[^\r\n]{0,100}(?:unsupported|unavailable|restricted|blocked|forbidden)|(?:unsupported|unavailable|restricted|blocked|forbidden)[^\r\n]{0,100}(?:region|country|geograph|location|territor)/iu.test(detail)) {
     return "region_forbidden";
-  }
-  if (/(?:request|content|prompt)[^\r\n]{0,100}(?:policy|safety|blocked|forbidden|restricted)|(?:policy|safety)[^\r\n]{0,100}(?:request|content|prompt)/iu.test(detail)) {
-    return "request_policy_forbidden";
   }
   return "http_403";
 }

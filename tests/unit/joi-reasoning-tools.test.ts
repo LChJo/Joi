@@ -9,6 +9,7 @@ import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import type { GoalRequirementsRepository } from "../../src/main/application/ports/goal-requirements.js";
 import type { GoalWorkListPage,GoalWorkListQuery } from "../../src/main/application/ports/work-orchestration.js";
 import type { MethodEvidenceRead } from "../../src/main/application/ports/method-learning.js";
+import type { GoalSynthesisDraft } from "../../src/main/domain/work/goal-synthesis-state.js";
 
 const partnerDto: PartnerDto = {
   capabilities: ["code"], createdBy: "user", displayName: "Coder", engine: "pi-core", inFlightCount: 0,
@@ -68,6 +69,7 @@ function makeTools(options: {
   recordEvidenceRead?: (receipt: MethodEvidenceRead) => void;
   resultReadError?: Error;
   evidenceReadError?: Error;
+  validateSynthesisState?: (inputId: string, draft?: GoalSynthesisDraft) => Promise<void>;
 } = {}) {
   const addCalls: unknown[] = [];
   const setModelCalls: unknown[] = [];
@@ -108,6 +110,7 @@ function makeTools(options: {
       current: async () => options.workspaceCurrent ?? null,
     },
     clarifications: {
+      ...(options.validateSynthesisState === undefined ? {} : { validateSynthesisState: options.validateSynthesisState }),
       requireClarification: async (inputId, reasonCode, prompt) => {
         clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
       },
@@ -774,21 +777,21 @@ describe("joi reasoning tools", () => {
     expect(harness.clarificationCalls).toEqual([]);
   });
 
-  it("commits an explicitly blocked goal synthesis outcome", async () => {
+  it("validates an explicitly blocked goal synthesis declaration", async () => {
     const harness = makeTools({ goalInputId: "goal-1", inputId: "joi_result_input:goal:goal-1" });
 
     await expect(harness.call("turn_complete", { outcome: "RESULT_BLOCKED" })).resolves.toEqual({
       outcome: "RESULT_BLOCKED",
-      status: "COMMITTED",
+      status: "VALIDATED",
     });
   });
 
-  it("commits a non-blocking request for another evidence layer", async () => {
+  it("validates a non-blocking request for another evidence layer", async () => {
     const harness = makeTools({ goalInputId: "goal-1", inputId: "joi_result_input:goal:goal-1" });
 
     await expect(harness.call("turn_complete", { outcome: "RESULT_CONTINUE" })).resolves.toEqual({
       outcome: "RESULT_CONTINUE",
-      status: "COMMITTED",
+      status: "VALIDATED",
     });
   });
 
@@ -1042,8 +1045,38 @@ describe("AC-43/48 evidence tools", () => {
     const output = await tool.execute("complete",{ outcome: "RESULT_CONTINUE",synthesisState: state });
     expect(output.details).toEqual({ synthesisState: state });
     expect(JSON.stringify(output.content)).not.toContain("PRIVATE_SYNTHESIS_STATE");
-    expect(JSON.stringify(output.content)).toContain("COMMITTED");
+    expect(JSON.stringify(output.content)).toContain("VALIDATED");
     await expect(makeTools().call("turn_complete",{ outcome: "DIRECT_ANSWER",synthesisState: state })).rejects.toMatchObject({ code: "goal_synthesis_state_invalid" });
+  });
+
+  it("returns invalid evidence to the model before declaring a synthesis complete", async () => {
+    const validate = vi.fn().mockRejectedValueOnce(new DomainError("goal_synthesis_reference_invalid", "Unknown evidence.")).mockResolvedValue(undefined);
+    const inputId = "joi_result_input:goal:original:r7:q2";
+    const harness = makeTools({ inputId, goalInputId: "original", validateSynthesisState: validate });
+    const tool = harness.tools.find(value => value.name === "turn_complete");
+    if (tool === undefined) throw new Error("Missing completion tool.");
+    const bad = { version: 1, claims: [{ statement: "PRIVATE_CLAIM", requirementIds: [], resultIds: ["invented"] }], unresolved: [], conflicts: [] };
+    const correction = await tool.execute("bad", { outcome: "RESULT_SYNTHESIZED", synthesisState: bad });
+    expect(correction).toMatchObject({ isError: true, details: { reasonCode: "goal_synthesis_reference_invalid" } });
+    expect(correction.terminate).not.toBe(true);
+    expect(JSON.stringify(correction.content)).toContain("work_read_evidence");
+    expect(JSON.stringify(correction.content)).not.toContain("PRIVATE_CLAIM");
+    const fixed = { ...bad, claims: [{ ...bad.claims[0], resultIds: ["result"] }] };
+    const completed = await tool.execute("fixed", { outcome: "RESULT_SYNTHESIZED", synthesisState: fixed });
+    expect(completed).not.toHaveProperty("isError", true);
+    expect(completed.details).toEqual({ synthesisState: fixed });
+    expect(validate).toHaveBeenNthCalledWith(2, inputId, fixed);
+  });
+
+  it("bounds repeated invalid synthesis references without asking the user", async () => {
+    const validate = vi.fn().mockRejectedValue(new DomainError("goal_synthesis_reference_invalid", "Unknown evidence."));
+    const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2", goalInputId: "original", validateSynthesisState: validate });
+    const tool = harness.tools.find(value => value.name === "turn_complete");
+    if (tool === undefined) throw new Error("Missing completion tool.");
+    const parameters = { outcome: "RESULT_SYNTHESIZED" };
+    expect(await tool.execute("first", parameters)).toMatchObject({ isError: true });
+    expect(await tool.execute("second", parameters)).toMatchObject({ isError: true, terminate: true, details: { reasonCode: "goal_synthesis_reference_invalid" } });
+    expect(harness.clarificationCalls).toEqual([]);
   });
 
   it("scopes historical index and conclusion pages to the original goal", async () => {

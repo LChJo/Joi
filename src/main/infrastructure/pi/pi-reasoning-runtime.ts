@@ -7,6 +7,7 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 
 import { checkpointMessage, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, taskAnchorIndices, transcriptFingerprint, SummaryRetryGuard } from "./pi-compaction.js";
 import { parseGoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+import { reasoningStreamFailure } from "./pi-reasoning-failure-classifier.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
 import { createPiContextManager, type PiContextManager } from "./pi-context-manager.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
@@ -357,10 +358,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         | { errorMessage?: string; stopReason?: string }
         | undefined;
       if (failed?.stopReason === "error") {
-        promptError = Object.assign(
-          new Error((failed.errorMessage ?? "The reasoning stream failed without delivering content.").slice(0, 400)),
-          { code: "reasoning_stream_error" },
-        );
+        promptError = reasoningStreamFailure(failed.errorMessage);
       }
     }
     // A tool call may already have committed durable work before the provider failed. Keep
@@ -853,7 +851,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // Error text and model-provided content cannot establish this proof.
       const rejectedBeforeExecution = isError && !runtime.validatedToolCalls.has(event.toolCallId)
         && runtime.agent.state.tools.some(tool => tool.name === event.toolName && tool.prepareArguments === undefined);
-      const reasonCode = safeToolResultReasonCode(event.result)
+      const reasonCode = event.toolName === "turn_complete"
+        && (event.result as { details?: { correctionExhausted?: unknown } } | undefined)?.details?.correctionExhausted === true
+        ? "goal_synthesis_correction_exhausted" : safeToolResultReasonCode(event.result)
         ?? (isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
       const outcome = safeTurnOutcome(event.toolName, event.result);

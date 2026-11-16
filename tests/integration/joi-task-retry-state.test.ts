@@ -21,6 +21,20 @@ async function setup() {
 }
 
 describe("durable JOI retry ownership (AC-10/46/53/67)",()=>{
+  it.each(["source_auth", "source_configuration", "source_access", "source_safety_refusal"])("parks persisted %s before starting a restarted actor", async reasonCode => {
+    const { fixture, inbox, workbench, reader } = await setup();
+    try {
+      await inbox.createTurn({ inputId: "retry-goal", turnId: "deterministic", sessionId: "s", workbenchId: workbench.workbenchId, createdAt: fixture.clock.now().toISOString() });
+      await inbox.failTurn("retry-goal", "deterministic", { reasonCode });
+      const handle = vi.fn(async () => undefined);
+      await new JoiTaskComponent({ driver: { handle }, gate: { hasReadySource: async () => true }, inbox: reader() })
+        .update({ clock: fixture.clock, now: fixture.clock.now(), tickId: 1 });
+      expect(handle).not.toHaveBeenCalled();
+      expect(await inbox.loadInput("retry-goal")).toMatchObject({ status: "CONSUMED" });
+      expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({ status: "FAILED", failure: { reasonCode, attempts: 1 } });
+    } finally { await fixture.close(); }
+  });
+
   it("does not let a settled old actor failure delay an explicit continuation",async()=>{
     const {fixture,workbench,inbox,reader}=await setup();
     try{
