@@ -2122,8 +2122,8 @@
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "b7674f58ad12c5177505fb8cdbcc3b6ebedba335eb061e823695797048479639",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "324ecb590722f28736b32b516ef170cb078136e8600d20b028459ef6f4e69312",
+      "observedAt": "2026-11-16T04:46:15.887Z",
       "range": {
         "startLine": 1,
         "endLine": 1099
