@@ -24,6 +24,19 @@ npm run dev
 
 该命令构建 Electron 主进程，并启动 Vite、Electron TypeScript watch 与 Electron 窗口。它是持续运行命令；Agent 应保留并监控进程，任务结束或需要打包时再正常停止。
 
+Vite 默认监听 `127.0.0.1:43715`，并将 `/api` 代理到 `127.0.0.1:43130`。Electron 会等到 Vite 成功提供 renderer 入口后才启动。启动验收以桌面窗口能完成初始化并进入应用为准。
+
+测试时使用临时 `userData` 和空闲端口。下面的两个端口是示例，启动前需确认可用。请在用于测试的专用 PowerShell 会话中执行：
+
+```powershell
+$env:JOI_TEST = "1"
+$env:JOI_DEV_PORT = "43716"
+$env:JOI_DEV_API_PORT = "43131"
+npm run dev
+```
+
+检查开发态首次设置、登录初始化与对话入口时，使用 `npm run build:electron`，然后执行 `npx playwright test tests/e2e/dev-startup.spec.ts`。该用例使用独立的 Vite 和 API 端口。
+
 等价别名：
 
 ```powershell

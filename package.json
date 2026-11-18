@@ -11,7 +11,7 @@
     "i18n:check": "node scripts/i18n.mjs check",
     "i18n:stats": "node scripts/i18n.mjs stats",
     "prebuild:prod": "npm run i18n:check",
-    "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on tcp:43715 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:43715 electron .\"",
+    "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"node scripts/launch-dev-electron.mjs\"",
     "start": "npm run dev",
     "browser:install": "node node_modules/agent-browser/bin/agent-browser.js install",
     "app:run": "npm run build:prod && electron .",

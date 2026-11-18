@@ -41,6 +41,7 @@ import { WorkerHomeFeedRepository } from "../infrastructure/persistence/worker-h
 import type { DesktopRuntimeConfiguration, HostedRuntime, RuntimeDesktopCapabilities } from "./desktop-runtime-contract.js";
 export async function createRuntimeHost(configuration: DesktopRuntimeConfiguration, desktop: RuntimeDesktopCapabilities): Promise<HostedRuntime> {
   const isTest = configuration.isTest;
+  const loopbackPort = configuration.loopbackPort ?? (isTest ? 0 : 43_130);
   let authService: AuthService | null = null;
   let runtimeDatabase: RuntimeDatabase | null = null;
   let databaseIntegrityMonitor: ReturnType<typeof wireOperations>["integrity"] | null = null;
@@ -103,7 +104,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       });
       runtimeListeners = await startRuntimeListeners({
         handler: createRecoveryModeHandler({ backups: recoveryBackups, requestRestart: () => desktop.requestRestart(), uiLocale: runtimeSettings.uiLocale ?? "system", systemLanguages: configuration.systemLanguages ?? [], setUiLocale: async (uiLocale) => { await settings.update({ uiLocale }); } }),
-        loopbackPort: isTest ? 0 : 43_130,
+        loopbackPort,
       });
       runtimeDatabase = database;
       return;
@@ -301,7 +302,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
           configuration.rendererDirectory,
         ),
         ...(runtimeSettings.lan.enabled ? { lan: { address: runtimeSettings.lan.address, port: runtimeSettings.lan.port } } : {}),
-        loopbackPort: isTest ? 0 : 43_130,
+        loopbackPort,
       });
       authService = auth;
       runtimeDatabase = database;

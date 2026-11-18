@@ -5,6 +5,7 @@ import type { BitmapTranscodeInput, BitmapTranscodeResult } from "../infrastruct
 import type { ExportRecord } from "../infrastructure/persistence/sqlite-result-exports.js";
 
 export interface DesktopRuntimeConfiguration {
+  loopbackPort?: number;
   systemLanguages?: string[];
   userDataDirectory: string;
   migrationsDirectory: string;

@@ -16,6 +16,8 @@ import { resolveLocale, translate, type UiLocalePreference } from "../shared/i18
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isTest = process.env.JOI_TEST === "1";
+const developmentUrl = process.env.VITE_DEV_SERVER_URL;
+const developmentApiPort = developmentUrl === undefined ? undefined : process.env.JOI_DEV_API_PORT;
 const applicationIconPath = app.isPackaged
   ? path.join(process.resourcesPath, "resources", "branding", "icon.png")
   : path.resolve(currentDirectory, "../../../resources/branding/icon.png");
@@ -45,6 +47,10 @@ let shutdownPromise: Promise<void> | null = null;
 async function startRuntime(): Promise<void> {
   const vault = new ElectronCredentialVault();
   const userDataDirectory = app.getPath("userData");
+  const loopbackPort = developmentApiPort === undefined ? undefined : Number(developmentApiPort);
+  if (loopbackPort !== undefined && (!Number.isInteger(loopbackPort) || loopbackPort < 1 || loopbackPort > 65_535)) {
+    throw new Error("Invalid Joi development API port.");
+  }
   runtime = await startDesktopRuntime({
     systemLanguages: app.getPreferredSystemLanguages(),
     userDataDirectory,
@@ -55,6 +61,7 @@ async function startRuntime(): Promise<void> {
       ? path.join(process.resourcesPath, "resources", "native", process.platform, `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`)
       : path.resolve("native", "joi-remote", "target", "release", `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`),
     appVersion: app.getVersion(), isTest,
+    ...(loopbackPort === undefined ? {} : { loopbackPort }),
     launchAtLogin: app.getLoginItemSettings().openAtLogin,
     credentialStorageAvailable: vault.isAvailable(),
   }, {
@@ -111,7 +118,6 @@ function createMainWindow() {
     mainWindow = null;
   });
 
-  const developmentUrl = process.env.VITE_DEV_SERVER_URL;
   if (developmentUrl !== undefined) {
     void window.loadURL(developmentUrl);
   } else {
