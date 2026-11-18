@@ -8,10 +8,12 @@ import { SafeMarkdown } from "./SafeMarkdown";
 import { t } from "./i18n";
 
 type ToolState = "started" | "completed" | "failed" | "stopped" | "interrupted" | "unknown";
-interface ToolActivity { id: string;callId?: string;name: string;completed: boolean;parameters?: string;state?: AgentConversationEntryDto["toolState"]; }
+type OutputStatus = ConversationTurnStatus | "IDLE";
+interface ToolActivity { id: string;callId?: string;name: string;sequence: number;hasCall: boolean;completed: boolean;parameters?: string;result?: string;state?: AgentConversationEntryDto["toolState"]; }
 const stateLabels = { started: "chat.toolRunning",completed: "chat.toolCompleted",failed: "chat.toolFailed",stopped: "chat.stopped",interrupted: "chat.interrupted",unknown: "chat.toolResultMissing" } as const;
-function toolState(tool: ToolActivity,status: ConversationTurnStatus): ToolState {
+function toolState(tool: ToolActivity,status: OutputStatus,activeSince: number): ToolState {
   if (tool.state === "completed" || tool.state === "failed") return tool.state;
+  if (tool.sequence < activeSince) return "unknown";
   if (status === "RUNNING" || status === "QUEUED") return "started";
   return status === "STOPPED" ? "stopped" : status === "INTERRUPTED" ? "interrupted" : "unknown";
 }
@@ -21,14 +23,22 @@ function ToolStateIcon({ state }: { state: ToolState }) {
 function ToolParameters({ parameters }: { parameters: string | undefined }) {
   return parameters === undefined ? <span className="chat-tool-missing">{t("chat.toolParametersMissing")}</span> : <code title={parameters}>{parameters}</code>;
 }
-interface OutputProps { entries: ConversationEntryDto[];status: ConversationTurnStatus;context?: ConversationContextDto;children?: ConversationDto["children"];onCancel?: (childId: string) => void; }
+interface OutputProps {
+  entries: ConversationEntryDto[];
+  status: OutputStatus;
+  context?: ConversationContextDto;
+  children?: ConversationDto["children"];
+  onCancel?: (childId: string) => void;
+  renderEntry?: (entry: AgentConversationEntryDto) => ReactNode;
+  renderToolDetails?: (result: string | undefined, revealableCallId: string | undefined) => ReactNode;
+}
 function thinkingLabel(thinking: ConversationThinkingDto): string {
   return t(thinking.state === "STARTED" ? "chat.thinkingStarted" : thinking.state === "COMPLETED" ? "chat.thinkingCompleted" : "chat.thinkingInterrupted");
 }
 function thinkingDuration(thinking: ConversationThinkingDto): string {
   return thinking.durationMs === undefined ? "" : t("chat.thinkingDuration",{ seconds: Math.round(thinking.durationMs / 10) / 100 });
 }
-function ToolGroup({ entries,status,context: fallbackContext,children = [],onCancel }: OutputProps) {
+function ToolGroup({ entries,status,context: fallbackContext,children = [],onCancel,renderToolDetails,activeSince }: OutputProps & { activeSince: number }) {
   const activities = entries.flatMap(entry => entry.kind === "ACTIVITY" ? [entry.activity] : []);
   const context = activities.findLast(activity => activity.type === "CONTEXT")?.context ?? fallbackContext;
   const thought = activities.findLast(activity => activity.type === "THINKING")?.thinking;
@@ -38,11 +48,12 @@ function ToolGroup({ entries,status,context: fallbackContext,children = [],onCan
   const brief = [thought === undefined ? "" : [thinkingLabel(thought),thinkingDuration(thought)].filter(Boolean).join(" · "),contextBrief,
     children.length === 0 ? "" : t("chat.childProgress",{ total: children.length,running: children.filter(child => child.status === "RUNNING" || child.status === "QUEUED").length })].filter(Boolean).join(" · ");
   const tools: ToolActivity[] = [];
+  const toolsByCallId = new Map<string, ToolActivity>();
   for (const entry of entries) {
     if (entry.kind !== "TOOL_CALL" && entry.kind !== "TOOL_RESULT") continue;
     const paired = entry.toolCallId === undefined
       ? entry.kind === "TOOL_RESULT" ? tools.findLast(tool => !tool.completed && (entry.toolName === undefined || tool.name === entry.toolName)) : undefined
-      : tools.find(tool => tool.callId === entry.toolCallId);
+      : toolsByCallId.get(entry.toolCallId);
     const summary = entry.kind === "TOOL_CALL" ? entry.text?.replace(/\s+/gu," ").trim() : undefined;
     const parameters = summary === "" ? undefined : summary;
     const state = entry.kind === "TOOL_RESULT"
@@ -50,38 +61,45 @@ function ToolGroup({ entries,status,context: fallbackContext,children = [],onCan
       : entry.toolState;
     if (paired !== undefined) {
       paired.completed ||= entry.kind === "TOOL_RESULT";
+      paired.hasCall ||= entry.kind === "TOOL_CALL";
       if (parameters !== undefined) paired.parameters ??= parameters;
+      if (entry.kind === "TOOL_RESULT" && entry.text !== undefined) paired.result = entry.text;
       if (state !== undefined && (entry.kind === "TOOL_RESULT" || paired.state === undefined)) paired.state = state;
       continue;
     }
-    tools.push({ id: entry.entryId,...(entry.toolCallId === undefined ? {} : { callId: entry.toolCallId }),name: entry.toolName ?? t("chat.tool"),completed: entry.kind === "TOOL_RESULT",
-      ...(parameters === undefined ? {} : { parameters }),...(state === undefined ? {} : { state }) });
+    const tool = { id: entry.entryId,...(entry.toolCallId === undefined ? {} : { callId: entry.toolCallId }),name: entry.toolName ?? t("chat.tool"),sequence: entry.sequence,hasCall: entry.kind === "TOOL_CALL",completed: entry.kind === "TOOL_RESULT",
+      ...(entry.kind === "TOOL_RESULT" && entry.text !== undefined ? { result: entry.text } : {}),
+      ...(parameters === undefined ? {} : { parameters }),...(state === undefined ? {} : { state }) };
+    tools.push(tool);
+    if (entry.toolCallId !== undefined) toolsByCallId.set(entry.toolCallId, tool);
   }
   const latest = tools.at(-1);
   if (latest === undefined && brief === "") return null;
-  const latestState = latest === undefined ? undefined : toolState(latest,status);
+  const latestState = latest === undefined ? undefined : toolState(latest,status,activeSince);
   return <details className="chat-tool-group"><summary data-tool-state={latestState}>{latest === undefined || latestState === undefined ? <BrainIcon /> : <><ToolStateIcon state={latestState} /><span className="chat-tool-summary-main"><strong>{latest.name}</strong><ToolParameters parameters={latest.parameters} /></span><span className="chat-tool-state">{t(stateLabels[latestState])}</span><small>{t("chat.toolCount",{ count: tools.length })}</small></>}{brief === "" ? null : <span className="chat-activity-brief">{brief}</span>}<CaretDownIcon className="chat-tool-chevron" /></summary>
-    {tools.length === 0 ? null : <ol>{tools.map(tool => { const state = toolState(tool,status);return <li data-tool-state={state} key={tool.id}><ToolStateIcon state={state} /><div className="chat-tool-details"><div><strong>{tool.name}</strong><span className="chat-tool-state">{t(stateLabels[state])}</span></div><ToolParameters parameters={tool.parameters} /></div></li>; })}</ol>}
+    {tools.length === 0 ? null : <ol>{tools.map(tool => { const state = toolState(tool,status,activeSince);return <li data-tool-state={state} key={tool.id}><ToolStateIcon state={state} /><div className="chat-tool-details"><div className="chat-tool-detail-heading"><strong>{tool.name}</strong><span className="chat-tool-state">{t(stateLabels[state])}</span></div><ToolParameters parameters={tool.parameters} />{renderToolDetails?.(tool.result,tool.completed && tool.hasCall ? tool.callId : undefined)}</div></li>; })}</ol>}
     <ConversationContext conversation={{ ...(context === undefined ? {} : { context }),children }} {...(onCancel === undefined ? {} : { onCancel })} />
     {thinkingSummary === "" ? null : <div className="chat-thinking"><p>{thinkingSummary}</p>{summaryTruncated ? <small>{t("chat.thinkingSummaryTruncated")}</small> : null}</div>}
   </details>;
 }
 
-export function ConversationOutput({ entries,status,context,children,onCancel }: OutputProps) {
+export function ConversationOutput({ entries,status,context,children,onCancel,renderEntry,renderToolDetails }: OutputProps) {
   const output: ReactNode[] = [];
   const lastThinking = entries.findLast(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING");
   const lastActivity = entries.findLast(entry => entry.kind === "ACTIVITY" || entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT");
   const fallback = { ...(context === undefined ? {} : { context }),...(children === undefined ? {} : { children }),...(onCancel === undefined ? {} : { onCancel }) };
+  const activeSince = entries.findLast(entry => entry.role === "USER")?.sequence ?? -Infinity;
+  const toolDetails = renderToolDetails === undefined ? {} : { renderToolDetails };
   let tools: ConversationEntryDto[] = [],groupKey = "first-activity";
-  if (lastActivity === undefined && (context !== undefined || (children?.length ?? 0) > 0)) output.push(<ToolGroup entries={[]} key="first-activity" status={status} {...fallback} />);
-  const flush = () => { if (tools.length > 0) { output.push(<ToolGroup entries={tools} key={groupKey} status={status} {...(tools.at(-1) === lastActivity ? fallback : {})} />);tools = []; } };
+  if (lastActivity === undefined && (context !== undefined || (children?.length ?? 0) > 0)) output.push(<ToolGroup activeSince={activeSince} entries={[]} key="first-activity" status={status} {...fallback} />);
+  const flush = () => { if (tools.length > 0) { output.push(<ToolGroup activeSince={activeSince} entries={tools} key={groupKey} status={status} {...toolDetails} {...(tools.at(-1) === lastActivity ? fallback : {})} />);tools = []; } };
   for (const entry of entries) {
     if (entry.kind === "ACTIVITY" && entry.activity.type === "THINKING" && entry !== lastThinking) continue;
     if (entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT" || entry.kind === "ACTIVITY") { tools.push(entry);continue; }
     flush();
     groupKey = `activity-after-${entry.entryId}`;
-    output.push(entry.kind === "MARKDOWN" ? <div className="markdown-body" key={entry.entryId}><SafeMarkdown>{entry.text ?? ""}</SafeMarkdown></div>
-      : entry.kind === "ARTIFACT" ? <div className="chat-artifact" key={entry.entryId}><FolderIcon />{entry.artifact?.name}</div> : <p key={entry.entryId}>{entry.text}</p>);
+    output.push(renderEntry?.(entry) ?? (entry.kind === "MARKDOWN" ? <div className="markdown-body" key={entry.entryId}><SafeMarkdown>{entry.text ?? ""}</SafeMarkdown></div>
+      : entry.kind === "ARTIFACT" ? <div className="chat-artifact" key={entry.entryId}><FolderIcon />{entry.artifact?.name}</div> : <p key={entry.entryId}>{entry.text}</p>));
   }
   flush();
   return <>{output}</>;

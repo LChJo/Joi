@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'composer_text_field.dart';
-import 'goal_detail.dart' show MessageBody;
+import 'conversation_output.dart';
 import 'i18n.dart';
 import 'remote_controller.dart';
 
@@ -742,19 +742,12 @@ class _ConversationScreenState extends State<ConversationScreen>
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          for (final entry in entries)
-            if (entry['kind'] == 'MARKDOWN' && entry['role'] == 'AGENT')
-              MessageBody(_text(entry['text']))
-            else if (entry['kind'] == 'TOOL_CALL')
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text(
-                  _text(entry['toolName']),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                children: [SelectableText(_text(entry['text']))],
-              ),
+          for (final row in groupConversationOutput(entries))
+            ConversationOutputRow(
+              key: ValueKey(row.first['entryId']),
+              entries: row,
+              status: _text(turn['status']),
+            ),
           Row(
             children: [
               Expanded(

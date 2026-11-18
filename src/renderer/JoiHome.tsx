@@ -16,6 +16,8 @@ import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared
 import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
 import { submitComposerOnEnter } from "./composer-keyboard";
+import { ConversationOutput } from "./ConversationOutput";
+import "./conversations.css";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   useI18n();
@@ -408,50 +410,10 @@ function ArtifactFolder({ api, directory, items, source, sourceId, timestamp, wo
   </div>;
 }
 
-function groupAgentEntries(items: AgentConversationEntryDto[]) {
-  const groups: { entry: AgentConversationEntryDto; entries: AgentConversationEntryDto[] }[] = [];
-  for (const entry of items) {
-    const previous = groups.at(-1);
-    const isTool = entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT";
-    if (isTool && entry.toolName !== undefined && previous?.entry.toolName === entry.toolName
-      && (previous.entry.kind === "TOOL_CALL" || previous.entry.kind === "TOOL_RESULT")) {
-      previous.entries.push(entry);
-    } else { groups.push({ entry, entries: [entry] }); }
-  }
-  return groups;
-}
-
 type ToolTraceView =
   | { status: "loading" }
   | { status: "ready"; trace: WorkbenchToolTraceDto }
   | { status: "error"; message: string };
-
-/** The newest call in a group is the one worth surfacing: it is what is running now. */
-function newestCallSummary(entries: AgentConversationEntryDto[]): string | undefined {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const item = entries[index];
-    if (item?.kind === "TOOL_CALL" && item.text !== undefined && item.text !== "") return item.text;
-  }
-  return undefined;
-}
-
-/**
- * The call whose full body the group can reveal. Only a call that already produced a result
- * qualifies, which also means its private body is committed — the engine writes the status
- * frame before the trace.
- */
-function lastRevealableCall(entries: AgentConversationEntryDto[]): { toolCallId: string; toolName: string } | undefined {
-  const completed = new Set(entries
-    .filter((item) => item.kind === "TOOL_RESULT" && item.toolCallId !== undefined)
-    .map((item) => item.toolCallId));
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const item = entries[index];
-    if (item?.kind === "TOOL_CALL" && item.toolCallId !== undefined && completed.has(item.toolCallId)) {
-      return { toolCallId: item.toolCallId, toolName: item.toolName ?? "tool" };
-    }
-  }
-  return undefined;
-}
 
 function ToolTraceBody({ view, onReveal }: { view: ToolTraceView | undefined; onReveal: () => void }) {
   useI18n();
@@ -471,41 +433,6 @@ function ToolTraceBody({ view, onReveal }: { view: ToolTraceView | undefined; on
       {view?.status === "loading" ? t("home.loading") : view?.status === "error" ? t("common.retry") : t("home.viewFullOutput")}
     </button>
   </div>;
-}
-
-function ToolEntry({ entry, entries, running, traces, onReveal, desktop }: {
-  entry: AgentConversationEntryDto;
-  entries: AgentConversationEntryDto[];
-  running: boolean;
-  traces: Record<string, ToolTraceView>;
-  onReveal: (toolCallId: string) => void;
-  desktop: boolean;
-}) {
-  useI18n();
-  const grouped = entries.length > 1;
-  const calls = entries.filter((item) => item.kind === "TOOL_CALL").length;
-  const results = entries.length - calls;
-  const label = grouped ? t("home.tool") : entry.kind === "TOOL_CALL" ? t("home.toolCall") : t("home.toolResult");
-  const summary = newestCallSummary(entries);
-  const target = desktop ? lastRevealableCall(entries) : undefined;
-  return <article className={grouped ? "agent-message tool" : `agent-message tool ${entry.kind.toLowerCase()}`}>
-    <details className={`agent-tool-compact ${entry.kind === "TOOL_RESULT" ? "result" : ""}`}>
-      <summary>
-        <span>{label}</span>
-        {/* The tool name stays its own element so a group still reads as `bash ×3`. */}
-        <span className="agent-tool-line">
-          <code>{grouped ? `${entry.toolName ?? "tool"} ×${String(Math.max(calls, results))}` : entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code>
-          {running ? <span className="agent-tool-running">{t("home.running")}</span> : null}
-          {summary === undefined ? null : <span className="agent-tool-summary">{summary}</span>}
-        </span>
-        <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString(currentLocale())}</time>
-      </summary>
-      {grouped
-        ? entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? t("home.toolCall") : t("home.toolResult")} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString(currentLocale())}</time></small>{item.text ? <pre>{item.text}</pre> : null}</div>)
-        : entry.text === undefined || entry.text === "" ? null : <pre>{entry.text}</pre>}
-      {target === undefined ? null : <ToolTraceBody onReveal={() => { onReveal(target.toolCallId); }} view={traces[target.toolCallId]} />}
-    </details>
-  </article>;
 }
 
 function GoalArtifacts({ api, goal }: { api: DigitalLifeApi; goal: JoiGoalCardDto }) {
@@ -571,8 +498,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
   const [following, setFollowing] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [notice, setNotice] = useNotice();
-  // Revealed bodies live here rather than in ToolEntry so the 750 ms poll cannot drop an
-  // expanded view, and so ToolEntry stays stateless.
+  // Revealed traces stay available across live snapshots.
   const [toolTraces, setToolTraces] = useState<Record<string, ToolTraceView>>({});
   const viewport = useRef<HTMLDivElement>(null);
   const currentPage = useRef<AgentConversationPageDto | null>(null);
@@ -669,15 +595,30 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
     }, 0);
     return () => clearTimeout(timer);
   }, [loadMore, page]);
-  const trailing = page?.items.at(-1);
-  // Only a trailing unmatched tool call in a RUNNING session receives live styling.
-  const runningEntryId = page?.agent.status === "RUNNING" && trailing?.kind === "TOOL_CALL" ? trailing.entryId : undefined;
-  // Grouping walks the whole page, and the poll timer re-renders this component even when the
-  // page came back unchanged, so the derivation is memoized on the item list.
-  const streamRows = useMemo(
-    () => groupArtifactsForDisplay(groupAgentEntries(page?.items ?? []), (group) => group.entry.kind === "ARTIFACT" ? group.entry.artifact : undefined),
-    [page?.items],
-  );
+  const stream = useMemo(() => {
+    const entries: AgentConversationEntryDto[] = [];
+    const folders = new Map<string, { directory: string | undefined; items: WorkbenchArtifactDto[] }>();
+    for (const row of groupArtifactsForDisplay(page?.items ?? [], entry => entry.kind === "ARTIFACT" ? entry.artifact : undefined)) {
+      if (row.kind === "SINGLE") { entries.push(row.item); continue; }
+      const first = row.items[0];
+      if (first === undefined) continue;
+      entries.push(first);
+      folders.set(first.entryId, { directory: row.directory, items: row.items.flatMap(entry => entry.artifact === undefined ? [] : [entry.artifact]) });
+    }
+    return { entries, folders };
+  }, [page?.items]);
+  const status = page?.agent.status;
+  const renderEntry = (entry: AgentConversationEntryDto) => {
+    const time = new Date(entry.createdAt).toLocaleString(currentLocale());
+    const folder = stream.folders.get(entry.entryId);
+    if (folder !== undefined) return <ArtifactFolder api={api} directory={folder.directory} items={folder.items} key={entry.entryId}
+      source="AGENT" sourceId={agent.agentId} timestamp={entry.createdAt} workbenchId={workbenchId} />;
+    if (entry.kind === "ARTIFACT" && entry.artifact !== undefined) return <ArtifactCard api={api} artifact={entry.artifact}
+      key={entry.entryId} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />;
+    if (entry.kind === "ARTIFACT") return <div className="chat-artifact" key={entry.entryId}>{t("home.artifacts")}</div>;
+    return <article className={entry.role === "USER" ? "chat-user markdown-body" : entry.kind === "ERROR" ? "chat-turn-failure markdown-body" : "markdown-body"}
+      key={entry.entryId} title={time}><time className="agent-entry-time" dateTime={entry.createdAt}>{time}</time><Markdown>{entry.text ?? ""}</Markdown></article>;
+  };
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
     <div className="agent-stream-viewport" ref={viewport} role="log" aria-label={t("home.agentExecutionHistory")} aria-live="off" tabIndex={0} onScroll={() => {
@@ -689,32 +630,16 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       if (element.scrollTop < 64 && !atBottom) void loadMore();
     }}>
     {page?.nextCursor === undefined ? null : <p className="agent-history-hint">{loadingHistory ? t("home.loadingEarlierEntries") : t("home.scrollUpForEarlierEntries")}</p>}
-    {page === null ? <p className="content-state">{t("home.preparingTheConversation")}</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">{t("home.thisAgentHasNoExecutionMessagesToShowYet")}</p> : streamRows.map((row) => {
-      if (row.kind === "FOLDER") {
-        const first = row.items[0];
-        if (first === undefined) return null;
-        return <article className="agent-message tool" key={first.entry.entryId}>
-          <ArtifactFolder
-            api={api} directory={row.directory} items={row.items.flatMap((group) => group.entry.artifact === undefined ? [] : [group.entry.artifact])}
-            source="AGENT" sourceId={agent.agentId} timestamp={first.entry.createdAt} workbenchId={workbenchId}
-          />
-        </article>;
-      }
-      const { entry, entries } = row.item;
-      return entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
-      ? <ToolEntry
-        desktop={api.desktop} entries={entries} entry={entry} key={entry.entryId}
-        onReveal={(toolCallId) => void revealToolTrace(toolCallId)}
-        running={entries.some((item) => item.entryId === runningEntryId)}
-        traces={toolTraces}
-      />
-      : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
-      <header><strong>{entry.role === "USER" ? t("home.task") : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? t("home.tool") : t("home.system")}</strong><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString(currentLocale())}</time></header>
-      {entry.kind === "ARTIFACT" && entry.artifact !== undefined
-        ? <ArtifactCard api={api} artifact={entry.artifact} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />
-        : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><span className="agent-artifact-copy"><strong>{t("home.artifacts")}</strong><span>{t("home.file0B")}</span></span></div>
-          : <Markdown>{entry.text ?? ""}</Markdown>}
-    </article>;})}</div>}
+    {page === null ? <p className="content-state">{t("home.preparingTheConversation")}</p> : <div className="agent-message-stream chat-output">
+      {page.items.length === 0 ? <p className="plain-empty">{t("home.thisAgentHasNoExecutionMessagesToShowYet")}</p> : <ConversationOutput
+        entries={stream.entries} renderEntry={renderEntry}
+        status={status === "CANCELED" ? "STOPPED" : status === "RUNNING" || status === "COMPLETED" || status === "FAILED" ? status : "IDLE"}
+        renderToolDetails={(result, toolCallId) => <>
+          {result && result !== t("chat.toolCompleted") && result !== t("chat.toolFailed") ? <p className="agent-tool-result">{result}</p> : null}
+          {!api.desktop || toolCallId === undefined ? null : <ToolTraceBody onReveal={() => void revealToolTrace(toolCallId)} view={toolTraces[toolCallId]} />}
+        </>}
+      />}
+    </div>}
     </div>
     {following ? null : <button className="button ghost agent-load-more" onClick={() => {
       followLatest.current = true;

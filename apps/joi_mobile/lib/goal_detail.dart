@@ -4,44 +4,13 @@ import 'result_history.dart';
 import 'goal_artifacts.dart';
 import 'connection_diagnostics_view.dart';
 import 'composer_text_field.dart';
+import 'conversation_output.dart';
+import 'message_body.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'remote_controller.dart';
 import 'workbench_choice.dart';
 import 'home_screen.dart';
-
-class MessageBody extends StatelessWidget {
-  const MessageBody(this.text, {super.key});
-  final String text;
-  @override
-  Widget build(BuildContext context) => LocalizedView(
-    builder: (context) => MarkdownBody(
-      data: text,
-      selectable: true,
-      imageBuilder: (_, _, _) => Text(tr(Msg.mobileImage)),
-      onTapLink: (_, href, _) async {
-        final uri = Uri.tryParse(href ?? '');
-        if (uri == null || !['https', 'http'].contains(uri.scheme)) return;
-        try {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } catch (_) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: LocalizedView(
-                  builder: (context) =>
-                      Text(tr(Msg.mobileCouldNotOpenTheLinkCopyItToYour)),
-                ),
-              ),
-            );
-          }
-        }
-      },
-    ),
-  );
-}
 
 class GoalActions extends StatefulWidget {
   const GoalActions({
@@ -925,79 +894,53 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           ConnectionDiagnosticsButton(controller: widget.controller),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            executionStatusLabel(
-              status: _status,
-              resultAssessment: _resultAssessment,
-              executionPhase: _executionPhase,
-              waitReason: _waitReason,
-            ),
-          ),
-          if (_error != null) Text(noticeText(_error!)),
-          if (_items.isEmpty)
-            Padding(
-              padding: EdgeInsets.all(20),
-              child: Text(tr(Msg.mobileNoRecordsToShowYet)),
-            ),
-          for (final item in _items)
-            Card(
-              key: ValueKey(item['entryId']),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child:
-                    item['kind'] == 'TOOL_CALL' || item['kind'] == 'TOOL_RESULT'
-                    ? ExpansionTile(
-                        title: Text(
-                          item['toolName'] as String? ??
-                              (item['kind'] == 'TOOL_CALL'
-                                  ? tr(Msg.mobileToolCall)
-                                  : tr(Msg.homeToolResult)),
-                        ),
-                        children: [
-                          MessageBody(
-                            item['text'] as String? ??
-                                tr(Msg.mobileNoAdditionalContentToShow),
-                          ),
-                        ],
-                      )
-                    : item['kind'] == 'ARTIFACT'
-                    ? ListTile(
-                        leading: const Icon(Icons.insert_drive_file_outlined),
-                        title: Text(
-                          (item['artifact'] as Map<String, dynamic>?)?['name']
-                                  as String? ??
-                              tr(Msg.homeArtifacts),
-                        ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            {
-                                  'USER': tr(Msg.mobileUser),
-                                  'AGENT': tr(Msg.commonPartners),
-                                  'SYSTEM': tr(Msg.homeSystem),
-                                  'TOOL': tr(Msg.homeTool),
-                                }[item['role']] ??
-                                tr(Msg.mobileMessage),
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                          const SizedBox(height: 8),
-                          MessageBody(item['text'] as String? ?? ''),
-                        ],
-                      ),
-              ),
-            ),
-          if (_cursor != null)
-            TextButton(
-              onPressed: () => _load(more: true),
-              child: Text(tr(Msg.mobileLoadMoreRecords)),
-            ),
-        ],
-      ),
+      body: _recordList(),
     ),
   );
+
+  Widget _recordList() {
+    final rows = groupConversationOutput(_items);
+    final activeSince =
+        _items.reversed
+                .where((item) => item['role'] == 'USER')
+                .firstOrNull?['sequence']
+            as int?;
+    final header = <Widget>[
+      Text(
+        executionStatusLabel(
+          status: _status,
+          resultAssessment: _resultAssessment,
+          executionPhase: _executionPhase,
+          waitReason: _waitReason,
+        ),
+      ),
+      if (_error != null) Text(noticeText(_error!)),
+      if (rows.isEmpty)
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Text(tr(Msg.mobileNoRecordsToShowYet)),
+        ),
+    ];
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: header.length + rows.length + (_cursor == null ? 0 : 1),
+      itemBuilder: (context, index) {
+        if (index < header.length) return header[index];
+        final position = index - header.length;
+        if (position == rows.length) {
+          return TextButton(
+            onPressed: () => _load(more: true),
+            child: Text(tr(Msg.mobileLoadMoreRecords)),
+          );
+        }
+        final row = rows[position];
+        return ConversationOutputRow(
+          key: ValueKey(row.first['entryId']),
+          entries: row,
+          status: _status,
+          activeSince: activeSince,
+        );
+      },
+    );
+  }
 }

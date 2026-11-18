@@ -32,15 +32,15 @@
     {
       "id": "b4e0c245-401d-4f68-9009-f3ead2f2c98a",
       "kind": "source-code",
-      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client.",
+      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite.",
       "location": {
         "path": "src/main/index.ts"
       },
-      "hash": "8a83169e354b912f4ff8eb7cd78cf971c05f1a65ac35e51b3dc0522da414e518",
-      "observedAt": "2026-11-11T04:10:28.621Z",
+      "hash": "0150aa8d2ad9573b9f7fb0bbea0fca9e91ab79571c88e7954fc6f4805ac5b6ae",
+      "observedAt": "2026-11-18T04:14:36.902Z",
       "range": {
         "startLine": 1,
-        "endLine": 105
+        "endLine": 246
       }
     },
     {
@@ -270,12 +270,12 @@
     {
       "id": "70e2a22b-f223-48ee-ad62-781b5835ed5e",
       "kind": "source-code",
-      "claim": "Pinned Pi and Agent Browser native dependency, no Kernel packages, explicit browser setup and native executable ASAR unpacking.",
+      "claim": "Pinned Pi and Agent Browser native dependency, no Kernel packages, explicit browser setup and native executable ASAR unpacking. The coordinated development command starts compilation watch and Vite; the Electron launcher waits for the served renderer module.",
       "location": {
         "path": "package.json"
       },
-      "hash": "f3edc2ccd0bfa3d8cd4fbe71904bc944c332d014fba1e4eaf233e1af371e66b9",
-      "observedAt": "2026-11-16T06:38:13.969Z",
+      "hash": "c264152279648cf3ff6919fc886bca4c473c5587970291dbd420398db57a7d66",
+      "observedAt": "2026-11-18T04:14:36.902Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "38ce5d5a51537a5fcc20a6db55107fce3e12db3a6a8eb141369ccbab64ab03cc",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "397fc4ca2c1787d58fe60e6d1d8f662fee5dfde054e43843c6107a3774d22dc1",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 46
+        "endLine": 47
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "d6e8d11bbba8b5a1053c5e7132f2d0f901927b4e1528a4dc42296348060efb27",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "8de38dc65a708c490888db473e79c792d099f8eb4c59134e20b1c843febcbeb8",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 323
+        "endLine": 325
       }
     },
     {
@@ -550,15 +550,15 @@
     {
       "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
       "kind": "source-code",
-      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact. Completed turns show context metadata inside existing activity disclosures and omit standalone context rows.",
+      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact. Completed turns show context metadata inside existing activity disclosures and omit standalone context rows. Partner records share the tool grouping and states; authorized callers can render additional per-call details without widening ordinary chat.",
       "location": {
         "path": "src/renderer/ConversationOutput.tsx"
       },
-      "hash": "6128ac335f087029a2ec67235bb7c1af33d29d599594020c7aa49f0ec83bfbd0",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "98b28c8e6f3bd17f600399158204d925af75f1d4a528b3d94c2fb194c8c232e3",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 88
+        "endLine": 106
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "2898b5f9ec971ce83acbb7ab665b8a28458ddc628ecaf65852baf1cc8a1b2593",
-      "observedAt": "2026-11-18T03:39:04.300Z",
+      "hash": "64dc5b29cb3aff763f2026b4ff382ecb1aceb2ed9914777cb2c005b57a08a249",
+      "observedAt": "2026-11-18T04:14:36.902Z",
       "range": {
         "startLine": 1,
-        "endLine": 736
+        "endLine": 739
       }
     },
     {
@@ -900,15 +900,15 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests.",
+      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "38efba96b77bc5487fa2acb1602eb554cdcb81a1ec5a28e1f73b8656f06d3337",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "f239c052e555690ce99e30d88255ec49b3743908bd24c752fc012bd3b2c0e6aa",
+      "observedAt": "2026-11-18T04:14:36.902Z",
       "range": {
         "startLine": 1,
-        "endLine": 378
+        "endLine": 379
       }
     },
     {
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "bd2a53e7b63cdf356fd4534c9b886bee1196a7589bc3af154f6de6c14141779a",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "3714dea62d0223069b34c3441f5aff65f44375bcf7900b40e226fe973f3bafd3",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 1598
+        "endLine": 1586
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling.",
-      "hash": "d8de72f078d68792bc296eecc4932167710db5ec3f4bbe2d6c1f6c2df05c8302",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions.",
+      "hash": "14cd69d1a9ef9c047bdd695ce226cf4af260ba09ed0fa55b8a87d973a2562616",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 1918
+        "endLine": 1843
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter.",
-      "hash": "400e562313bf9fac9f2170c0dcce0c4bdba6e34c3734530254a5961d8520dde8",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states.",
+      "hash": "3ecd9b015eedc83624d428b55ce0d5a01cf3e1d7ae633560bfaa6884acb56225",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 2387
+        "endLine": 2380
       }
     },
     {
@@ -1880,29 +1880,29 @@
     {
       "id": "5b5e2d23-0e65-499d-999d-976a1fbe3691",
       "kind": "source-code",
-      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions.",
+      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions. Ordinary replies render shared compact tool groups, safe text and horizontally scrollable tables.",
       "location": {
         "path": "apps/joi_mobile/lib/conversation_screen.dart"
       },
-      "hash": "dffa197a0690d9462c2bc7fa489ae6793dff9062e2c1219b660add482de5c12b",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "f845e2e87bb65454ee2582b54260221360fff0257a01ca52329edcb1849a61b8",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 963
+        "endLine": 956
       }
     },
     {
       "id": "00eddc89-bcf1-43bd-ab95-2532ceb7d32a",
       "kind": "source-code",
-      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit.",
+      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit. Native regressions cover mixed tools, safe details, 320px tables, and expansion across partner history pages.",
       "location": {
         "path": "apps/joi_mobile/test/conversation_screen_test.dart"
       },
-      "hash": "1d28ff74bae0ebe569f16413babb24b5946c34c46475196a45cf7ab1cb9c45c8",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "3c1c89add51ec49d99eaa8675050854735cf65e33d7f41d1fe8216d24b0ef4fe",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
-        "endLine": 282
+        "endLine": 439
       }
     },
     {
@@ -2916,12 +2916,12 @@
     {
       "id": "9771fb1a-d3da-408f-b0ad-e65befa20813",
       "kind": "document",
-      "claim": "Goal full-text previews use a fixed title-bottom anchor across hover, click and keyboard focus; scrolling, selection, viewport clamping and context-menu copying remain specified. The Joi message inputs share Enter submission and Shift+Enter line breaks while IME confirmation stays in the editor.",
+      "claim": "Goal full-text previews use a fixed title-bottom anchor across hover, click and keyboard focus; scrolling, selection, viewport clamping and context-menu copying remain specified. The Joi message inputs share Enter submission and Shift+Enter line breaks while IME confirmation stays in the editor. The partner transcript shares the ordinary chat layout and tool projection. The Android transcript builds partner history lazily and contains table overflow.",
       "location": {
         "path": "docs/02-ux-specification.md"
       },
-      "hash": "4b968f390e1dbed6793b01d6177148645390e36fa7d1f4ca94bc559a754d4390",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "c5785572a2d04073972347a64a3bf1372098f4c03c2da28ed57d4dcc13e1aa28",
+      "observedAt": "2026-11-18T04:00:07.628Z",
       "range": {
         "startLine": 1,
         "endLine": 310
@@ -3681,6 +3681,90 @@
       "range": {
         "startLine": 1,
         "endLine": 923
+      }
+    },
+    {
+      "id": "9181c052-4571-46ae-886a-db3112665f2f",
+      "kind": "source-code",
+      "claim": "The partner transcript shares the ordinary Markdown and mixed tool-group presentation while retaining polling, paging and scroll-follow behavior.",
+      "location": {
+        "path": "tests/renderer/agent-message-stream.test.tsx"
+      },
+      "hash": "b9b1c39f9b118e8b7ce440b220c28779eee62e4717b9868b36b46d3db5bd43ee",
+      "observedAt": "2026-11-18T04:00:07.628Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 130
+      }
+    },
+    {
+      "id": "a0a831e5-a22b-4ab2-8275-4719a02a488a",
+      "kind": "source-code",
+      "claim": "The ordinary and partner transcripts render shared Markdown, compact tool groups with safe parameters and states, and scrollable wide tables in Flutter.",
+      "location": {
+        "path": "apps/joi_mobile/lib/conversation_output.dart"
+      },
+      "hash": "27e67d658f5ffcb0c698077c5cab8aedfb6f03dcfd2e494e7870d99ef80319b1",
+      "observedAt": "2026-11-18T04:00:07.628Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 209
+      }
+    },
+    {
+      "id": "f38946e3-12db-45b8-898b-c8d8eb3bea6b",
+      "kind": "source-code",
+      "claim": "Partner records build visible rows lazily while preserving per-page identity and the existing refresh and remote paging behavior.",
+      "location": {
+        "path": "apps/joi_mobile/lib/goal_detail.dart"
+      },
+      "hash": "a62974db8ffebebe830d5d7134f81584214c81480bd724aabf7b15a231701b4c",
+      "observedAt": "2026-11-18T04:00:07.628Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 946
+      }
+    },
+    {
+      "id": "d2142823-a131-422f-8961-c124d4f5df24",
+      "kind": "source-code",
+      "claim": "Development Vite HTML and scripts share a nonce for React Refresh, with loopback HMR and an explicit same-origin API proxy. The production build omits the development policy.",
+      "location": {
+        "path": "vite.config.ts"
+      },
+      "hash": "982530f4e2f4e9d2cb34da96b60a5c7f740b2ce2ba16dda83ba8785f8ca5783d",
+      "observedAt": "2026-11-18T04:14:36.902Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 34
+      }
+    },
+    {
+      "id": "9f582baf-2f7a-41b6-9f88-875989fcc447",
+      "kind": "source-code",
+      "claim": "The launcher waits for the renderer module over HTTP on the selected dev port, then starts Electron with the matching Vite origin.",
+      "location": {
+        "path": "scripts/launch-dev-electron.mjs"
+      },
+      "hash": "679638f0e53c2c1129862148381bbb73fc1dbb8df98dc699ae41cb4cbacc09d8",
+      "observedAt": "2026-11-18T04:14:36.902Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 26
+      }
+    },
+    {
+      "id": "92555394-4dad-40aa-9f34-a4fe6b909b7b",
+      "kind": "source-code",
+      "claim": "A disposable Vite and Electron run exercises preload and authenticated setup through the same-origin API proxy before opening the ordinary conversation composer.",
+      "location": {
+        "path": "tests/e2e/dev-startup.spec.ts"
+      },
+      "hash": "7b2ad058472835e05dec8b18a877b5584852fbe963884efab9175305dabacd0f",
+      "observedAt": "2026-11-18T04:14:36.902Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 47
       }
     }
   ]

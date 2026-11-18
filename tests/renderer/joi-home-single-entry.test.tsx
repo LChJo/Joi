@@ -242,17 +242,16 @@ describe("Workbench context center", () => {
     expect(screen.queryByRole("button", { name: "删除 长期搭档" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "查看 实现者 详情" }));
     expect(await screen.findByRole("heading", { name: "完成" })).toBeInTheDocument();
-    expect(screen.getByText("apply_patch")).toBeInTheDocument();
-    const groupedTool = screen.getByText("bash ×3").closest("details");
-    expect(groupedTool).not.toBeNull();
-    expect(screen.getByText("执行失败")).not.toBeVisible();
-    fireEvent.click(screen.getByText("bash ×3"));
-    expect(screen.getByText("执行失败")).toBeVisible();
+    expect(screen.getByText("apply_patch", { selector: "summary strong" })).toBeInTheDocument();
+    const groupedTool = screen.getByText("共 3 次").closest("summary");
+    if (groupedTool === null) throw new Error("missing tool group");
+    expect(groupedTool).toHaveTextContent("bash");
+    expect(groupedTool).toHaveTextContent("执行失败");
     const toolResult = screen.getByText("测试通过");
     expect(toolResult).not.toBeVisible();
     const toolResultDetails = toolResult.closest("details");
     if (toolResultDetails === null) throw new Error("missing compact tool result");
-    fireEvent.click(within(toolResultDetails).getByText("工具结果"));
+    fireEvent.click(within(toolResultDetails).getByText("apply_patch", { selector: "summary strong" }));
     expect(toolResult).toBeVisible();
     expect(screen.getByText("report.md")).toBeInTheDocument();
     const artifactButton = screen.getByRole("button", { name: "打开产物 report.md" });
@@ -282,8 +281,7 @@ describe("Workbench context center", () => {
       artifactId: "entry-code-1", mode: "OPEN", source: "AGENT", sourceId: ephemeral.agentId,
     }));
     expect(screen.getByText("原始任务投影")).toBeInTheDocument();
-    expect(screen.getByText("tool")).toBeInTheDocument();
-    expect(screen.getByText("shell")).toBeInTheDocument();
+    expect(screen.getByText("shell", { selector: "summary strong" })).toBeInTheDocument();
     expect(screen.getByText("产物")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "安全链接" })).toHaveAttribute("href", "https://example.com/result");
     expect(screen.getByText("内部链接").closest("a")).toBeNull();
@@ -2335,17 +2333,17 @@ describe("tool trace reveal", () => {
     render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
 
     // The folded line marks the in-flight call and still names what it is running.
-    expect(await screen.findByText("bash ×2")).toBeInTheDocument();
-    expect(screen.getByText("运行中")).toBeInTheDocument();
-    expect(screen.getByText("npm run lint", { selector: ".agent-tool-summary" })).toBeInTheDocument();
-
-    const details = screen.getByText("bash ×2").closest("details");
-    if (details === null) throw new Error("missing tool group");
+    const count = await screen.findByText("共 2 次");
+    const summary = count.closest("summary"), details = count.closest("details");
+    if (summary === null || details === null) throw new Error("missing tool group");
+    expect(summary).toHaveTextContent("bash");
+    expect(summary).toHaveTextContent("执行中");
+    expect(summary).toHaveTextContent("npm run lint");
     const revealButton = within(details).getByText("查看完整输出");
     expect(revealButton).not.toBeVisible();
     expect(reveal).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText("bash ×2"));
+    fireEvent.click(summary);
     expect(revealButton).toBeVisible();
     fireEvent.click(revealButton);
     expect(reveal).toHaveBeenCalledWith("workbench-1", "agent-trace", "toolu_1");
@@ -2368,20 +2366,15 @@ describe("tool trace reveal", () => {
     render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
 
     // A finished run must not keep claiming a live call.
-    expect(await screen.findByText("bash ×1")).toBeInTheDocument();
-    expect(screen.queryByText("运行中")).not.toBeInTheDocument();
-
-    // Entries persisted before tool call ids existed simply have nothing to reveal.
-    const legacy = screen.getByText("read ×1").closest("details");
-    if (legacy === null) throw new Error("missing legacy tool entry");
-    fireEvent.click(screen.getByText("read ×1"));
-    expect(within(legacy).queryByText("查看完整输出")).not.toBeInTheDocument();
-
-    const bash = screen.getByText("bash ×1").closest("details");
-    if (bash === null) throw new Error("missing tool entry");
-    fireEvent.click(screen.getByText("bash ×1"));
-    fireEvent.click(within(bash).getByText("查看完整输出"));
-    expect(await within(bash).findByRole("alert")).toHaveTextContent("这条工具调用没有保存输出。");
-    expect(within(bash).getByText("重试")).toBeInTheDocument();
+    const count = await screen.findByText("共 2 次");
+    const summary = count.closest("summary"), details = count.closest("details");
+    if (summary === null || details === null) throw new Error("missing tool group");
+    expect(summary).toHaveTextContent("read");
+    expect(screen.queryByText("执行中")).not.toBeInTheDocument();
+    fireEvent.click(summary);
+    // Only the call with a persisted identity offers its private body.
+    fireEvent.click(within(details).getByText("查看完整输出"));
+    expect(await within(details).findByRole("alert")).toHaveTextContent("这条工具调用没有保存输出。");
+    expect(within(details).getByText("重试")).toBeInTheDocument();
   });
 });

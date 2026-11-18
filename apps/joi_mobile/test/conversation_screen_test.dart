@@ -4,6 +4,7 @@ import 'package:joi_mobile/home_screen.dart';
 import 'package:joi_mobile/i18n.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/conversation_screen.dart';
+import 'package:joi_mobile/goal_detail.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
@@ -114,6 +115,49 @@ class ChatPeer extends ChangeNotifier implements ConversationRemoteController {
   }
 }
 
+class PartnerHistoryPeer extends PlaceholderRemoteController {
+  @override
+  Future<Map<String, dynamic>> read(
+    String kind, {
+    String? goalId,
+    String? resultId,
+    String? agentId,
+    String? cursor,
+  }) async {
+    if (kind != 'agent.conversation') throw StateError('unexpected_operation');
+    final firstPage = cursor == null;
+    return {
+      if (firstPage) 'nextCursor': 'next',
+      'agent': {'status': 'COMPLETED'},
+      'items': [
+        if (firstPage)
+          {
+            'entryId': 'call',
+            'kind': 'TOOL_CALL',
+            'toolCallId': 'opaque',
+            'toolName': 'read',
+            'text': 'fixture.txt',
+          }
+        else ...[
+          {
+            'entryId': 'result',
+            'kind': 'TOOL_RESULT',
+            'toolCallId': 'opaque',
+            'toolName': 'read',
+            'text': 'PRIVATE_TOOL_BODY',
+          },
+          {
+            'entryId': 'answer',
+            'kind': 'MARKDOWN',
+            'role': 'AGENT',
+            'text': '## 合成记录已读',
+          },
+        ],
+      ],
+    };
+  }
+}
+
 void main() {
   setUpAll(() async {
     await (FontLoader(
@@ -123,6 +167,119 @@ void main() {
       'MaterialIcons',
     )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
   });
+  testWidgets(
+    'partner history keeps the tool disclosure open across a page boundary',
+    (tester) async {
+      final peer = PartnerHistoryPeer();
+      addTearDown(peer.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AgentRecordPage(
+            controller: peer,
+            goalId: 'fixture-goal',
+            agent: const {'agentId': 'fixture-agent', 'status': 'COMPLETED'},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('read'));
+      await tester.pumpAndSettle();
+      expect(find.text('fixture.txt'), findsNWidgets(2));
+      await tester.tap(find.text(tr(Msg.mobileLoadMoreRecords)));
+      await tester.pumpAndSettle();
+      expect(find.byType(ExpansionTile), findsOneWidget);
+      expect(find.text('fixture.txt'), findsNWidgets(2));
+      expect(find.text('合成记录已读'), findsOneWidget);
+      expect(find.text('PRIVATE_TOOL_BODY'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'phone conversation groups mixed tool calls and scrolls wide tables',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 680);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final peer = ChatPeer();
+      addTearDown(peer.dispose);
+      peer.chat = {
+        'conversationId': 'phone-tools',
+        'workbenchId': 'wb',
+        'title': '工具记录',
+        'turns': [
+          {
+            'turnId': 'tools-turn',
+            'text': '检查表格',
+            'status': 'COMPLETED',
+            'config': peer.config,
+            'entries': [
+              {
+                'entryId': 'call-1',
+                'kind': 'TOOL_CALL',
+                'toolName': 'read',
+                'toolCallId': '1',
+                'text': 'fixture.txt',
+              },
+              {
+                'entryId': 'result-1',
+                'kind': 'TOOL_RESULT',
+                'toolName': 'read',
+                'toolCallId': '1',
+                'toolState': 'completed',
+              },
+              {
+                'entryId': 'call-2',
+                'kind': 'TOOL_CALL',
+                'toolName': 'bash',
+                'toolCallId': '2',
+                'text': 'echo fixture',
+              },
+              {
+                'entryId': 'result-2',
+                'kind': 'TOOL_RESULT',
+                'toolName': 'bash',
+                'toolCallId': '2',
+                'toolState': 'failed',
+                'text': 'PRIVATE_TOOL_BODY',
+              },
+              {
+                'entryId': 'answer',
+                'kind': 'MARKDOWN',
+                'role': 'AGENT',
+                'text':
+                    '| A | B | C | D |\n| -- | -- | -- | -- |\n| One | Two | Three | Four |',
+              },
+            ],
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(home: ConversationScreen(controller: peer)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('工具记录'));
+      await tester.pumpAndSettle();
+      final group = find.byType(ExpansionTile);
+      expect(group, findsOneWidget);
+      expect(find.text(tr(Msg.chatToolCount, {'count': 2})), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is SingleChildScrollView &&
+              w.scrollDirection == Axis.horizontal,
+        ),
+        findsWidgets,
+      );
+      await tester.tap(find.text('bash'));
+      await tester.pumpAndSettle();
+      expect(find.text('fixture.txt'), findsOneWidget);
+      expect(find.text('PRIVATE_TOOL_BODY'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets(
     'loading all older turns stays complete during later live refreshes',
     (tester) async {

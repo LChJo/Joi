@@ -81,11 +81,12 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1280,height:800,useCo
     const page = await application.firstWindow();
     const css = await readFile('src/renderer/styles.css', 'utf8');
     const agent = '<button class="joi-goal-agent"><span class="agent-workbench">飞</span><span class="joi-goal-agent-copy"><strong>飞书操作搭档</strong><small>LOCAL · pi-core</small></span><i class="agent-status completed">COMPLETED</i></button>';
-    await page.setContent(`<body style="overflow:hidden"><div class="joi-drawer-backdrop"><section class="joi-goal-drawer"><header class="joi-goal-detail-header"><h1>任务详情</h1></header><div class="joi-goal-drawer-body"><div class="joi-goal-detail-body"><aside aria-label="这条目标的 Agent 列表" class="joi-goal-agents">${agent.repeat(20)}</aside><div class="joi-goal-stream"><div class="agent-stream-viewport"><div class="agent-message-stream">${'<article class="agent-message user"><header><strong>任务</strong></header><p>正文</p></article>'.repeat(40)}</div></div></div></div></div></section></div></body>`);
+    await page.setContent(`<body style="overflow:hidden"><div class="joi-drawer-backdrop"><section class="joi-goal-drawer"><header class="joi-goal-detail-header"><h1>任务详情</h1></header><div class="joi-goal-drawer-body"><div class="joi-goal-detail-body"><aside aria-label="这条目标的 Agent 列表" class="joi-goal-agents">${agent.repeat(20)}</aside><div class="joi-goal-stream"><div class="agent-stream-viewport"><div class="agent-message-stream chat-output">${'<article class="markdown-body"><p>正文</p></article>'.repeat(40)}</div></div></div></div></div></section></div></body>`);
     await page.addStyleTag({ content: css });
     await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished)));
     const height = await page.evaluate(() => innerHeight);
     const agents = page.locator('.joi-goal-agents');
+    await page.addStyleTag({ content: await readFile('src/renderer/conversations.css', 'utf8') });
     const stream = page.locator('.joi-goal-stream');
     // The list is capped, so it scrolls itself rather than growing the drawer.
     expect(await agents.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);

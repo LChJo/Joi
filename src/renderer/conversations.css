@@ -105,13 +105,14 @@ html:has(.archive-page),body:has(.archive-page) { min-width:0; }
 .chat-tool-group > summary { display:flex;align-items:center;gap:7px;min-height:30px;cursor:pointer;list-style:none; }
 .chat-tool-group > summary::-webkit-details-marker { display:none; }
 .chat-tool-summary-main { min-width:0;flex:1;display:flex;align-items:baseline;gap:8px; }
-.chat-tool-summary-main > code,.chat-tool-summary-main > .chat-tool-missing { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.chat-tool-summary-main > strong,.chat-tool-summary-main > code,.chat-tool-summary-main > .chat-tool-missing { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .chat-tool-group strong { font-weight:500;flex-shrink:0; }
+.chat-tool-summary-main > strong { flex-shrink:1; }
 .chat-tool-group small,.chat-tool-state { white-space:nowrap;flex-shrink:0; }
 .chat-tool-state { font-size:10px; }
 .chat-tool-missing { font-size:11px;font-style:italic; }
 .chat-tool-group [data-tool-state="failed"] { color:var(--red); }
-.conversation-layout .chat-tool-group svg { width:14px;height:14px;flex-shrink:0; }
+.chat-tool-group svg { width:14px;height:14px;flex-shrink:0; }
 .chat-tool-chevron { transition:transform .15s ease; }
 .chat-tool-group[open] .chat-tool-chevron { transform:rotate(180deg); }
 .chat-tool-group > summary:focus-visible { outline:2px solid var(--forest);outline-offset:3px; }
@@ -119,7 +120,8 @@ html:has(.archive-page),body:has(.archive-page) { min-width:0; }
 .chat-tool-group li { display:flex;align-items:flex-start;gap:8px;padding:7px 0;overflow-wrap:anywhere; }
 .chat-tool-group li > svg { margin-top:2px; }
 .chat-tool-details { min-width:0;flex:1; }
-.chat-tool-details > div { display:flex;align-items:center;gap:10px; }
+.chat-tool-detail-heading { display:flex;align-items:center;gap:10px; }
+.chat-tool-detail-heading > strong { min-width:0;flex-shrink:1;overflow-wrap:anywhere; }
 .chat-tool-details code { display:block;margin-top:3px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere; }
 .chat-tool-running { color:var(--forest);animation:chat-spin .85s linear infinite; }
 @keyframes chat-spin { to { transform:rotate(360deg); } }

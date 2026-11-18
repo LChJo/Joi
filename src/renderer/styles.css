@@ -770,28 +770,16 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
 .agent-detail-header > div { display: grid; gap: 3px; }
 .agent-detail-header h2, .agent-detail-header p { margin: 0; }
 .agent-detail-header span { color: var(--muted); }
-.agent-message-stream { display: grid; gap: 12px; }
+.agent-message-stream { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 0 16px 12px; }
+.agent-message-stream .markdown-body { min-width: 0; overflow-x: auto; }
+.agent-message-stream .chat-user { margin-bottom: 8px; }
+.agent-message-stream .chat-user p { margin: 0; }
+.agent-message-stream .chat-tool-group { margin: 2px 0; }
+.agent-entry-time { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .agent-stream-viewport { min-width: 0; max-height: 65vh; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; padding-right: 4px; }
 .agent-history-hint { margin: 0 0 10px; text-align: center; color: var(--faint); font-size: .76rem; }
-.agent-message { padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); overflow-wrap: anywhere; }
-.agent-message.user { margin-left: 8%; background: color-mix(in srgb, var(--forest) 5%, var(--paper)); }
-.agent-message > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: .76rem; }
-.agent-message > :last-child { margin-bottom: 0; }
-.agent-message pre { max-width: 100%; overflow: auto; white-space: pre-wrap; }
-.agent-message.tool { padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
-.agent-tool-compact { border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 8px; background: color-mix(in srgb, var(--wash) 72%, transparent); }
-.agent-tool-compact.result { border-left-color: var(--moss); }
-.agent-tool-compact summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 30px; padding: 3px 9px; color: var(--muted); cursor: pointer; font-size: .72rem; list-style-position: inside; }
-.agent-tool-compact summary code { overflow: hidden; color: var(--ink); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.agent-tool-compact summary time { color: var(--faint); font-size: .66rem; }
-.agent-tool-compact pre { max-height: 240px; margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); overflow: auto; font: .74rem/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; }
-.agent-tool-compact summary .agent-tool-line { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
-.agent-tool-compact summary .agent-tool-summary { overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
-.agent-tool-running { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--blue); font-size: .68rem; white-space: nowrap; }
-.agent-tool-running::before { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); content: ""; animation: agent-tool-pulse 1.2s ease-in-out infinite; }
-@keyframes agent-tool-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .agent-tool-trace { display: grid; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
-.agent-tool-trace pre { max-height: 320px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.agent-tool-trace pre { max-height: 320px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); white-space: pre-wrap; }
 .agent-tool-trace-label { margin: 0; color: var(--muted); font-size: .7rem; }
 .agent-tool-trace-note { margin: 0; color: var(--amber); font-size: .7rem; }
 .agent-tool-trace-error { margin: 0; color: var(--red); font-size: .7rem; }

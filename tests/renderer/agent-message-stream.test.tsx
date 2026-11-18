@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { AgentMessageStream } from "../../src/renderer/JoiHome.js";
 import { DigitalLifeApi } from "../../src/renderer/api.js";
 import type { AgentConversationEntryDto, WorkbenchAgentCardDto } from "../../src/shared/joi.js";
@@ -12,6 +12,24 @@ const entry = (sequence: number): AgentConversationEntryDto => ({ entryId: `e${S
 
 describe("AC-60 latest conversation viewport", () => {
   afterEach(() => vi.useRealTimers());
+  it("renders partner prose and consecutive mixed tools using the ordinary chat layout", async () => {
+    const api = new DigitalLifeApi("", true);
+    const call = (sequence: number, toolName: string): AgentConversationEntryDto => ({ ...entry(sequence), kind: "TOOL_CALL", role: "TOOL", toolName, toolCallId: `call-${String(sequence)}` });
+    vi.spyOn(api, "agentConversation").mockResolvedValue({ agent, items: [{ ...entry(0), text: "## 扫描进展\n\n| 会话 | 状态 |\n| --- | --- |\n| 合成记录 | 完成 |" }, call(1, "read"), call(2, "bash")] });
+    render(<AgentMessageStream agent={agent} api={api} workbenchId="w" />);
+    await screen.findByRole("heading", { name: "扫描进展" });
+    expect(screen.getByRole("table").closest(".chat-output")).not.toBeNull();
+    expect(screen.getByRole("heading", { name: "扫描进展" }).closest(".agent-message")).toBeNull();
+    const log = screen.getByRole("log");
+    const summary = log.querySelector(".chat-tool-group > summary");
+    if (summary === null) throw new Error("Missing shared tool disclosure");
+    expect(log.querySelectorAll(".chat-tool-group")).toHaveLength(1);
+    expect(summary).toHaveTextContent("bash");
+    expect(summary).toHaveTextContent("共 2 次");
+    expect(summary.querySelector(".chat-tool-running")).toBeInTheDocument();
+    fireEvent.click(summary);
+    expect(within(log).getByText("read")).toBeVisible();
+  });
   it("follows latest output, auto-loads history without stopping polling, and preserves a reader's position", async () => {
     vi.useFakeTimers();
     const api = new DigitalLifeApi("", true);

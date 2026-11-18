@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'remote_controller.dart';
 import 'connection_diagnostics_view.dart';
-import 'goal_detail.dart';
+import 'message_body.dart';
 import 'result_export.dart';
 import 'result_history.dart';
 
