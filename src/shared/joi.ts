@@ -571,10 +571,13 @@ export interface WorkbenchToolTraceDto {
   truncated: boolean;
 }
 
-export interface AgentConversationPageDto {
-  agent: WorkbenchAgentCardDto;
+export interface AgentConversationMessagesDto {
   items: AgentConversationEntryDto[];
   nextCursor?: string;
+}
+
+export interface AgentConversationPageDto extends AgentConversationMessagesDto {
+  agent: WorkbenchAgentCardDto;
 }
 
 export interface ScenarioRoleDto {

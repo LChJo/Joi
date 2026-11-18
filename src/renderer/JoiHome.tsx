@@ -10,7 +10,7 @@ import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type Synthe
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { SafeMarkdown as Markdown } from "./SafeMarkdown";
 
-import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationMessagesDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared/goal-artifacts";
 import { ApiError, type DigitalLifeApi } from "./api";
@@ -494,30 +494,35 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
   live?: boolean;
 }) {
   useI18n();
-  const [page, setPage] = useState<AgentConversationPageDto | null>(null);
+  const [page, setPage] = useState<AgentConversationMessagesDto | null>(null);
+  const [observedStatus, setObservedStatus] = useState<WorkbenchAgentStatusDto>();
   const [following, setFollowing] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [notice, setNotice] = useNotice();
   // Revealed traces stay available across live snapshots.
   const [toolTraces, setToolTraces] = useState<Record<string, ToolTraceView>>({});
   const viewport = useRef<HTMLDivElement>(null);
-  const currentPage = useRef<AgentConversationPageDto | null>(null);
+  const currentPage = useRef<AgentConversationMessagesDto | null>(null);
   const followLatest = useRef(true);
   const positioned = useRef(false);
   const historyBusy = useRef(false);
   const historyAnchor = useRef<{ height: number; top: number } | null>(null);
   const generation = useRef(0);
-  const publish = useCallback((next: AgentConversationPageDto) => { currentPage.current = next; setPage(next); }, []);
+  const publish = useCallback((next: AgentConversationMessagesDto) => { currentPage.current = next; setPage(next); }, []);
+  const readOptions = useMemo(() => ({ limit: 50, latest: true, ...(goalId === undefined ? {} : { goalId }) }), [goalId]);
   const read = useCallback((cursor?: string) => api.agentConversation(workbenchId, agent.agentId, {
-    limit: 50, latest: true, ...(goalId === undefined ? {} : { goalId }), ...(cursor === undefined ? {} : { cursor }),
-  }), [agent.agentId, api, goalId, workbenchId]);
+    ...readOptions, ...(cursor === undefined ? {} : { cursor }), view: "messages",
+  }), [agent.agentId, api, readOptions, workbenchId]);
+  const readLive = useCallback(() => api.agentConversation(workbenchId, agent.agentId, readOptions), [agent.agentId, api, readOptions, workbenchId]);
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
-    const load = async () => {
+    const load = async (refresh = false) => {
+      let settled = false;
       try {
         const previous = currentPage.current;
-        let next = await read();
+        const snapshot = refresh ? await readLive() : undefined;
+        let next = snapshot ?? await read();
         // Catch up after a slow/background tab without leaving a hole between pages.
         const known = new Set(previous?.items.map(item => item.entryId));
         const cursors = new Set<string>();
@@ -525,24 +530,26 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
           && !next.items.some(item => known.has(item.entryId)) && !cursors.has(next.nextCursor)) {
           cursors.add(next.nextCursor);
           const older = await read(next.nextCursor);
-          next = { ...older, agent: next.agent, items: mergeConversationItems(older.items, next.items) };
+          next = { ...older, items: mergeConversationItems(older.items, next.items) };
         }
         if (cancelled) return;
         const current = currentPage.current;
         publish(current === null || current.items.length === 0 ? next : {
-          ...current, agent: next.agent, items: mergeConversationItems(current.items, next.items),
+          ...current, items: mergeConversationItems(current.items, next.items),
         });
+        const status = snapshot?.agent.status;
+        setObservedStatus(status);
+        settled = status !== undefined && status !== "RUNNING" && status !== "WAITING";
         setNotice(null);
       } catch (error) {
         if (!cancelled) setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("home.couldNotLoadTheAgentConversation"));
       } finally {
-        const status = currentPage.current?.agent.status;
-        if (!cancelled && live && (status === undefined || status === "RUNNING" || status === "WAITING")) timer = setTimeout(() => void load(), 750);
+        if (!cancelled && live && !settled) timer = setTimeout(() => void load(true), 750);
       }
     };
     timer = setTimeout(() => void load(), 0);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [live, publish, read, setNotice]);
+  }, [live, publish, read, readLive, setNotice]);
   useEffect(() => () => { generation.current += 1; }, [read]);
   useLayoutEffect(() => {
     const element = viewport.current;
@@ -577,7 +584,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       const element = viewport.current;
       if (element !== null) historyAnchor.current = { height: element.scrollHeight, top: element.scrollTop };
       const current = currentPage.current;
-      publish({ ...next, agent: current?.agent ?? next.agent, items: mergeConversationItems(next.items, current?.items ?? []) });
+      publish({ ...next, items: mergeConversationItems(next.items, current?.items ?? []) });
       setNotice(null);
     } catch (error) {
       if (revision === generation.current) setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("home.couldNotLoadEarlierEntriesScrollUpToRetry"));
@@ -607,7 +614,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
     }
     return { entries, folders };
   }, [page?.items]);
-  const status = page?.agent.status;
+  const status = (live ? observedStatus : undefined) ?? agent.status;
   const renderEntry = (entry: AgentConversationEntryDto) => {
     const time = new Date(entry.createdAt).toLocaleString(currentLocale());
     const folder = stream.folders.get(entry.entryId);

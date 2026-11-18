@@ -5,8 +5,8 @@ import { realpath, stat } from "node:fs/promises";
 import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
-import type { WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
+import type { AgentConversationEntryDto, AgentConversationMessagesDto, AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
+import type { WorkbenchAgentConversationQuery, WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
 import { stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
@@ -183,13 +183,15 @@ function cardSelect(goalScoped: boolean): string {
   LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id`;
 }
 
-function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, offset: number, agentId?: string, goalId?: string): Row[] {
-  const clause = `${agentId === undefined ? "" : " AND s.agent_id = ?"}${goalId === undefined ? "" : ` AND EXISTS (
+const goalMembership = ` AND EXISTS (
     SELECT 1 FROM dispatch_attempts da JOIN work_items dw ON dw.work_id = da.work_id
       WHERE s.backing_kind = 'LOCAL_INSTANCE' AND da.instance_id = s.backing_id AND dw.input_id = ?
     UNION ALL
     SELECT 1 FROM partner_runs pr JOIN work_items pw ON pw.work_id = pr.work_id
-      WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`}`;
+      WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`;
+
+function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, offset: number, agentId?: string, goalId?: string): Row[] {
+  const clause = `${agentId === undefined ? "" : " AND s.agent_id = ?"}${goalId === undefined ? "" : goalMembership}`;
   const values: (number | string)[] = [];
   if (goalId !== undefined) values.push(goalId, goalId);
   values.push(workbenchId);
@@ -205,6 +207,45 @@ function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, 
       : typeof row.execution_updated_at === "string" ? row.execution_updated_at
         : typeof row.run_updated_at === "string" ? row.run_updated_at : row.created_at,
   }));
+}
+
+function conversationWindow({ limit, cursor, latest }: WorkbenchAgentConversationQuery) {
+  return {
+    limit: Math.max(1, Math.min(100, Math.trunc(limit ?? 50))),
+    offset: latest ? 0 : decodeCursor(cursor),
+    boundary: latest ? historyBoundary(cursor) : undefined,
+  };
+}
+
+function readConversationMessages(connection: DatabaseSync, input: WorkbenchAgentConversationQuery, { limit, offset, boundary }: ReturnType<typeof conversationWindow>): AgentConversationMessagesDto {
+  const scope = input.goalId === undefined ? "" : ` AND EXISTS (
+    SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
+    WHERE pr.run_id = e.run_id AND w.input_id = ? AND w.workbench_id = ?)`;
+  const direction = input.latest ? "DESC" : "ASC";
+  const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, tool_call_id, artifact_json, created_at
+    FROM workbench_agent_conversation_entries e WHERE agent_id = ?${scope}${boundary === undefined ? "" : " AND (sequence, entry_id) < (?, ?)"}
+    ORDER BY sequence ${direction}, entry_id ${direction} LIMIT ? OFFSET ?`)
+    .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), ...(boundary ?? []), limit + 1, offset) as Row[];
+  const items = rows.slice(0, limit).map((row): AgentConversationEntryDto => {
+    const artifact = storedArtifact(row.artifact_json);
+    const entryId = required(row, "entry_id");
+    return {
+      ...(artifact === undefined ? {} : { artifact: publicArtifact(artifact, entryId) }),
+      createdAt: required(row, "created_at"),
+      entryId,
+      kind: required(row, "kind") as AgentConversationEntryDto["kind"],
+      role: required(row, "role") as AgentConversationEntryDto["role"],
+      sequence: typeof row.sequence === "number" ? row.sequence : 0,
+      ...(typeof row.text === "string" ? { text: stripPathRedactions(row.text) } : {}),
+      ...(typeof row.tool_call_id === "string" ? { toolCallId: row.tool_call_id } : {}),
+      ...(typeof row.tool_name === "string" ? { toolName: row.tool_name } : {}),
+    };
+  });
+  const last = items.at(-1);
+  const nextCursor = input.latest && last !== undefined
+    ? Buffer.from(JSON.stringify([last.sequence, last.entryId]), "utf8").toString("base64url") : encodeCursor(offset + limit);
+  if (input.latest) items.reverse();
+  return { items, ...(rows.length > limit ? { nextCursor } : {}) };
 }
 
 export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository {
@@ -302,40 +343,25 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
     };
   }
 
-  async conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit: number }): Promise<AgentConversationPageDto> {
-    const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
-    const offset = input.latest ? 0 : decodeCursor(input.cursor);
-    const boundary = input.latest ? historyBoundary(input.cursor) : undefined;
+  async conversation(input: WorkbenchAgentConversationQuery): Promise<AgentConversationPageDto> {
+    const window = conversationWindow(input);
     return this.database.transaction((connection) => {
       const cardRow = cardRows(connection, input.workbenchId, 1, 0, input.agentId, input.goalId)[0];
       if (cardRow === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
-      const scope = input.goalId === undefined ? "" : ` AND run_id IN (
-        SELECT pr.run_id FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
-        WHERE w.input_id = ? AND w.workbench_id = ?)`;
-      const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, tool_call_id, artifact_json, created_at
-        FROM workbench_agent_conversation_entries WHERE agent_id = ?${scope}${boundary === undefined ? "" : " AND (sequence, entry_id) < (?, ?)"}
-        ORDER BY sequence ${input.latest ? "DESC" : "ASC"}, entry_id ${input.latest ? "DESC" : "ASC"} LIMIT ? OFFSET ?`)
-        .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), ...(boundary ?? []), limit + 1, offset) as Row[];
-      const items = rows.slice(0, limit).map((row) => {
-        const artifact = storedArtifact(row.artifact_json);
-        const entryId = required(row, "entry_id");
-        return {
-          ...(artifact === undefined ? {} : { artifact: publicArtifact(artifact, entryId) }),
-          createdAt: required(row, "created_at"),
-          entryId,
-          kind: required(row, "kind") as AgentConversationPageDto["items"][number]["kind"],
-          role: required(row, "role") as AgentConversationPageDto["items"][number]["role"],
-          sequence: typeof row.sequence === "number" ? row.sequence : 0,
-          ...(typeof row.text === "string" ? { text: stripPathRedactions(row.text) } : {}),
-          ...(typeof row.tool_call_id === "string" ? { toolCallId: row.tool_call_id } : {}),
-          ...(typeof row.tool_name === "string" ? { toolName: row.tool_name } : {}),
-        };
-      });
-      const last = items.at(-1);
-      const nextCursor = input.latest && last !== undefined
-        ? Buffer.from(JSON.stringify([last.sequence, last.entryId]), "utf8").toString("base64url") : encodeCursor(offset + limit);
-      if (input.latest) items.reverse();
-      return { agent: mapCard(cardRow), items, ...(rows.length > limit ? { nextCursor } : {}) };
+      return { agent: mapCard(cardRow), ...readConversationMessages(connection, input, window) };
+    });
+  }
+
+  async conversationMessages(input: WorkbenchAgentConversationQuery): Promise<AgentConversationMessagesDto> {
+    const window = conversationWindow(input);
+    const scope = input.goalId === undefined ? [] : [input.goalId, input.goalId];
+    return this.database.transaction((connection) => {
+      const visible = connection.prepare(`SELECT 1 FROM workbench_agent_sessions s
+        JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
+        WHERE s.workbench_id = ? AND s.agent_id = ? AND s.dismissed_at IS NULL${scope.length === 0 ? "" : goalMembership}`)
+        .get(input.workbenchId, input.agentId, ...scope);
+      if (visible === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
+      return readConversationMessages(connection, input, window);
     });
   }
 

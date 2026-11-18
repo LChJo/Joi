@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "d246edc183a8c7249a6703a4417287811f7048d210c5380c7d40a730eda9dd50",
-      "observedAt": "2026-11-14T11:23:51.965Z",
+      "hash": "293f78891e3bec83f6e520737205b486409e242023301eb7e87d7b456f958ed7",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 593
+        "endLine": 597
       }
     },
     {
@@ -172,15 +172,15 @@
     {
       "id": "67786627-f77c-4800-9ac6-386b484e5f5d",
       "kind": "source-code",
-      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies.",
+      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card.",
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "168c6f203705acb794aa3fc30ecf59aa9b8ca8e7f2699ad21948ef28e2a70df0",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "c2483eae89014f5263c2f0f172472149aad2463a21df7d74b4b945c9d134eef0",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 773
+        "endLine": 776
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action. The selected transcript restores independently of configuration and history lists. Skills are read when opened, and send availability waits for applicable configuration.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "bf042b519c020edb6b2b935a535c9b3367898548e70191c17747d0743193084c",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "5f42b6458b35a6cd8418c3c8d515e8fc41768b622c9e04bc92399ab43e6b618e",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 417
+        "endLine": 466
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "8de38dc65a708c490888db473e79c792d099f8eb4c59134e20b1c843febcbeb8",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "hash": "b8b38116e6aee230e5dcf45554220d68c47c505cae0cbb568d00766e1b869f7d",
+      "observedAt": "2026-11-18T07:14:17.537Z",
       "range": {
         "startLine": 1,
-        "endLine": 325
+        "endLine": 327
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "0d55e557b91262628c475b40979f630de35c93831c9dbf2db1af3da3b3e2897b",
-      "observedAt": "2026-11-18T06:18:48.946Z",
+      "hash": "5c4e215633820f15dfdcafb527e6012d29273048c77a6b70fde4739d414b6810",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 740
+        "endLine": 742
       }
     },
     {
@@ -1432,12 +1432,12 @@
     {
       "id": "886b35a7-9f5d-47fb-b555-4a774d237d50",
       "kind": "source-code",
-      "claim": "HTTP conversation dependencies optionally expose a typed application subscription alongside existing reads and mutations.",
+      "claim": "HTTP conversation dependencies optionally expose a typed application subscription alongside existing reads and mutations. The workbench agent read dependency exposes both full transcript pages and message-only pages.",
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "7990d034c4b4f0d4121ae7d73eecd588e980fd1abaf729524483bca6387865b9",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "90cd225b0083647a253be567d733f717fa2ef16c482441319b94510e051a4df3",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
         "endLine": 218
@@ -1502,15 +1502,15 @@
     {
       "id": "924fa695-204b-44c7-a782-358227365952",
       "kind": "source-code",
-      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission. Renderer regressions cover Enter, Shift+Enter, composition, draft preservation, indicators through stop and the completed footer with reply copy.",
+      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission. Renderer regressions cover Enter, Shift+Enter, composition, draft preservation, indicators through stop and the completed footer with reply copy. Delayed-catalog regressions cover independent initial reads, warm history, retry, a superseded restoration and a renamed row with a stale refresh.",
       "location": {
         "path": "tests/renderer/conversation-interactions.test.tsx"
       },
-      "hash": "3f17521ea1835dd708e9c89a690d8380cf6bd483d666017c795acbb6c7505873",
-      "observedAt": "2026-11-18T01:07:38.692Z",
+      "hash": "04fbed9916ab983c8b2d86ad18f0dff69a0718354cd2cfb4f78e386aae18253a",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 384
+        "endLine": 463
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions.",
-      "hash": "14cd69d1a9ef9c047bdd695ce226cf4af260ba09ed0fa55b8a87d973a2562616",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages.",
+      "hash": "4b70dc3411f7ed4d75e6ed0a6c4b152a5eb4b9c8a352a22d8739b3db9ac53c7b",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 1843
+        "endLine": 1850
       }
     },
     {
@@ -1631,9 +1631,9 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states.",
-      "hash": "3ecd9b015eedc83624d428b55ce0d5a01cf3e1d7ae633560bfaa6884acb56225",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status.",
+      "hash": "f342413bc3cb66e67919ab5f0a87bd02bb3064ed8bed17dcfa4f240a6d1bc101",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
         "endLine": 2380
@@ -2034,15 +2034,15 @@
     {
       "id": "19c76272-7569-42d8-b53e-756b6d33cf7e",
       "kind": "source-code",
-      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status.",
+      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status. A scoped message read checks the visible session and goal membership, then pages normalized entries by sequence using indexed run lookups. The full read preserves agent projection and the same cursor.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-workbench-agent-repository.ts"
       },
-      "hash": "795c01241ce3629d40491be41c24016fc34119adf9557d6d324b442f5d3a8154",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "4ad4cc032160bccc4088a5770720e5b8adfbb4beb163b3ab039b34aba7712725",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 407
+        "endLine": 433
       }
     },
     {
@@ -3686,15 +3686,15 @@
     {
       "id": "9181c052-4571-46ae-886a-db3112665f2f",
       "kind": "source-code",
-      "claim": "The partner transcript shares the ordinary Markdown and mixed tool-group presentation while retaining polling, paging and scroll-follow behavior.",
+      "claim": "The partner transcript shares the ordinary Markdown and mixed tool-group presentation while retaining polling, paging and scroll-follow behavior. The stylesheet regression checks the shared 13px base and the 12px dispatched task bubble. Regressions distinguish initial and earlier message reads from live refresh and cover completed single reads.",
       "location": {
         "path": "tests/renderer/agent-message-stream.test.tsx"
       },
-      "hash": "b9b1c39f9b118e8b7ce440b220c28779eee62e4717b9868b36b46d3db5bd43ee",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "hash": "d86e60a8a3adaa8faf447c4d7ef0b5d2e5dc582e33452e57d82e0c4c8cc6a456",
+      "observedAt": "2026-11-18T08:01:25.768Z",
       "range": {
         "startLine": 1,
-        "endLine": 130
+        "endLine": 164
       }
     },
     {
@@ -3765,6 +3765,76 @@
       "range": {
         "startLine": 1,
         "endLine": 47
+      }
+    },
+    {
+      "id": "7cbf32eb-15bd-4f20-91e1-84e61b5cbe6a",
+      "kind": "document",
+      "claim": "CHAT-PERF-01?06 define independent conversation history and transcript loading, compatible messages paging, and synthetic SQL verification.",
+      "location": {
+        "path": "docs/conversation-first-paint-spec.md"
+      },
+      "hash": "ba740df6b1ed05ada6bc74213a8f407dd49702b708c7c75801c2c33ecd1c727e",
+      "observedAt": "2026-11-18T08:01:25.768Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 35
+      }
+    },
+    {
+      "id": "7feb1381-875f-4ecb-aae3-775f884080f3",
+      "kind": "source-code",
+      "claim": "API instance-scoped conversation summaries and workbenches publish independently; per-list request revisions discard slow results, and failed list reads are retryable.",
+      "location": {
+        "path": "src/renderer/useConversationLists.ts"
+      },
+      "hash": "43f7b6a49d70f3f41038f5b95247b1997c1d891c0df5ec53f841b8810e35e783",
+      "observedAt": "2026-11-18T08:02:38.531Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 71
+      }
+    },
+    {
+      "id": "b97d6815-68b0-46df-b44e-372fecf0b337",
+      "kind": "source-code",
+      "claim": "The existing authenticated workbench Agent conversation route supports a message-only response with unchanged workbench, goal and cursor inputs.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/workbench-routes.ts"
+      },
+      "hash": "a45d5f89d7b805daeb04e2757e65bb9df5e3b4b5189ed363ca7437ecbe38ee4e",
+      "observedAt": "2026-11-18T08:01:25.768Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 216
+      }
+    },
+    {
+      "id": "341157d6-1d6e-4219-b91d-b159f418d573",
+      "kind": "source-code",
+      "claim": "The workbench Agent service forwards full transcript and independently paged message reads to the same repository with default limits.",
+      "location": {
+        "path": "src/main/application/partners/workbench-agent-service.ts"
+      },
+      "hash": "1afe50478fc926d618a5f8aa4da7c1196f1b9bab822411d2157bde1df969e84d",
+      "observedAt": "2026-11-18T08:01:25.768Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 47
+      }
+    },
+    {
+      "id": "d5e2a046-d8ea-4cd7-9255-ddafcbad0a98",
+      "kind": "source-code",
+      "claim": "The goal-scoped message projection uses sequence ordering and indexed run lookups without card aggregation or materializing all target runs.",
+      "location": {
+        "path": "tests/integration/agent-conversation-live.test.ts"
+      },
+      "hash": "cd3fd4065bd3408dac77bb896471eab8a54c2c7b1d8441834ce89264855661e2",
+      "observedAt": "2026-11-18T08:01:25.768Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 103
       }
     }
   ]

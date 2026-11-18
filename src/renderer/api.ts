@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchToolTraceDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto, ThinkingEffort } from "../shared/joi";
+import type { AgentConversationMessagesDto, AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchToolTraceDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto, ThinkingEffort } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
@@ -42,6 +42,8 @@ export interface RequestOptions {
   method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
   signal?: AbortSignal;
 }
+
+interface AgentConversationOptions { cursor?: string; goalId?: string; latest?: boolean; limit?: number }
 
 export class DigitalLifeApi {
   private csrfToken: string | null = null;
@@ -226,15 +228,18 @@ export class DigitalLifeApi {
       `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents${suffix}`,
     );
   }
-  agentConversation(workbenchId: string, agentId: string, options: { cursor?: string; goalId?: string; latest?: boolean; limit?: number } = {}) {
+  agentConversation(workbenchId: string, agentId: string, options: AgentConversationOptions & { view: "messages" }): Promise<AgentConversationMessagesDto>;
+  agentConversation(workbenchId: string, agentId: string, options?: AgentConversationOptions): Promise<AgentConversationPageDto>;
+  agentConversation(workbenchId: string, agentId: string, options: AgentConversationOptions & { view?: "messages" } = {}) {
     const query = [
       ...(options.latest === true ? ["latest=true"] : []),
       ...(options.goalId === undefined ? [] : [`goalId=${encodeURIComponent(options.goalId)}`]),
       ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
       ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
+      ...(options.view === "messages" ? ["view=messages"] : []),
     ];
     const suffix = query.length === 0 ? "" : `?${query.join("&")}`;
-    return this.request<AgentConversationPageDto>(
+    return this.request<AgentConversationMessagesDto | AgentConversationPageDto>(
       `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}/conversation${suffix}`,
     );
   }
