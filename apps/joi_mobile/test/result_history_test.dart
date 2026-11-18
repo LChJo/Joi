@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:joi_mobile/connection_diagnostics_view.dart';
 import 'package:joi_mobile/goal_detail.dart';
 import 'package:joi_mobile/i18n.dart';
+import 'package:joi_mobile/message_body.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/result_export.dart';
 import 'package:joi_mobile/result_history.dart';

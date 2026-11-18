@@ -42,7 +42,7 @@ node scripts/package-app.mjs --target <current|win|mac|dir> [--output <repo-rela
 npm run build:mobile:android
 ```
 
-该命令交叉编译 arm64 iroh 核心，运行 Flutter 静态检查与测试，并生成 Android release APK；产物位于 `release-joi-mobile/`。
+该命令交叉编译 arm64 iroh 核心，运行 Flutter 静态检查与测试，并生成 `release-joi-mobile/joi-android-<version>-arm64.apk`。APK 的版本名与文件名均取自根 `package.json`，Android 构建号取自 `apps/joi_mobile/pubspec.yaml` 并在交付新版本时递增。
 
 ## 浏览器远程中继
 

@@ -1,8 +1,13 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir } from "node:fs/promises";
+import { copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = path.resolve(".");
+const { version } = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version)) {
+  throw new Error("Android packaging requires a stable project version in major.minor.patch format.");
+}
+const apkName = `joi-android-${version}-arm64.apk`;
 
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
@@ -29,11 +34,11 @@ const flutterPrefix = process.platform === "win32" ? ["/d", "/s", "/c", "flutter
 await run(flutterCommand, [...flutterPrefix, "pub", "get"], mobileRoot);
 await run(flutterCommand, [...flutterPrefix, "analyze"], mobileRoot);
 await run(flutterCommand, [...flutterPrefix, "test"], mobileRoot);
-await run(flutterCommand, [...flutterPrefix, "build", "apk", "--release", "--target-platform", "android-arm64"], mobileRoot);
+await run(flutterCommand, [...flutterPrefix, "build", "apk", "--release", "--target-platform", "android-arm64", "--build-name", version], mobileRoot);
 const releaseDirectory = path.join(projectRoot, "release-joi-mobile");
 await mkdir(releaseDirectory, { recursive: true });
 await copyFile(
   path.join(mobileRoot, "build", "app", "outputs", "flutter-apk", "app-release.apk"),
-  path.join(releaseDirectory, "joi-android-0.1.0-arm64.apk"),
+  path.join(releaseDirectory, apkName),
 );
-process.stdout.write("Joi Android APK copied to release-joi-mobile/joi-android-0.1.0-arm64.apk.\n");
+process.stdout.write(`Joi Android APK copied to release-joi-mobile/${apkName}.\n`);

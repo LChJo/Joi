@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "e1c9d73093d0b569ca3b03be29b011b13138032bb022ec8dc055b0dcb1ea39a7",
-      "observedAt": "2026-11-18T05:07:30.219Z",
+      "hash": "0d55e557b91262628c475b40979f630de35c93831c9dbf2db1af3da3b3e2897b",
+      "observedAt": "2026-11-18T06:18:48.946Z",
       "range": {
         "startLine": 1,
-        "endLine": 739
+        "endLine": 740
       }
     },
     {
@@ -2258,15 +2258,15 @@
     {
       "id": "269d5862-bca0-43c0-bd38-2aa48a68147e",
       "kind": "source-code",
-      "claim": "A disposable CLI fixture executes the production packaging entry with CI environment and no release credentials. External tool recorders assert icons, build, audit and native host packaging order and explicit publication opt-out. Environment casing is normalized for the npm entry override on Windows.",
+      "claim": "A disposable CLI fixture executes the production packaging entry with CI environment and no release credentials. External tool recorders assert icons, build, audit and native host packaging order and explicit publication opt-out. Environment casing is normalized for the npm entry override on Windows. The Android fixture checks that the root version is passed to Flutter and appears in the delivered APK filename.",
       "location": {
         "path": "tests/contract/package-command.test.ts"
       },
-      "hash": "ec72e5a4479bc90e1bda31e43b62e085419305669b422086e9cc1f43bf4e72b3",
-      "observedAt": "2026-11-15T07:13:51.975Z",
+      "hash": "f0fe90e784b3c8b509849ff986796724ae35d6f7756c709c43dc951f757a3c57",
+      "observedAt": "2026-11-18T06:18:48.948Z",
       "range": {
         "startLine": 1,
-        "endLine": 53
+        "endLine": 94
       }
     },
     {
@@ -2314,12 +2314,12 @@
     {
       "id": "b2476fea-d7de-4dc4-9db1-ff980a32fc8f",
       "kind": "document",
-      "claim": "Desktop package operating commands, stable version-upgrade release gates, generated notes, draft recovery, downloadable artifacts and signing limitations.",
+      "claim": "Desktop package operating commands, stable version-upgrade release gates, generated notes, draft recovery, downloadable artifacts and signing limitations. Android delivery shares the root project version for the APK manifest and filename, with its own increasing build code.",
       "location": {
         "path": ".agent/commands/package.md"
       },
-      "hash": "332b33d4effdef9975bbc18b4e3c8fa3a064d51ac13381087999d76ba8dea8aa",
-      "observedAt": "2026-11-16T06:30:05.702Z",
+      "hash": "7d430f1ffec86eccb5614c889cb367808d2fb764e247065e3079d9f71d0830c9",
+      "observedAt": "2026-11-18T06:18:48.948Z",
       "range": {
         "startLine": 1,
         "endLine": 59
