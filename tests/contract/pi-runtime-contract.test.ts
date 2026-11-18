@@ -213,7 +213,9 @@ describe("Pi reasoning runtime contract", () => {
         inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "requirements", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: `turn-${String(index)}` });
       expect(requests.at(-1)).toContain(`REQUIRED_DAY_RULE_${String(index)}`);
       expect((requests.at(-1)?.match(/REQUIRED_DAY_RULE/gu) ?? [])).toHaveLength(1);
-      expect(store.snapshots.get("requirements")?.piSession).toBeDefined();
+      const snapshot = store.snapshots.get("requirements")?.piSession;
+      expect(snapshot).toBeDefined();
+      expect(JSON.stringify(snapshot).includes("REQUIRED_DAY_RULE")).toBe(false);
     }
   });
   it("reports a response whose terminating tool left a later call unanswered", async () => {
@@ -303,7 +305,7 @@ describe("Pi reasoning runtime contract", () => {
       });
       expect(requests.at(-1)).toContain(`EVIDENCE_VERSION_${String(index)}`);
       expect((requests.at(-1)?.match(/CONCLUSION_END/gu) ?? [])).toHaveLength(1);
-      expect(store.snapshots.get("session_background")?.systemPrompt).not.toContain("EVIDENCE_VERSION_");
+      expect(JSON.stringify(store.snapshots.get("session_background")).includes("EVIDENCE_VERSION_")).toBe(false);
     }
     expect((requests.at(-1)?.length ?? 0) - (requests[0]?.length ?? 0)).toBeLessThan(6000);
   });

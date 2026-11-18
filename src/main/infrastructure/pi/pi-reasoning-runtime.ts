@@ -166,10 +166,13 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       validateToolNames(tools);
       const factories: ExtensionFactory[] = [pi => {
         pi.on("tool_call", event => { runtime?.validatedToolCalls.add(event.toolCallId); });
-        if (input.refreshRequiredContext !== undefined) pi.on("context", async event => {
-          const current = await input.refreshRequiredContext?.();
-          if (current === undefined) return;
-          return { messages: [...event.messages, { role: "user", timestamp: Date.now(), content: `[Current authoritative goal requirements]\n${current}` }] };
+        pi.on("context", async event => {
+          const required = await input.refreshRequiredContext?.() ?? input.requiredContext;
+          const background = [required, input.backgroundContext].filter(Boolean).join("\n\n");
+          if (background === "") return;
+          return { messages: [...event.messages, {
+            role: "system", content: "", sections: { workbench_context: background }, timestamp: Date.now(),
+          }] };
         });
       }];
       const usageContext: UsageContext = { engine: "pi", purpose: "orchestration", workbenchId: input.workbenchId, goalId: input.goalInputId ?? input.inputId, sourceId: input.sourceId, modelId: input.modelId };
@@ -180,13 +183,15 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         systemPrompt: input.systemPrompt,
       } }, models, process.cwd(), { extensionFactories: factories,
         ...(input.skillContext === undefined ? {} : { skillContext: input.skillContext }),
-        backgroundContext: [input.requiredContext, input.backgroundContext].filter(Boolean).join("\n\n"),
         ...(this.options.sessionSettings === undefined ? {} : { settingsManager: this.options.sessionSettings() }),
         ...(this.options.compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent: this.options.compactionThresholdPercent }),
         ...(native === undefined ? stored?.piSession === undefined ? {} : { snapshot: stored.piSession } : { sessionManager: native.manager }) });
       if (this.#canceledStartup.has(input.sessionId)) { session.dispose(); return; }
-      const completed = session.sessionManager.getBranch().findLast(entry => entry.type === "custom" && entry.customType === "joi.primary_result"
-        && (entry.data as { turnId?: unknown } | null)?.turnId === input.turnId);
+      const completed = session.sessionManager.getBranch().findLast(entry => {
+        if (entry.type !== "custom" || entry.customType !== "joi.primary_result") return false;
+        const result = entry.data as { turnId?: unknown; repair?: unknown } | null;
+        return result?.turnId === input.turnId && result.repair === input.repair;
+      });
       if (completed?.type === "custom") {
         const data = completed.data as { events?: PrimaryReasoningEvent[] };
         if (!Array.isArray(data.events)) throw new DomainError("pi_result_invalid", "The persisted primary result is invalid.");
@@ -240,7 +245,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           const last = [...active.session.messages].reverse().find(message => message.role === "assistant");
           if (last?.role === "assistant" && last.stopReason === "error") throw reasoningStreamFailure(last.errorMessage);
           if ((settled.aborted || last?.role === "assistant" && last.stopReason === "aborted") && !active.cancelled) throw reasoningStreamFailure("Primary reasoning was aborted.");
-          active.session.sessionManager.appendCustomEntry("joi.primary_result", { turnId: input.turnId, events: active.events });
+          active.session.sessionManager.appendCustomEntry("joi.primary_result", { turnId: input.turnId, repair: input.repair, events: active.events });
           active.session.sessionManager.appendCustomEntry("joi.usage_idle", {});
         } catch (error) {
           if (!active.delivered.tool) await this.#rollback(active, input.turnId);

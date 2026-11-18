@@ -1002,11 +1002,11 @@
       "location": {
         "path": "src/main/application/ports/primary-reasoning-runtime.ts"
       },
-      "hash": "6ecd68d6e52e813f8a2611dc334363ab86afd555f6279049ee1963227234f7b7",
-      "observedAt": "2026-11-17T16:33:24.059502Z",
+      "hash": "91d4ad8b7f59301cce24099c4dfe29cb72c7224bf8c202a7ba63100573e3dff6",
+      "observedAt": "2026-11-18T04:34:42.677Z",
       "range": {
         "startLine": 1,
-        "endLine": 92
+        "endLine": 95
       }
     },
     {
@@ -1068,15 +1068,15 @@
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary reasoning uses the official SDK, shared structured prompt sections and scoped selected-skill context; native rollback, durable results, parallel tools and question/completion barriers remain intact.",
+      "claim": "Primary reasoning projects current requirements and continuation background into model requests via SDK context hooks. Native result recovery is keyed by business turn and repair kind; each result is independently recoverable.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "6b0f81531bb2547f236604e2589cfe73a0e455c8236735aadd353ce6e173206b",
-      "observedAt": "2026-11-17T16:33:24.059191Z",
+      "hash": "b04ca336454987071005bad607c0569bcf9d7cca6c01d62a2f6f8213984745c3",
+      "observedAt": "2026-11-18T04:34:42.675Z",
       "range": {
         "startLine": 1,
-        "endLine": 364
+        "endLine": 369
       }
     },
     {
@@ -1110,15 +1110,15 @@
     {
       "id": "64c24ebe-09b2-47ab-9204-f66893cf8d48",
       "kind": "source-code",
-      "claim": "Primary reasoning contract regressions cover selected skill metadata in actual structured system prompts, clearing selections on subsequent turns, and existing dispatch, outcome and session boundaries.",
+      "claim": "Contract regressions cover selected skill metadata, current requirements and continuation evidence in actual requests, the absence of injected copies in native snapshots, and dispatch, outcome and session boundaries.",
       "location": {
         "path": "tests/contract/pi-runtime-contract.test.ts"
       },
-      "hash": "e54a869c8f80aed8478b1165c5fab061832a1ff04ebf1b652477013aa874e8a7",
-      "observedAt": "2026-11-17T16:33:24.060052Z",
+      "hash": "337d9746337d19fc9d7854b44eb28214fec6c6c6a39ec7f71747cb941d6bab0a",
+      "observedAt": "2026-11-18T04:28:47.728Z",
       "range": {
         "startLine": 1,
-        "endLine": 1030
+        "endLine": 1032
       }
     },
     {
@@ -1226,11 +1226,11 @@
       "location": {
         "path": "tests/unit/pi-summary-optimization.test.ts"
       },
-      "hash": "3b13a4bf2ddb4c9ad2a508558cf7620286ce3926b89d70289cbdc036d4661378",
-      "observedAt": "2026-11-12T17:43:19.479Z",
+      "hash": "ee20a8a8cb550df82a619730f71b79a29fde75e474e8c67f67082256845ff01f",
+      "observedAt": "2026-11-18T04:34:42.678Z",
       "range": {
         "startLine": 1,
-        "endLine": 255
+        "endLine": 248
       }
     },
     {
@@ -2682,11 +2682,11 @@
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "fd1bc79e9e027efac5327e34e163a73ff677ce2b044d608e319de18fed2e46ca",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "7bab337dd326a40bffd88896663fc171528a07bb6208ea35dc75b3f6cf9fbe72",
+      "observedAt": "2026-11-18T04:34:42.677Z",
       "range": {
         "startLine": 1,
-        "endLine": 873
+        "endLine": 881
       }
     },
     {
@@ -3004,11 +3004,11 @@
       "location": {
         "path": "docs/pi-session-ownership-spec.md"
       },
-      "hash": "861e003a8c81f1047680a60b3ffb5ab1be93f6ca5e0cce624dd4fcefaa8efb83",
-      "observedAt": "2026-11-18T03:39:04.301Z",
+      "hash": "54e5b607f8df6b87cf396ea5ba9d2c10bee436d8175aa0c4879d898c1809139f",
+      "observedAt": "2026-11-18T04:34:42.678Z",
       "range": {
         "startLine": 1,
-        "endLine": 228
+        "endLine": 229
       }
     },
     {
@@ -3368,11 +3368,11 @@
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
       "claim": "Official SDK contract tests cover prompt metadata, resources/dates, compaction, settlement and cross-engine handoff, including preservation of one business appendix across switches.",
-      "hash": "ad8d03762267aedc9d1f63b54fb6d925ccfac7d609cf74b4eea2c451e5ce7031",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "a013cf76398fc5dccf83c4ddc8b6a72a1e431b07eb09be06fab5f371597947f5",
+      "observedAt": "2026-11-18T04:34:42.677Z",
       "range": {
         "startLine": 1,
-        "endLine": 648
+        "endLine": 655
       }
     },
     {

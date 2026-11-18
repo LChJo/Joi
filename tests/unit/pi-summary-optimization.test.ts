@@ -78,27 +78,20 @@ describe("SUM-01/03/05/11 summary optimization", () => {
     expect(manager.checkpoint()).toBeUndefined();
     expect(JSON.stringify(messages)).toContain("SOURCE_0");
   });
-  it("does not block a primary Joi turn on a soft summary and drains its cancellation", async () => {
-    vi.useFakeTimers();
-    const f = fixture(), pending = deferred<AssistantMessage>();
+  it("leaves primary Joi history within the SDK window uncompressed", async () => {
+    const f = fixture();
     f.faux.setResponses([fauxAssistantMessage([fauxText("continued")])]);
-    const request = vi.spyOn(f.models, "completeSimple").mockReturnValue(pending.promise);
+    const request = vi.spyOn(f.models, "completeSimple");
     let snapshot: JoiReasoningSessionSnapshot = { sessionId: "primary", workbenchId: "wb", modelRevisionId: "mr", sourceRevisionId: "sr", systemPrompt: "POLICY", messages: history(), updatedAt: "now" };
     const runtime = new PiReasoningRuntime({ ...f, thinkingLevel: "high", tools: [], sessionStore: {
       load: async () => snapshot, save: async value => { snapshot = value; },
     } });
-    let finished = false;
-    const turn = runtime.startTurn({ sessionId: "primary", workbenchId: "wb", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "i", turnId: "t", prompt: "continue", requiredContext: "CURRENT_REQUIREMENT" }).then(() => { finished = true; });
-    await vi.advanceTimersByTimeAsync(0);
-    const returnedBeforeSummary = finished;
-    pending.resolve(fauxAssistantMessage([fauxText("summary")]));
-    await vi.advanceTimersByTimeAsync(0);
-    await turn;
-    expect(returnedBeforeSummary).toBe(true);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request.mock.calls[0]?.[2]?.signal?.aborted).toBe(true);
+    await runtime.startTurn({ sessionId: "primary", workbenchId: "wb", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "i", turnId: "t", prompt: "continue", requiredContext: "CURRENT_REQUIREMENT" });
+    expect(f.faux.state.callCount).toBe(1);
+    expect(request).not.toHaveBeenCalled();
     expect(snapshot.compaction).toBeUndefined();
-    expect(JSON.stringify(snapshot.messages)).toContain("SOURCE_0");
+    expect(snapshot.piSession?.entries.some(entry => (entry as { type?: string }).type === "compaction")).toBe(false);
+    expect(JSON.stringify(snapshot.messages).includes("SOURCE_0")).toBe(true);
   });
   it("limits hard-budget foreground waiting to five seconds and keeps the background single flight", async () => {
     vi.useFakeTimers();

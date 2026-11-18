@@ -134,11 +134,11 @@ metadata {
 officialRuntime = component "Official session execution" {
 metadata {
  harness_id "90adf9e2-af9d-42c8-b744-7fe690236e78"
- brief "The public factory and thin partner/primary adapters assemble pinned models, explicit tools, skills and extensions. Tool adapters preserve official prompt metadata. Shared public startup prompt configuration retains custom role policy, renders active tool/rule sections, separates workbench/main-skill context, reuses official project/skill/cwd resources and refreshes local system dates without execution intervention. SDK owns requests, retries, parallel execution and compaction. Local primary question/completion declarations preserve business barriers. Settled native result markers support recovery without model replay."
+ brief "The public factory and thin partner/primary adapters assemble pinned models, explicit tools, skills and extensions. Tool adapters preserve official prompt metadata. Shared public startup prompt configuration retains custom role policy, renders active tool/rule sections, separates workbench/main-skill context, reuses official project/skill/cwd resources and refreshes local system dates without execution intervention. SDK owns requests, retries, parallel execution and compaction. Local primary question/completion declarations preserve business barriers. Primary requirements and continuation context are projected into requests. Settled native result markers retain distinct initial and repair identities for recovery without model replay."
  source "fact"
  status "verified"
  evidence "629887d6-ca08-4e3b-9116-9def218c167e c0fbdf81-21b8-46b1-9b34-73d31b228a96 a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6 29e3189a-98ca-4c5f-b287-0d54ef815d40 4491a2e3-577b-4501-8471-6f2d31fb48ce 901170eb-ce8b-4885-b8ff-c0251181f29e ede12cff-e276-4394-b302-ae9908473949 1fbd5c7f-b90f-457f-a5b7-b06bdd9c349f c0c72b32-20e8-43a7-83c1-c66142ed079b 21229091-a27c-4a31-b947-2f5f5156d2d2 70712ab8-9239-417e-ae73-bc61ce09c371 793588d4-9226-45ea-bcb5-58e60334355c 60fe6b4d-06e2-46f5-8e7f-e680ff854cf9 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 64c24ebe-09b2-47ab-9204-f66893cf8d48 44b4de62-537a-42f1-8a5c-40d72900430b"
- version "3"
+ version "4"
 }
 }
 nativeHistory = component "Native history and migration" {

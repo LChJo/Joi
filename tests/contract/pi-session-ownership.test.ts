@@ -423,18 +423,25 @@ it("PI-SESSION-12 restores a settled result after projection failure without ano
   } finally { runtime.evictFromMemory(input.instanceId); await rm(directory, { recursive: true, force: true }); }
 });
 
-it("PI-SESSION-12/18 replays a settled primary result after restart without another model request", async () => {
+it("PI-SESSION-12/18 recovers initial and repair results independently after restart", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "joi-primary-settled-"));
   const { faux, models } = partnerRuntime("primary-durable-settled");
-  faux.setResponses([fauxAssistantMessage([fauxText("Primary durable answer")])]);
+  faux.setResponses([fauxAssistantMessage([fauxText("Primary durable answer")]), fauxAssistantMessage([fauxText("Corrected durable answer")])]);
   const options = { model: faux.getModel(), models, thinkingLevel: "off" as const, tools: [], nativeSessions: new PiNativeSessionStore(root), sessionStore: { load: () => Promise.resolve(null), save: () => Promise.reject(new Error("projection unavailable")) } };
   const input = { workbenchId: "wb", sessionId: "primary", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "Policy", inputId: "i", turnId: "turn", prompt: "Current task" };
   try {
     await new PiReasoningRuntime(options).startTurn(input);
+    const repair = { ...input, prompt: "Correct the evidence", repair: "synthesis-state" as const };
+    await new PiReasoningRuntime(options).startTurn(repair);
+    expect(faux.state.callCount).toBe(2);
     const events: unknown[] = [];
     await new PiReasoningRuntime(options).startTurn({ ...input, onEvent: event => { events.push(event); } });
-    expect(faux.state.callCount).toBe(1); expect(events).toContainEqual(expect.objectContaining({ type: "text_delta", delta: "Primary durable answer" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "text_delta", delta: "Primary durable answer" }));
     expect(events.at(-1)).toMatchObject({ type: "turn_finished" });
+    const repairEvents: unknown[] = [];
+    await new PiReasoningRuntime(options).startTurn({ ...repair, onEvent: event => { repairEvents.push(event); } });
+    expect(repairEvents).toContainEqual(expect.objectContaining({ type: "text_delta", delta: "Corrected durable answer" }));
+    expect(faux.state.callCount).toBe(2);
   } finally { await rm(root, { force: true, recursive: true }); }
 });
 

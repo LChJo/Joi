@@ -60,7 +60,8 @@ describe("effective goal requirements", () => {
       expect(requests.at(-1)).toContain("requirementsRevision=1");
       expect(requests.at(-1)).toContain(rule);
       const snapshot = snapshots.get(`joi_session:${wb.workbenchId}:goal`);
-      expect(JSON.stringify(snapshot)).not.toContain("Effective user requirements (user scope");
+      expect(snapshot).toBeDefined();
+      expect(JSON.stringify(snapshot).includes("Effective user requirements (user scope")).toBe(false);
       const receipts = (snapshot?.messages ?? []).filter(message => (message as { role?: string; toolName?: string }).role === "toolResult" && (message as { toolName?: string }).toolName === "goal_update_requirements");
       expect(JSON.stringify(receipts)).toContain("requirementCount");
       expect(JSON.stringify(receipts)).not.toContain(rule);

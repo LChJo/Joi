@@ -3,6 +3,7 @@ import type { SummaryRetryState } from "./summary-state.js";
 import type { PartnerSessionState } from "./partner-instances.js";
 
 export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED" | "MAP_CLEARED";
+export type ReasoningRepair = "requirements" | "tool-capability" | "tool-call-markup" | "missing-outcome" | "empty-completion" | "synthesis-state";
 
 export type PrimaryReasoningEvent =
   | { type: "turn_started"; turnId: string }
@@ -25,6 +26,8 @@ export interface StartReasoningTurnInput {
   modelRevisionId: string;
   onEvent?: (event: PrimaryReasoningEvent) => void;
   prompt: string;
+  /** Identifies a bounded repair request within the same business turn. */
+  repair?: ReasoningRepair;
   /** Refreshed private reference data for this request, excluded from the durable transcript. */
   backgroundContext?: string;
   /** Richer bounded alternatives, ordered from smaller to larger; selected only with spare capacity. */

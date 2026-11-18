@@ -7,7 +7,7 @@ import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClas
 import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
 import { composeJoiContinuationBackground } from "./joi-continuation-prompt.js";
 import { sourceFailureNeedsCorrection, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
-import type { JoiReasoningOutcome, PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
+import type { JoiReasoningOutcome, PrimaryReasoningRuntime, ReasoningRepair } from "../ports/primary-reasoning-runtime.js";
 import {
   emitRuntimeDiagnostic,
   runtimeDiagnosticErrorCode,
@@ -427,6 +427,7 @@ export class JoiCoordinator {
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
+    let repair: ReasoningRepair | undefined;
     if (isGoalSynthesis) prompt += `\n\n${SYNTHESIS_TEXT_DECISION_INSTRUCTIONS}`;
     if (input.resolvedAction !== undefined && contract !== undefined) {
       prompt += `\nPersisted user action: actionId=${input.resolvedAction.actionId} workId=${input.resolvedAction.workId}. Review current requirements and work_read_brief, then apply work_resume with this stable actionId and complete updated instructions; do not replay a resolved action.`;
@@ -459,6 +460,7 @@ export class JoiCoordinator {
         const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
+            ...(repair === undefined ? {} : { repair }),
             ...(contract === undefined
               ? input.synthesisContext === undefined ? {} : { requiredContext: input.synthesisContext.originalRequest }
               : { requiredContext: renderGoalRequirements(contract) }),
@@ -607,6 +609,7 @@ export class JoiCoordinator {
               requirementsRepairAttempted = true;
               emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", { workbenchId, inputId, observedToolCount: 0, turnId });
               prompt = REQUIREMENTS_REPAIR_PROMPT;
+              repair = "requirements";
               turnImages = undefined;
               continue;
             }
@@ -616,6 +619,7 @@ export class JoiCoordinator {
             toolCapabilityRepairAttempted = true;
             emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", { workbenchId, inputId, observedToolCount: 0, turnId });
             prompt = TOOL_CAPABILITY_REPAIR_PROMPT;
+            repair = "tool-capability";
             turnImages = undefined;
             continue;
           }
@@ -634,6 +638,7 @@ export class JoiCoordinator {
               turnId,
             });
             prompt = LEAKED_TOOL_CALL_REPAIR_PROMPT;
+            repair = "tool-call-markup";
             turnImages = undefined;
             continue;
           }
@@ -650,6 +655,7 @@ export class JoiCoordinator {
               turnId,
             });
             prompt = isGoalSynthesis ? SYNTHESIS_OUTCOME_REPAIR_PROMPT : OUTCOME_REPAIR_PROMPT;
+            repair = "missing-outcome";
             // The repair continues the same session: the first user message already
             // carries the attachment content, so never resend the image parts.
             turnImages = undefined;
@@ -675,6 +681,7 @@ export class JoiCoordinator {
               turnId,
             });
             prompt = EMPTY_COMPLETION_REPAIR_PROMPT;
+            repair = "empty-completion";
             turnImages = undefined;
             continue;
           }
@@ -692,6 +699,7 @@ export class JoiCoordinator {
             committedOutcomeTools.delete("turn_complete");
             completionText = "";
             prompt = "The synthesis has not been committed because its private evidence state is invalid. Read work_read_evidence for the current goal, use only actual resultId values and current requirement ids, then submit a corrected synthesisState with turn_complete and the complete deliverable. Do not repeat completed Work.";
+            repair = "synthesis-state";
             turnImages = undefined;
             continue;
           }
