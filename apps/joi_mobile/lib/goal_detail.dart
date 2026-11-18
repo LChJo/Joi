@@ -3,6 +3,7 @@ import 'result_reader.dart';
 import 'result_history.dart';
 import 'goal_artifacts.dart';
 import 'connection_diagnostics_view.dart';
+import 'composer_text_field.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -272,6 +273,10 @@ class _GoalActionsState extends State<GoalActions> {
             !continuation &&
             !directory &&
             !historical;
+        final VoidCallback? submitDraft =
+            busy || (answer || historical) && _draft.text.trim().isEmpty
+            ? null
+            : () => _act(answer || historical ? 'clarify' : 'retry');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -456,13 +461,12 @@ class _GoalActionsState extends State<GoalActions> {
                 historical && _showReviewRequirements ||
                 _showContinue) ...[
               const SizedBox(height: 8),
-              TextField(
+              ComposerTextField(
                 controller: _draft,
                 enabled: !busy,
-                minLines: 1,
-                maxLines: 5,
                 maxLength: 8000,
                 onChanged: (_) => setState(() {}),
+                onSend: submitDraft,
                 decoration: InputDecoration(
                   labelText: answer
                       ? tr(Msg.mobileEnterYourAnswer)
@@ -471,10 +475,7 @@ class _GoalActionsState extends State<GoalActions> {
                 ),
               ),
               FilledButton(
-                onPressed:
-                    busy || (answer || historical) && _draft.text.trim().isEmpty
-                    ? null
-                    : () => _act(answer || historical ? 'clarify' : 'retry'),
+                onPressed: submitDraft,
                 child: Text(
                   historical
                       ? tr(Msg.homeAddDetailsAndContinue)

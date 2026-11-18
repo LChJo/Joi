@@ -375,9 +375,10 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await title.hover({ position: { x: 20, y: 5 } });
     const tooltip = window.getByRole("tooltip");
     await expect(tooltip).toContainText("最后一条要求");
-    const firstTooltipTop = (await tooltip.boundingBox())?.y;
+    const firstTooltipBox = await tooltip.boundingBox();
+    expect(firstTooltipBox).not.toBeNull();
     await title.hover({ position: { x: 60, y: 15 } });
-    await expect.poll(async () => (await tooltip.boundingBox())?.y).not.toBe(firstTooltipTop);
+    await expect.poll(async () => tooltip.boundingBox()).toEqual(firstTooltipBox);
     expect(await tooltip.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
     await tooltip.hover();
     await expect(tooltip).toBeVisible();

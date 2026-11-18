@@ -18,6 +18,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   const settings = vi.fn();
   const view = render(<ConversationPage api={api} onSettings={settings} />);
   await screen.findByText("今天想一起做点什么？");
+  expect(screen.queryAllByText("首次发送后，工作台不可更改")).toHaveLength(0);
   const extensions = screen.getByRole("button",{ name: "扩展" });
   fireEvent.click(extensions);
   expect(screen.getByRole("dialog",{ name: "扩展" }).textContent).toBe("扩展子代理Agent BrowserCC Safety Net");
@@ -48,7 +49,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   expect(view.container.querySelector(".chat-compose-area .chat-runtime-context")).toBeNull();
-  expect(view.container.querySelector(".chat-output .chat-runtime-context")).not.toBeNull();
+  expect(view.container.querySelector(".chat-output .chat-runtime-context")).toBeNull();
   expect(send.mock.calls[0]?.[0]).toMatchObject({ workbenchId: "wb",partnerId: "joi-chat",networkId: "network",text: "Hello",subagentsEnabled: false,piExtensions: ["agent-browser","cc-safety-net"] });
   expect(send.mock.calls[0]?.[0]).not.toHaveProperty("modelId");
   await waitFor(() => expect(screen.queryByRole("button",{ name: "工作台" })).not.toBeInTheDocument());
@@ -64,6 +65,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   expect(screen.getByText("项目 A · 对话")).toBeInTheDocument();
   fireEvent.click(await screen.findByRole("button",{ name: "显示或收起工作区" }));
   expect(screen.getByRole("separator",{ name: "调整工作区宽度" })).toBeInTheDocument();
+  expect(screen.queryAllByText("首次发送后，工作台不可更改")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button",{ name: "新建对话" }));
   expect(screen.getByRole("button",{ name: "工作台" })).toBeEnabled();
   expect(screen.getByRole("button",{ name: "记忆与进化 · 已继承" })).toBeInTheDocument();

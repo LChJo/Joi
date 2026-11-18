@@ -201,13 +201,26 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, '手机上的问题');
+      final composer = find.byType(TextField).last;
+      await tester.enterText(composer, '手机上的问题');
       await tester.pump();
-      await tester.tap(find.byTooltip(tr(Msg.chatSend)));
+      final controller = tester.widget<TextField>(composer).controller!;
+      controller.value = controller.value.copyWith(
+        composing: const TextRange(start: 0, end: 2),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(peer.inputs, isEmpty);
+      controller.clearComposing();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      expect(peer.inputs, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('手机上的问题'), findsOneWidget);
       expect(peer.inputs, hasLength(1));
-      await tester.tap(find.byTooltip(tr(Msg.chatSend)));
+      await tester.showKeyboard(composer);
+      await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       expect(peer.inputs, hasLength(2));

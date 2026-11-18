@@ -65,7 +65,7 @@
   "noEvolution": "暂无适用的进化方法",
   "inheritHint": "每轮对话继承所属工作台已有的记忆和已验证的方法。聊天内容不会自动写入长期记忆，也不会直接成为学习证据。",
   "locked": "首次发送后，工作台不可更改",
-  "shortcut": "Ctrl / ⌘ + Enter 发送 · Enter 换行",
+  "shortcut": "Enter 发送 · Shift+Enter 换行",
   "workspace": "工作区",
   "changes": "变更",
   "git": "Git",

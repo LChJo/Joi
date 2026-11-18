@@ -238,7 +238,7 @@
   "chatNoEvolution": "暂无适用的进化方法",
   "chatInheritHint": "每轮对话继承所属工作台已有的记忆和已验证的方法。聊天内容不会自动写入长期记忆，也不会直接成为学习证据。",
   "chatLocked": "首次发送后，工作台不可更改",
-  "chatShortcut": "Ctrl / ⌘ + Enter 发送 · Enter 换行",
+  "chatShortcut": "Enter 发送 · Shift+Enter 换行",
   "chatWorkspace": "工作区",
   "chatChanges": "变更",
   "chatGit": "Git",

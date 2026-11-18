@@ -70,7 +70,7 @@
   "noEvolution": "No applicable evolution method",
   "inheritHint": "Each turn inherits available memory and validated methods from its workbench. Chat text is not automatically saved as memory or learning evidence.",
   "locked": "Workbench locked after the first message",
-  "shortcut": "Ctrl / ⌘ + Enter to send · Enter for a new line",
+  "shortcut": "Enter to send · Shift+Enter for a new line",
   "workspace": "Workspace",
   "changes": "Changes",
   "git": "Git",

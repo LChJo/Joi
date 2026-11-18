@@ -14,16 +14,21 @@ function layout() {
   });
 }
 
-it("positions the full-title preview by the pointer and follows movement over the title", async () => {
+it("anchors the full-title preview to the title and keeps it fixed across pointer movement and clicks", () => {
   layout();
   render(<GoalTitle title="目标" fullTitle="完整目标" />);
   const title = screen.getByRole("button", { name: "目标" });
   fireEvent.mouseEnter(title, { clientX: 200, clientY: 80 });
   const preview = screen.getByRole("tooltip");
-  await waitFor(() => expect(parseFloat(preview.style.left)).toBeGreaterThanOrEqual(200));
-  const first = parseFloat(preview.style.left);
+  expect(preview).toHaveStyle({ left: "88px", top: "118px" });
   fireEvent.mouseMove(title, { clientX: 350, clientY: 90 });
-  await waitFor(() => expect(parseFloat(preview.style.left)).toBeGreaterThan(first));
+  expect(preview).toHaveStyle({ left: "88px", top: "118px" });
+  fireEvent.focus(title);
+  fireEvent.click(title, { detail: 1, clientX: 350, clientY: 90 });
+  expect(preview).toHaveStyle({ left: "88px", top: "118px" });
+  fireEvent.keyDown(title, { key: "Escape" });
+  fireEvent.mouseEnter(title, { clientX: 600, clientY: 100 });
+  expect(screen.getByRole("tooltip")).toHaveStyle({ left: "88px", top: "118px" });
 });
 
 it("opens the context menu at the click, keeps it fixed and avoids viewport edges", async () => {

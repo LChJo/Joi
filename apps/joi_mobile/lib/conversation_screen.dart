@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'composer_text_field.dart';
 import 'goal_detail.dart' show MessageBody;
 import 'i18n.dart';
 import 'remote_controller.dart';
@@ -69,6 +70,13 @@ class _ConversationScreenState extends State<ConversationScreen>
   );
   bool get _native => _engine.isNotEmpty && _engine != 'pi-core';
   bool get _readOnly => _chat?['archivedAt'] != null;
+  bool get _canSend =>
+      !_sending &&
+      !_busy &&
+      !_readOnly &&
+      _workbench.isNotEmpty &&
+      (_native || _network.isNotEmpty) &&
+      _draft.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -273,13 +281,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   }
 
   Future<void> _send() async {
-    if (_sending ||
-        _busy ||
-        _readOnly ||
-        _workbench.isEmpty ||
-        _draft.text.trim().isEmpty) {
-      return;
-    }
+    if (!_canSend) return;
     final epoch = _epoch;
     _pending ??= {
       'conversationId': _id,
@@ -918,13 +920,12 @@ class _ConversationScreenState extends State<ConversationScreen>
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: ComposerTextField(
                             controller: _draft,
                             enabled: !_sending,
-                            minLines: 1,
-                            maxLines: 5,
                             maxLength: 64000,
                             onChanged: (_) => setState(() => _pending = null),
+                            onSend: _canSend ? _send : null,
                             decoration: InputDecoration(
                               labelText: tr(Msg.chatMessage),
                               hintText: tr(Msg.chatPlaceholder),
@@ -940,11 +941,9 @@ class _ConversationScreenState extends State<ConversationScreen>
                               ? null
                               : _busy
                               ? _stop
-                              : _workbench.isEmpty ||
-                                    (!_native && _network.isEmpty) ||
-                                    _draft.text.trim().isEmpty
-                              ? null
-                              : _send,
+                              : _canSend
+                              ? _send
+                              : null,
                           icon: Icon(
                             _busy
                                 ? Icons.stop_rounded

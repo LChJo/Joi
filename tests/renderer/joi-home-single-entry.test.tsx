@@ -1326,7 +1326,9 @@ describe("joi home single entry", () => {
     expect(await screen.findByText(/问题处理好后，可以继续这条任务/u)).toBeInTheDocument();
     const supplementary = screen.getByLabelText("补充说明");
     fireEvent.change(supplementary, { target: { value: "已修复搭档技能，重新派发" } });
-    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    expect(fireEvent.keyDown(supplementary, { key: "Enter", isComposing: true })).toBe(true);
+    expect(retry).not.toHaveBeenCalled();
+    fireEvent.keyDown(supplementary, { key: "Enter" });
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-failed", { text: "已修复搭档技能，重新派发" }));
 
     // The canceled card retries with an empty body (no text field).
@@ -2060,8 +2062,11 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
 
     expect(await screen.findByText("验收需要覆盖哪些浏览器？")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("你的回答"), { target: { value: "Chrome 和 Edge" } });
-    fireEvent.click(screen.getByRole("button", { name: "回答并继续" }));
+    const answer = screen.getByLabelText("你的回答");
+    fireEvent.change(answer, { target: { value: "Chrome 和 Edge" } });
+    expect(fireEvent.keyDown(answer, { key: "Enter", keyCode: 229 })).toBe(true);
+    expect(clarify).not.toHaveBeenCalled();
+    fireEvent.keyDown(answer, { key: "Enter" });
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("question-1", { text: "Chrome 和 Edge" }));
   });
 

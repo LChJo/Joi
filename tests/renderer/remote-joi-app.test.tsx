@@ -92,8 +92,11 @@ describe("RemoteJoiApp", () => {
     expect(screen.queryByText("搭档")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /附件/u })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByRole("textbox", { name: "给 joi 发消息" }), { target: { value: "继续检查风险" } });
-    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    const composer = screen.getByRole("textbox", { name: "给 joi 发消息" });
+    fireEvent.change(composer, { target: { value: "继续检查风险" } });
+    expect(fireEvent.keyDown(composer, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(composer, { key: "Enter", isComposing: true })).toBe(true);
+    expect(fireEvent.keyDown(composer, { key: "Enter" })).toBe(false);
     // eslint-disable-next-line @typescript-eslint/unbound-method
     await waitFor(() => expect(connection.sendMessage).toHaveBeenCalledWith("继续检查风险", expect.stringMatching(/^remote:/u)));
   });
@@ -143,6 +146,8 @@ describe("RemoteJoiApp", () => {
     render(<RemoteJoiApp connection={connection} />);
     expect(await screen.findByText("连接已断开")).toBeInTheDocument();
     const textbox = screen.getByRole("textbox", { name: "给 joi 发消息" });
+    fireEvent.change(textbox, { target: { value: "离线草稿" } });
+    fireEvent.keyDown(textbox, { key: "Enter" });
     expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
     const form = textbox.closest("form");
     expect(form).not.toBeNull();

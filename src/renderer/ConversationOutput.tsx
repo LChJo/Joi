@@ -16,7 +16,7 @@ function toolState(tool: ToolActivity,status: ConversationTurnStatus): ToolState
   return status === "STOPPED" ? "stopped" : status === "INTERRUPTED" ? "interrupted" : "unknown";
 }
 function ToolStateIcon({ state }: { state: ToolState }) {
-  return state === "started" ? <CircleNotchIcon className="chat-tool-running" /> : state === "completed" ? <CheckIcon /> : state === "failed" ? <XCircleIcon /> : <WrenchIcon />;
+  return state === "started" ? <CircleNotchIcon aria-hidden="true" className="chat-tool-running" weight="bold" /> : state === "completed" ? <CheckIcon /> : state === "failed" ? <XCircleIcon /> : <WrenchIcon />;
 }
 function ToolParameters({ parameters }: { parameters: string | undefined }) {
   return parameters === undefined ? <span className="chat-tool-missing">{t("chat.toolParametersMissing")}</span> : <code title={parameters}>{parameters}</code>;
@@ -34,7 +34,8 @@ function ToolGroup({ entries,status,context: fallbackContext,children = [],onCan
   const thought = activities.findLast(activity => activity.type === "THINKING")?.thinking;
   const summaryChars = Array.from(thought?.summary ?? ""),summaryTruncated = summaryChars.length > 1200 || thought?.summaryTruncated === true;
   const thinkingSummary = summaryChars.slice(0,1200).join("") + (summaryChars.length > 1200 ? "…" : "");
-  const brief = [thought === undefined ? "" : [thinkingLabel(thought),thinkingDuration(thought)].filter(Boolean).join(" · "),context === undefined ? "" : contextStateLabel(context),
+  const contextBrief = context === undefined || status === "COMPLETED" ? "" : contextStateLabel(context);
+  const brief = [thought === undefined ? "" : [thinkingLabel(thought),thinkingDuration(thought)].filter(Boolean).join(" · "),contextBrief,
     children.length === 0 ? "" : t("chat.childProgress",{ total: children.length,running: children.filter(child => child.status === "RUNNING" || child.status === "QUEUED").length })].filter(Boolean).join(" · ");
   const tools: ToolActivity[] = [];
   for (const entry of entries) {

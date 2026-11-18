@@ -70,15 +70,16 @@ describe("C2 home interactions", () => {
     expect(screen.getByRole("button", { name: "分发给 工作台示例" })).toBeInTheDocument();
   });
 
-  it("submits with Ctrl or Command Enter while preserving composition and ordinary newlines", async () => {
+  it("submits with Enter while preserving composition and Shift+Enter newlines", async () => {
     const api = setup();
     const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: goal.updatedAt, inputId: "new-c2", status: "PENDING" });
     const input = await screen.findByLabelText("给 joi 输入");
     fireEvent.change(input, { target: { value: "第一行\n第二行" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.keyDown(input, { ctrlKey: true, isComposing: true, key: "Enter" });
+    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(input, { isComposing: true, key: "Enter" })).toBe(true);
+    expect(fireEvent.keyDown(input, { key: "Enter", repeat: true })).toBe(false);
     expect(send).not.toHaveBeenCalled();
-    fireEvent.keyDown(input, { ctrlKey: true, key: "Enter" });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
     await waitFor(() => expect(send).toHaveBeenCalledWith("第一行\n第二行", {}));
     fireEvent.change(input, { target: { value: "新的目标" } });
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });

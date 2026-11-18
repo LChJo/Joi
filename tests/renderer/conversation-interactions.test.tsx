@@ -100,11 +100,41 @@ it("CHAT-02/03 selects workbench, Skills and attachments independently, creates 
   const input = container.querySelector('input[type="file"]');if (input === null) throw new Error("Missing file input");fireEvent.change(input,{ target: { files: [new File(["note"],"notes.txt")] } });
   await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));await screen.findByRole("button",{ name: "移除 notes.txt" });fireEvent.click(screen.getByRole("button",{ name: "移除 notes.txt" }));
   fireEvent.pointerDown(document.body);fireEvent.click(screen.getByRole("button",{ name: "记忆与进化 · 已继承" }));expect(screen.getByText(/记忆摘要 · 2/)).toBeInTheDocument();expect(screen.getByText(/effective-method/)).toBeInTheDocument();fireEvent.keyDown(document,{ key: "Escape" });
-  fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Hello project" } });fireEvent.keyDown(screen.getByRole("textbox",{ name: "消息" }),{ key: "Enter",ctrlKey: true });
-  await screen.findByRole("alert");expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("Hello project");fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
+  const composer = screen.getByRole("textbox",{ name: "消息" });
+  fireEvent.change(composer,{ target: { value: "Hello\nproject" } });
+  expect(fireEvent.keyDown(composer,{ key: "Enter",shiftKey: true })).toBe(true);
+  expect(fireEvent.keyDown(composer,{ key: "Enter",isComposing: true })).toBe(true);
+  expect(send).not.toHaveBeenCalled();
+  fireEvent.keyDown(composer,{ key: "Enter" });
+  await screen.findByRole("alert");expect(composer).toHaveValue("Hello\nproject");fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
   await waitFor(() => expect(send).toHaveBeenCalledTimes(2));expect(send.mock.calls[0]?.[0].requestId).toBe(send.mock.calls[1]?.[0].requestId);
-  expect(send.mock.calls[1]?.[0]).toMatchObject({ workbenchId: "quick",skills: ["user/design"],attachmentIds: [] });
+  expect(send.mock.calls[1]?.[0]).toMatchObject({ text: "Hello\nproject",workbenchId: "quick",skills: ["user/design"],attachmentIds: [] });
   fireEvent.click(screen.getByRole("button",{ name: "新建对话" }));expect(screen.getByRole("button",{ name: "工作台" })).toBeEnabled();expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("");
+});
+it("CHAT-11 shows distinct running indicators and removes them when the turn stops",async () => {
+  const { api,get,send } = setup();
+  const active = conversation("first","RUNNING"),turn = active.turns[0];
+  const call = turn?.entries.find(entry => entry.kind === "TOOL_CALL");
+  if (turn === undefined || call === undefined) throw new Error("Missing tool call");
+  turn.entries = [call];
+  get.mockResolvedValue(active);
+  const { container } = render(<ConversationPage api={api} />);
+  await ready();
+  fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));
+  const stop = await screen.findByRole("button",{ name: "停止生成" });
+  expect(container.querySelector("summary .chat-tool-running")).toHaveAttribute("aria-hidden","true");
+  expect(container.querySelector(".chat-turn-activity")).toHaveAttribute("aria-hidden","true");
+  expect(stop.querySelector(".chat-stop-ring")).toHaveAttribute("aria-hidden","true");
+
+  const composer = screen.getByRole("textbox",{ name: "消息" });
+  fireEvent.change(composer,{ target: { value: "A follow-up" } });
+  fireEvent.keyDown(composer,{ key: "Enter" });
+  expect(send).not.toHaveBeenCalled();
+  get.mockResolvedValue({ ...active,turns: [{ ...turn,status: "STOPPED" }] });
+  fireEvent.click(stop);
+  expect(await screen.findByRole("button",{ name: "发送消息" })).toBeEnabled();
+  expect(composer).toHaveValue("A follow-up");
+  expect(container.querySelector(".chat-tool-running, .chat-turn-activity, .chat-stop-ring")).toBeNull();
 });
 it("CHAT-02/04 keeps separate follow-up drafts when switching grouped and searched history, and copies formatted output", async () => {
   const { api,get } = setup();const copy = vi.fn(() => Promise.resolve());Object.defineProperty(navigator,"clipboard",{ configurable: true,value: { writeText: copy } });
@@ -114,6 +144,8 @@ it("CHAT-02/04 keeps separate follow-up drafts when switching grouped and search
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Draft one" } });fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await waitFor(() => expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue(""));
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Draft two" } });fireEvent.change(screen.getByRole("textbox",{ name: "搜索对话…" }),{ target: { value: "项目" } });expect(screen.queryByRole("button",{ name: /^设计讨论$/ })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await waitFor(() => expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("Draft one"));
+  const footer = screen.getByRole("button",{ name: "复制回答" }).closest("footer");
+  expect(footer).toHaveTextContent(/^已完成$/u);
   fireEvent.click(screen.getByRole("button",{ name: "复制回答" }));await waitFor(() => expect(copy).toHaveBeenCalledWith("## Formatted answer"));
   fireEvent.click(screen.getByRole("button",{ name: "对话规则" }));expect(screen.getByText(/对话固定属于一个工作台/)).toBeInTheDocument();fireEvent.click(screen.getByRole("button",{ name: "对话规则" }));
   fireEvent.click(screen.getByRole("button",{ name: "显示或收起工作区" }));fireEvent.click(screen.getByRole("button",{ name: "显示或收起对话列表" }));

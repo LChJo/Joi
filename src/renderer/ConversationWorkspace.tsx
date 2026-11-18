@@ -111,7 +111,6 @@ export function ConversationWorkspace({ api,conversation,workbenchId,workbenchNa
             {running ? <p role="status">{command.status === "QUEUED" ? t("chat.queued") : t("chat.running")}</p> : null}
             <h3>{t("chat.history")}</h3><ol className="chat-git-history">{git.history.map(commit => <li key={commit.hash}><GitCommitIcon /><span>{commit.message}<small>{commit.hash.slice(0,8)} · {commit.date.slice(0,10)}</small></span></li>)}</ol>
           </>}
-    </div><footer><LockBadge />{t("chat.locked")}</footer>
+    </div>
   </aside>;
 }
-function LockBadge() { return <span aria-hidden>◇</span>; }

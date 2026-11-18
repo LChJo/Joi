@@ -15,6 +15,7 @@ import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact
 import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared/goal-artifacts";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
+import { submitComposerOnEnter } from "./composer-keyboard";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   useI18n();
@@ -950,7 +951,10 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       setBusy(false);
     }
   };
-  const submitDraft = () => { void resolve({ text: draft.trim() }); };
+  const submitDraft = () => {
+    const text = draft.trim();
+    if (!busy && text !== "") void resolve({ text });
+  };
   const chooseWorkspace = async () => {
     if (workbenchId === undefined) {
       setNotice(noticeMessage("home.thisTaskHasNoWorkbenchYetSoAWorking"));
@@ -1007,7 +1011,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       <div><strong>{assignedWorkbench?.name ?? t("home.currentWorkbench")}</strong><span>{t("home.onlyASafeWorkspaceIdentifierIsSavedAbsolutePaths")}</span></div>
       <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? t("home.selecting") : t("home.chooseWorkingDirectory")}</button>
     </div> : needsWorkbenchChoice || needsHistoricalReview && !showOptionalRequirements ? null : <div className="joi-clarify-add">
-      <ClarifyTextarea aria-label={isQuestion ? t("home.yourAnswer") : t("home.additionalInformation")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && draft.trim() !== "") { event.preventDefault(); submitDraft(); } }} placeholder={isQuestion ? t("home.answerAndJoiWillContinueTheTaskShiftEnter") : t("home.addDetailsSoJoiCanContinueShiftEnterFor")} value={draft} />
+      <ClarifyTextarea aria-label={isQuestion ? t("home.yourAnswer") : t("home.additionalInformation")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => submitComposerOnEnter(event, submitDraft)} placeholder={isQuestion ? t("home.answerAndJoiWillContinueTheTaskShiftEnter") : t("home.addDetailsSoJoiCanContinueShiftEnterFor")} value={draft} />
       <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">{isQuestion ? t("home.answerAndContinue") : t("home.addDetailsAndContinue")}</button>
     </div>}
     {notice === null ? null : <p className="inline-notice info" role="status">{notice}</p>}
@@ -1315,7 +1319,7 @@ function GoalRetryPanel({ api, goal, onDone }: {
       <span><strong>{t("home.submittingContinuationRequest")}</strong><small>{t("home.onceJoiConfirmsReceiptTheTaskMovesToPlanning")}</small></span>
     </div> : null}
     <div className="joi-clarify-add">
-      <ClarifyTextarea aria-label={t("home.additionalNotes")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={t("home.addRequirementsLeaveBlankToContinueShiftEnterFor")} value={draft} />
+      <ClarifyTextarea aria-label={t("home.additionalNotes")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => submitComposerOnEnter(event, submit)} placeholder={t("home.addRequirementsLeaveBlankToContinueShiftEnterFor")} value={draft} />
       <button className="button quiet" disabled={busy} onClick={submit} type="button">{busy ? t("home.sendingToJoi") : t("common.continue")}</button>
     </div>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
@@ -1817,12 +1821,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
         onDrop={(event) => { event.preventDefault(); setDragOver(false); addFiles(Array.from(event.dataTransfer.files)); }}
         onSubmit={(event) => void submit(event)}>
         <label className="joi-composer-label" htmlFor="joi-input">{t("home.messageJoi")}</label>
-        <textarea id="joi-input" onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            event.currentTarget.form?.requestSubmit();
-          }
-        }} onPaste={(event) => {
+        <textarea id="joi-input" onChange={(event) => setText(event.target.value)} onKeyDown={submitComposerOnEnter} onPaste={(event) => {
           const pasted = Array.from(event.clipboardData.files);
           if (pasted.length > 0) {
             event.preventDefault();

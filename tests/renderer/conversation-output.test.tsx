@@ -48,6 +48,24 @@ it("CHAT-27 renders an activity-only row ahead of prose when tools have not star
   expect(view.container.querySelector("summary")).not.toHaveTextContent("共 0 次");expect(view.container.lastElementChild).toHaveTextContent("Answer");
 });
 
+it("CHAT-23 hides standalone context metadata in completed replies",() => {
+  const answer: ConversationEntryDto = { entryId: "answer",kind: "MARKDOWN",role: "AGENT",text: "Answer",sequence: 1,createdAt: "2026-11-12" };
+  const ready = { kind: "CHARACTERS",state: "READY" } as const;
+  const trailing: ConversationEntryDto = { entryId: "context",kind: "ACTIVITY",role: "SYSTEM",sequence: 2,createdAt: "2026-11-12",activity: { type: "CONTEXT",context: ready } };
+  const view = render(<ConversationOutput entries={[answer,trailing]} status="RUNNING" />);
+  expect(screen.getByText("上下文已就绪",{ selector: "summary span" })).toBeVisible();
+  view.rerender(<ConversationOutput entries={[answer,trailing]} status="COMPLETED" />);
+  expect(screen.queryAllByText("上下文已就绪")).toHaveLength(0);
+  view.rerender(<ConversationOutput entries={[answer]} context={ready} status="COMPLETED" />);
+  expect(view.container.querySelector("details")).toBeNull();
+  expect(screen.getByText("Answer")).toBeVisible();
+  view.rerender(<ConversationOutput entries={[tool("read","read","TOOL_RESULT"),answer]} context={ready} status="COMPLETED" />);
+  const summary = view.container.querySelector("summary");if (summary === null) throw new Error("Missing tool disclosure");
+  expect(summary).not.toHaveTextContent("上下文已就绪");
+  fireEvent.click(summary);
+  expect(screen.getByRole("status")).toHaveTextContent("上下文已就绪");
+});
+
 const tool = (id: string,name: string,kind: "TOOL_CALL" | "TOOL_RESULT",callId?: string): AgentConversationEntryDto => ({ entryId: id,toolName: name,kind,role: "TOOL",sequence: 1,createdAt: "2026-11-11",...(callId === undefined ? {} : { toolCallId: callId }),...(kind === "TOOL_RESULT" ? { text: "PRIVATE_TOOL_BODY" } : {}) });
 it("CHAT-16 collapses paired calls/results, shows the latest tool and expands calls in order", () => {
   const entries = [tool("one","ls","TOOL_CALL","1"),tool("one-done","ls","TOOL_RESULT","1"),tool("two","bash","TOOL_CALL","2"),tool("two-done","bash","TOOL_RESULT","2")];

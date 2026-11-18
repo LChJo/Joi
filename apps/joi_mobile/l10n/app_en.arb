@@ -1213,7 +1213,7 @@
     "description": "chat.locked",
     "placeholders": {}
   },
-  "chatShortcut": "Ctrl / ⌘ + Enter to send · Enter for a new line",
+  "chatShortcut": "Enter to send · Shift+Enter for a new line",
   "@chatShortcut": {
     "description": "chat.shortcut",
     "placeholders": {}

@@ -7,6 +7,7 @@ import 'conversation_screen.dart';
 import 'remote_controller.dart';
 import 'goal_detail.dart';
 import 'connection_diagnostics_view.dart';
+import 'composer_text_field.dart';
 import 'joi_brand.dart';
 import 'workbench_choice.dart';
 
@@ -391,9 +392,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  bool get _canSend =>
+      widget.state.connection == RemoteConnectionState.connected &&
+      !_sending &&
+      !widget.state.sending &&
+      _composer.text.trim().isNotEmpty;
+
   Future<void> _send() async {
+    if (!_canSend) return;
     final text = _composer.text.trim();
-    if (text.isEmpty || _sending) return;
     setState(() {
       _sending = true;
       _notice = null;
@@ -644,13 +651,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Expanded(
-                        child: TextField(
+                        child: ComposerTextField(
                           controller: _composer,
                           enabled: !_sending,
-                          minLines: 1,
-                          maxLines: 5,
                           maxLength: 32000,
                           onChanged: (_) => setState(() {}),
+                          onSend: _canSend ? _send : null,
                           decoration: InputDecoration(
                             hintText: tr(Msg.mobileSaySomethingToJoi),
                             counterText: '',
@@ -661,13 +667,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       const SizedBox(width: 8),
                       IconButton.filled(
                         tooltip: tr(Msg.remoteSend),
-                        onPressed:
-                            !ready ||
-                                _sending ||
-                                state.sending ||
-                                _composer.text.trim().isEmpty
-                            ? null
-                            : _send,
+                        onPressed: _canSend ? _send : null,
                         icon: _sending
                             ? const SizedBox(
                                 width: 20,

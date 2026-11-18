@@ -8,6 +8,7 @@ import { randomUuid } from "./random-uuid.js";
 import { ConversationPage } from "./ConversationPage";
 import { RemoteConversationApi, type RemoteConversationTransport } from "./RemoteConversationApi";
 import { ArchivedConversations } from "./ArchivePage";
+import { submitComposerOnEnter } from "./composer-keyboard";
 
 export interface RemoteJoiConnection {
   command?: RemoteConversationTransport["command"];
@@ -82,10 +83,11 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     return () => window.clearInterval(timer);
   },[connection]);
 
+  const canSend = !sending && draft.trim() !== "" && connectionStatus === "connected";
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canSend) return;
     const text = draft.trim();
-    if (text === "" || sending) return;
     setSending(true);
     setNotice(noticeMessage("home.sendingToJoi"));
     try {
@@ -124,8 +126,8 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     <footer className="remote-composer-wrap">
       {notice === null ? null : <div className="remote-composer-notice" role="status">{notice}</div>}
       <form className="remote-composer" onSubmit={(event) => void submit(event)}>
-        <textarea aria-label={t("remote.messageJoi")} maxLength={32_000} onChange={(event) => setDraft(event.currentTarget.value)} placeholder={t("remote.tellJoiWhatToDoNext")} rows={2} value={draft} />
-        <button aria-label={t("remote.send")} disabled={sending || draft.trim() === "" || connectionStatus !== "connected"} type="submit"><ArrowUpIcon aria-hidden weight="bold" /></button>
+        <textarea aria-label={t("remote.messageJoi")} maxLength={32_000} onChange={(event) => setDraft(event.currentTarget.value)} onKeyDown={submitComposerOnEnter} placeholder={t("remote.tellJoiWhatToDoNext")} rows={2} value={draft} />
+        <button aria-label={t("remote.send")} disabled={!canSend} type="submit"><ArrowUpIcon aria-hidden weight="bold" /></button>
       </form>
       <p>{t("remote.remoteAccessSupportsConversationsAndTaskViewingOnly")}</p>
     </footer>

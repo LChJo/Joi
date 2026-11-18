@@ -28,7 +28,7 @@ export function GoalTitle({ title, fullTitle }: { title: string; fullTitle?: str
     overlay.current.style.left = `${String(Math.max(12, Math.min(left, window.innerWidth - width - 12)))}px`;
     overlay.current.style.top = `${String(Math.max(12, Math.min(top, window.innerHeight - height - 12)))}px`;
   }, []);
-  function keyboardAnchor() {
+  function titleAnchor() {
     const rect = trigger.current?.getBoundingClientRect();
     if (rect !== undefined) anchor.current = { x: rect.left, y: rect.bottom, gap: 8 };
   }
@@ -65,13 +65,12 @@ export function GoalTitle({ title, fullTitle }: { title: string; fullTitle?: str
     }}>
     <h1><button className="joi-full-title-trigger" ref={trigger} type="button"
       aria-describedby={preview && fullTitle !== undefined ? tooltipId : undefined} aria-haspopup="menu" aria-expanded={menu}
-      onMouseEnter={(event) => { if (!menu && !pinned.current) { anchor.current = { x: event.clientX, y: event.clientY, gap: 12 }; setPreview(true); placeOverlay(); } }}
-      onMouseMove={(event) => { if (!menu && !pinned.current) { anchor.current = { x: event.clientX, y: event.clientY, gap: 12 }; placeOverlay(); } }}
-      onFocus={() => { clearTimeout(hideTimer.current); if (!suppressPreview.current) { keyboardAnchor(); setPreview(true); } }}
-      onClick={(event) => { if (event.detail === 0) keyboardAnchor(); else anchor.current = { x: event.clientX, y: event.clientY, gap: 12 }; pinned.current = true; setPreview(true); placeOverlay(); }}
-      onContextMenu={(event) => { event.preventDefault(); clearTimeout(hideTimer.current); if (event.clientX === 0 && event.clientY === 0) keyboardAnchor(); else anchor.current = { x: event.clientX, y: event.clientY, gap: 0 }; setMenu(true); setPreview(false); placeOverlay(); }}
+      onMouseEnter={() => { if (!menu && !pinned.current) { titleAnchor(); setPreview(true); placeOverlay(); } }}
+      onFocus={() => { clearTimeout(hideTimer.current); if (!suppressPreview.current) { titleAnchor(); setPreview(true); } }}
+      onClick={() => { titleAnchor(); pinned.current = true; setPreview(true); placeOverlay(); }}
+      onContextMenu={(event) => { event.preventDefault(); clearTimeout(hideTimer.current); if (event.clientX === 0 && event.clientY === 0) titleAnchor(); else anchor.current = { x: event.clientX, y: event.clientY, gap: 0 }; setMenu(true); setPreview(false); placeOverlay(); }}
       onKeyDown={(event) => {
-        if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); clearTimeout(hideTimer.current); keyboardAnchor(); setMenu(true); setPreview(false); }
+        if (event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey)) { event.preventDefault(); clearTimeout(hideTimer.current); titleAnchor(); setMenu(true); setPreview(false); }
       }}>{title}</button></h1>
     {preview && !menu && fullTitle !== undefined ? <div ref={overlay} className="joi-full-title-preview" id={tooltipId} role="tooltip" tabIndex={0}
       onPointerDown={() => { pinned.current = true; clearTimeout(hideTimer.current); }}>{fullTitle}</div> : null}
