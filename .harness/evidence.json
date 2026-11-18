@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "c264152279648cf3ff6919fc886bca4c473c5587970291dbd420398db57a7d66",
-      "observedAt": "2026-11-18T04:14:36.902Z",
+      "hash": "c61b255e22eb93c42830ac203ada77fe52e3e9b3721a4c1fbedabdd278a81490",
+      "observedAt": "2026-11-18T05:07:30.219Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -848,8 +848,8 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "64dc5b29cb3aff763f2026b4ff382ecb1aceb2ed9914777cb2c005b57a08a249",
-      "observedAt": "2026-11-18T04:14:36.902Z",
+      "hash": "e1c9d73093d0b569ca3b03be29b011b13138032bb022ec8dc055b0dcb1ea39a7",
+      "observedAt": "2026-11-18T05:07:30.219Z",
       "range": {
         "startLine": 1,
         "endLine": 739
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "a15ea5ed65d0ef148b7849688f6ec2ff6dab7d8dfcd456304d90d4cfeb0ced1f",
-      "observedAt": "2026-11-16T06:38:13.970Z",
+      "hash": "609895918e60651476ddf2e454c5e5d293f98bbea091b7ebbcd4a4ff277f16d3",
+      "observedAt": "2026-11-18T05:07:30.219Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
