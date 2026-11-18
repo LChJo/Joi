@@ -4,6 +4,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
+import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { SqlitePartnerDispatchClaims } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
@@ -33,7 +34,7 @@ async function openFixture() {
     connection.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
       VALUES ('plan_1', 'turn_1', '{}', '{}', ?)`).run(NOW);
   });
-  return { clock, database, ids, partner, partnerRevisionId: partner.partnerRevisionId, root };
+  return { clock, database, ids, partner, partners, partnerRevisionId: partner.partnerRevisionId, root };
 }
 
 function seedWork(
@@ -76,6 +77,54 @@ function workFacts(database: Awaited<ReturnType<typeof openFixture>>["database"]
 }
 
 describe("work dependency gate and failure cascade", () => {
+  it("AC-67 queues review behind all implementation Work while independent Work remains dispatchable", async () => {
+    const fixture = await openFixture();
+    try {
+      const reviewer = await fixture.partners.add({ capabilities: [], displayName: "Reviewer", kind: "local-pi", skills: [], tools: ["read"] });
+      const service = new WorkOrchestrationService({
+        clock: fixture.clock, ids: fixture.ids, partners: fixture.partners,
+        policy: { evaluate: () => Promise.resolve({ allowed: true }) },
+        repository: new SqliteWorkPlanRepository(fixture.database),
+      });
+      const plan = await service.plan({
+        inputId: "input_1", turnId: "turn_1", workbenchId: "workbench_1",
+        dependencies: [{ dependsOnKey: "implement-a", workKey: "review" }, { dependsOnKey: "implement-b", workKey: "review" }],
+        work: [
+          ...["implement-a", "implement-b"].map(key => ({
+            key, title: key, partnerId: fixture.partner.partnerId, accessMode: "WRITE" as const,
+            executionNeeds: ["FILE_WRITE" as const], instructions: "Implement the assigned change and report verification.", acceptanceChecks: [{ kind: "BODY_PRESENT" as const }],
+          })),
+          { key: "independent", title: "independent", partnerId: fixture.partner.partnerId, accessMode: "READ", executionNeeds: [], instructions: "Inspect unrelated reference material.", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+          { key: "review", title: "review", partnerId: reviewer.partnerId, accessMode: "READ", executionNeeds: [], instructions: "Review both completed changes and their verification evidence.", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+        ],
+      });
+      const rows = fixture.database.transaction(connection => connection.prepare("SELECT title, work_id FROM work_items").all()) as { title: string; work_id: string }[];
+      const workIds = new Map(rows.map(row => [row.title, row.work_id]));
+      const id = (title: string) => {
+        const workId = workIds.get(title);
+        if (workId === undefined) throw new Error("missing fixture Work");
+        return workId;
+      };
+      expect(plan.waves).toEqual([[id("implement-a"), id("implement-b"), id("independent")], [id("review")]]);
+      const claims = new SqlitePartnerDispatchClaims(fixture.database);
+      const claimable = async (partnerId: string) => (await claims.listClaimable({ now: NOW, partnerId, workbenchId: "workbench_1" }))
+        .map(claim => (JSON.parse(claim.payloadJson) as { workId: string }).workId);
+      expect(await claimable(fixture.partner.partnerId)).toEqual(expect.arrayContaining([id("implement-a"), id("implement-b"), id("independent")]));
+      expect(await claimable(reviewer.partnerId)).toEqual([]);
+      const complete = (key: string) => fixture.database.transaction(connection => {
+        connection.prepare("UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = ?").run(NOW, id(key));
+      });
+      complete("implement-b");
+      expect(await claimable(reviewer.partnerId)).toEqual([]);
+      complete("implement-a");
+      expect(await claimable(reviewer.partnerId)).toEqual([id("review")]);
+      expect(await claimable(fixture.partner.partnerId)).toEqual([id("independent")]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("pauses unstarted dispatches at the goal gate but preserves a persistently started run", async () => {
     const fixture = await openFixture();
     try {

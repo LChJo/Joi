@@ -31,7 +31,7 @@ export interface ConversationThinkingDto {
   state: "STARTED" | "COMPLETED" | "INTERRUPTED";
   startedAt?: string;
   durationMs?: number;
-  /** Only a provider's explicitly public summary; never raw reasoning or signatures. */
+  /** Only a provider's explicitly public summary. */
   summary?: string;
   summaryTruncated?: boolean;
 }

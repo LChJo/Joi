@@ -1,15 +1,12 @@
-/* Pi tool callbacks use the asynchronous AgentTool contract. */
-/* eslint-disable @typescript-eslint/require-await */
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { } from "@earendil-works/pi-ai";
 
 /** The closure binds one private transcript; callers cannot select another session or Work. */
-export function createContextHistoryTool(messages: () => readonly unknown[]): AgentTool {
+export function createContextHistoryTool(messages: () => readonly unknown[] | Promise<readonly unknown[]>): AgentTool {
   let generation = 0;
   let snapshot: { cursor: string; chunks: string[]; ends: number[]; totalChars: number } | undefined;
-  const open = (): NonNullable<typeof snapshot> => {
-    const source = messages();
+  const open = async (): Promise<NonNullable<typeof snapshot>> => {
+    const source = await messages();
     const chunks = ["[", ...source.map((message, index) => `${index === 0 ? "" : ","}${JSON.stringify(message) || "null"}`), "]"];
     let totalChars = 0;
     const ends = chunks.map(chunk => { totalChars += chunk.length; return totalChars; });
@@ -32,7 +29,7 @@ export function createContextHistoryTool(messages: () => readonly unknown[]): Ag
       if (args.cursor !== undefined && args.cursor !== snapshot?.cursor) {
         return { content: [{ type: "text", text: JSON.stringify({ reasonCode: "context_history_cursor_expired", restartOffset: 0 }) }], details: {}, isError: true };
       }
-      if (snapshot === undefined || (offset === 0 && args.cursor === undefined)) snapshot = open();
+      if (snapshot === undefined || (offset === 0 && args.cursor === undefined)) snapshot = await open();
       const end = Math.min(snapshot.totalChars, offset + limit);
       let low = 0;
       let high = snapshot.ends.length;

@@ -42,6 +42,7 @@ interface InFlightRun {
   outboxId: string;
   prepared: PreparedDispatch;
   settled: DispatchRunOutput | undefined;
+  executionStopped: boolean;
   lastProgressAt: number;
   /** Last time this run's liveness was written to the database; 0 beats on the first tick. */
   lastHeartbeatAt: number;
@@ -134,7 +135,7 @@ export class AgentDispatchComponent implements ActorComponent {
   }
 
   async #renewRunLease(ctx: ActorTickContext, run: InFlightRun): Promise<void> {
-    if (run.settled !== undefined) return;
+    if (run.settled !== undefined && run.executionStopped) return;
     const lease = run.prepared.workspaceLease;
     if (lease === undefined || this.dependencies.leases === undefined) return;
     if (Date.parse(lease.expiresAt) - ctx.now.getTime() > LEASE_RENEW_MARGIN_MILLIS) return;
@@ -216,6 +217,7 @@ export class AgentDispatchComponent implements ActorComponent {
       }
     }
     const output = run.settled;
+    if (run.prepared.workspaceLease !== undefined && !run.executionStopped) return;
     if (output.kind === "suspended") {
       this.#releaseSlot(run);
       return;
@@ -224,13 +226,14 @@ export class AgentDispatchComponent implements ActorComponent {
       if (ctx.now.getTime() < run.nextWaitingRetryAt) return;
       run.nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
       run.settled = undefined;
+      run.executionStopped = false;
       const attemptId = run.dispatchAttemptId;
       void this.dependencies.delivery.run(run.prepared, { signal: run.abortController.signal }).then((next) => {
         const current = this.#inFlight.get(attemptId);
-        if (current !== undefined) current.settled = next;
+        if (current !== undefined) { current.executionStopped = true;current.settled = next; }
       }).catch((error: unknown) => {
         const current = this.#inFlight.get(attemptId);
-        if (current !== undefined) current.settled = failedOutput(error);
+        if (current !== undefined) { current.executionStopped = true;current.settled = failedOutput(error); }
       });
       return;
     }
@@ -414,6 +417,7 @@ export class AgentDispatchComponent implements ActorComponent {
         outboxId: claim.outboxId,
         prepared,
         settled: undefined,
+        executionStopped: false,
         // Not the dispatch moment: zero makes the next tick write this run's first beat instead
         // of waiting out a whole interval with no liveness on record.
         lastHeartbeatAt: 0,
@@ -438,9 +442,11 @@ export class AgentDispatchComponent implements ActorComponent {
         },
       }).then((output) => {
         const active = this.#inFlight.get(attemptId);
+        if (active === run) active.executionStopped = true;
         if (active === run && !abortController.signal.aborted && active.settled === undefined) active.settled = output;
       }).catch((error: unknown) => {
         const active = this.#inFlight.get(attemptId);
+        if (active === run) active.executionStopped = true;
         if (active === run && !abortController.signal.aborted && active.settled === undefined) active.settled = failedOutput(error);
       });
     }

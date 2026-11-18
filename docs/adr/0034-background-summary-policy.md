@@ -1,5 +1,7 @@
 # ADR 0034 — Background summaries with route-scoped failure protection
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 Status: Accepted, 2026-11-12. Refines the summary policy in ADR 0033.
 
 Soft history pressure schedules one background summary per private execution session. The main request retains its complete available history while it fits; hard capacity may wait for that same job for at most five seconds, then uses an explicit omission projection or fails when protected context cannot fit. The existing session owner collects and validates completed results, retains work across a warm READ/WRITE suspension, and cancels and drains pending work before final execution cleanup. No global scheduler, second compaction owner or independently authenticated summary model is introduced. SDK automatic compaction remains disabled.

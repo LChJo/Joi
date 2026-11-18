@@ -9,6 +9,8 @@ interface TransactionalDatabase {
 }
 
 interface StoredMetadata {
+  piSession?: JoiReasoningSessionSnapshot["piSession"];
+  piNativeSession?: JoiReasoningSessionSnapshot["piNativeSession"];
   summaryRetry?: JoiReasoningSessionSnapshot["summaryRetry"];
   archivedMessages?: unknown[];
   archivedMessageCount?: number;
@@ -74,6 +76,8 @@ function metadata(value: unknown): StoredMetadata {
     throw new Error("pi_session_record_invalid");
   }
   return {
+    ...(record.piSession === undefined ? {} : { piSession: record.piSession as JoiReasoningSessionSnapshot["piSession"] }),
+    ...(record.piNativeSession === undefined ? {} : { piNativeSession: record.piNativeSession as JoiReasoningSessionSnapshot["piNativeSession"] }),
     ...(summaryRetry === undefined ? {} : { summaryRetry }),
     ...(Array.isArray(record.archivedMessages) ? { archivedMessages: record.archivedMessages } : {}),
     ...(record.archivedMessageCount === undefined ? {} : { archivedMessageCount: record.archivedMessageCount as number }),
@@ -99,7 +103,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
 
   #read(connection: DatabaseSync, sessionId: string): { snapshot: JoiReasoningSessionSnapshot; serialized: SerializedSession } | null {
       const rows = connection.prepare(`SELECT workbench_id, sequence, message_json
-        FROM joi_session_messages WHERE session_id = ? ORDER BY sequence`).all(sessionId) as { workbench_id: unknown; message_json: unknown; sequence: unknown }[];
+        FROM joi_reasoning_projections WHERE session_id = ? ORDER BY sequence`).all(sessionId) as { workbench_id: unknown; message_json: unknown; sequence: unknown }[];
       const first = rows[0];
       if (first === undefined) return null;
       if (typeof first.workbench_id !== "string" || typeof first.message_json !== "string" || first.sequence !== 0) {
@@ -121,6 +125,8 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
         return row.message_json;
       });
       const snapshot: JoiReasoningSessionSnapshot = {
+        ...(stored.piSession === undefined ? {} : { piSession: stored.piSession }),
+        ...(stored.piNativeSession === undefined ? {} : { piNativeSession: stored.piNativeSession }),
         ...(stored.summaryRetry === undefined ? {} : { summaryRetry: stored.summaryRetry }),
         workbenchId: first.workbench_id,
         ...(stored.archivedMessageCount === undefined && stored.archivedMessages === undefined ? {} : { archivedMessages: archiveValues }),
@@ -144,6 +150,8 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       const coverage = validCoverage(snapshot.compaction?.coverage);
       if (coverage !== undefined && (coverage.transcriptId !== snapshot.sessionId || coverage.coveredTo !== archiveValues.length)) throw new Error("pi_session_record_invalid");
       const metadataJson = JSON.stringify({
+          piSession: snapshot.piSession,
+          piNativeSession: snapshot.piNativeSession,
           summaryRetry: snapshot.summaryRetry,
           ...(snapshot.archivedMessages === undefined ? {} : { archivedMessageCount: archiveValues.length }),
           compaction: snapshot.compaction,
@@ -155,14 +163,14 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       const messages = snapshot.messages.map(message => JSON.stringify(message) || "null");
       const archived = archiveValues.map((message, index) => previous !== undefined && previous.archiveValues[index] === message
         ? previous.archived[index] ?? (JSON.stringify(message) || "null") : JSON.stringify(message) || "null");
-      const upsert = connection.prepare(`INSERT INTO joi_session_messages
+      const upsert = connection.prepare(`INSERT INTO joi_reasoning_projections
         (message_id, session_id, workbench_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(session_id, sequence) DO UPDATE SET message_json = excluded.message_json`);
       if (previous?.metadataJson !== metadataJson) upsert.run(`${snapshot.sessionId}:metadata`, snapshot.sessionId, snapshot.workbenchId, 0, metadataJson, snapshot.updatedAt);
       messages.forEach((message, index) => {
         if (previous?.messages[index] !== message) upsert.run(`${snapshot.sessionId}:message:${String(index + 1)}`, snapshot.sessionId, snapshot.workbenchId, index + 1, message, snapshot.updatedAt);
       });
-      if ((previous?.messages.length ?? 0) > messages.length) connection.prepare("DELETE FROM joi_session_messages WHERE session_id = ? AND sequence > ?").run(snapshot.sessionId, messages.length);
+      if ((previous?.messages.length ?? 0) > messages.length) connection.prepare("DELETE FROM joi_reasoning_projections WHERE session_id = ? AND sequence > ?").run(snapshot.sessionId, messages.length);
       const archiveUpsert = connection.prepare(`INSERT INTO joi_session_archived_messages
         (session_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?)
         ON CONFLICT(session_id, sequence) DO UPDATE SET message_json = excluded.message_json`);

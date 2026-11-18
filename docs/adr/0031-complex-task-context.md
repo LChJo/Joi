@@ -1,5 +1,7 @@
 # ADR 0031：复杂任务的相关证据、综合快照与历史软预算
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 - 状态：accepted
 - 日期：2026-10-19
 - 关联：ADR 0022、0025、0026、0027、0028；AC-43/48/53/67

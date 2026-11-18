@@ -19,14 +19,14 @@ describe("AC-WR-01/03 workspace admission", () => {
     expect(isWriteResumeWait(new Error("fixture"))).toBe(false);
   });
   it("shares reads and excludes them during writes or behind queued writers", () => {
-    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 2, writerHeld: false, earlierWriter: false })).toBe(true);
-    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 0, writerHeld: true, earlierWriter: false })).toBe(false);
-    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 0, writerHeld: false, earlierWriter: true })).toBe(false);
+    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 2, writerHeld: false, earlierConflict: false })).toBe(true);
+    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 0, writerHeld: true, earlierConflict: false })).toBe(false);
+    expect(decideWorkspaceAdmission({ access: "READ", otherReaders: 0, writerHeld: false, earlierConflict: true })).toBe(false);
   });
   it("upgrades only a sole reader without an earlier writer", () => {
-    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 0, writerHeld: false, earlierWriter: false })).toBe(true);
-    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 1, writerHeld: false, earlierWriter: false })).toBe(false);
-    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 0, writerHeld: false, earlierWriter: true })).toBe(false);
+    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 0, writerHeld: false, earlierConflict: false })).toBe(true);
+    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 1, writerHeld: false, earlierConflict: false })).toBe(false);
+    expect(decideWorkspaceAdmission({ access: "WRITE", otherReaders: 0, writerHeld: false, earlierConflict: true })).toBe(false);
   });
   it("classifies every shell as writable and unknown tools as denied", () => {
     for (const tool of ["bash", "Bash", "edit", "Write", "NotebookEdit"]) expect(classifyLocalToolEffect(tool)).toBe("WRITE");

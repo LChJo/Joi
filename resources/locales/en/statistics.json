@@ -1,4 +1,5 @@
 {
+  "cacheWarming": { "message": "Cache warming", "description": "Usage reported by SDK background cache warming" },
   "evolution": {
     "message": "Evolution",
     "description": "statistics: Evolution",

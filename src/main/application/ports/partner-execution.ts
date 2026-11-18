@@ -6,6 +6,7 @@ import type { ConversationPiExtension,ConversationTurnDto } from "../../../share
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
 export interface PartnerRunRequest {
+  conversationSegmentId?: string;
   conversationAttachmentContext?: string;
   subagentChild?: boolean;
   subagentsEnabled?: boolean;

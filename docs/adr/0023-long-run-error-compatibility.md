@@ -1,5 +1,7 @@
 # ADR 0023：长任务异常的错误兼容，不做时长硬顶
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 - 状态：accepted
 - 日期：2026-09-27
 - 相关：ADR 0022（pi 原生压缩）、ADR 0016（agent 失败自愈）、ADR 0006（工作台私有搭档实例）

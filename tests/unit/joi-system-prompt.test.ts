@@ -9,6 +9,14 @@ const base = {
 };
 
 describe("joi system prompt", () => {
+  it("orders implementation before review through explicit dependencies while independent work stays parallel", () => {
+    const prompt = buildJoiSystemPrompt(base);
+    expect(prompt).toContain("Parallel dispatch is only for independent Work");
+    expect(prompt).toContain('dependencies: [{ dependsOnKey: "implement", workKey: "review" }]');
+    expect(prompt).toContain("Work array order and instructions alone do not enforce execution order");
+    expect(prompt).toContain("all predecessor Work has completed successfully");
+  });
+
   it("uses dispatch-time preparation for a cold managed workspace", () => {
     const prompt = buildJoiSystemPrompt({ ...base, workspace: { displayName: "Managed", kind: "MANAGED", status: "PROVISIONING" } });
     expect(prompt).toContain("Managed Workbench bindings use independent per-Work directories prepared and verified at dispatch");

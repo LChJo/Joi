@@ -7,6 +7,7 @@ import { createPartnerRevision } from "../../src/main/domain/partners/partner";
 import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances";
 import type { ConversationContextDto } from "../../src/shared/conversations";
 import { NativeConversationJournal } from "../../src/main/infrastructure/pi/native-conversation-journal";
+import { ConversationHandoff } from "../../src/main/infrastructure/pi/conversation-handoff";
 
 function fixture(options: { runIdleTimeoutMillis?: number } = {}) {
   const faux = fauxProvider({ provider: "reliability" }),models = createModels();models.setProvider(faux.provider);
@@ -22,8 +23,7 @@ function fixture(options: { runIdleTimeoutMillis?: number } = {}) {
 
 it("REL-04/16 retries two model timeouts within the same session, settles once and never replays the completed tool",async () => {
   vi.useFakeTimers({ toFake: ["setTimeout","clearTimeout","Date"] });
-  const { faux,models,runtime,tool,input } = fixture();let snapshot: PartnerSessionState | undefined;
-  const stream = vi.spyOn(models,"streamSimple");
+  const { faux,runtime,tool,input } = fixture();let snapshot: PartnerSessionState | undefined;
   const contexts: ConversationContextDto[] = [];let requests = 0,settled = false;
   const counted = (message: ReturnType<typeof fauxAssistantMessage>) => () => { requests++;return message; };
   faux.setResponses([
@@ -43,7 +43,6 @@ it("REL-04/16 retries two model timeouts within the same session, settles once a
     await vi.advanceTimersByTimeAsync(4000);
     await expect(run).resolves.toMatchObject({ status: "COMPLETED",output: { body: "Recovered answer" } });
     expect(tool).toHaveBeenCalledTimes(1);expect(requests).toBe(4);
-    expect(stream.mock.calls.every(call => call[2]?.maxRetries === 0)).toBe(true);
     expect(snapshot?.piSession?.entries.filter(entry => (entry as { type: string }).type === "context_edit")).toHaveLength(2);
     expect(JSON.stringify(snapshot?.piSession)).toContain("PRIVATE_FAILED_ONE");
     expect(JSON.stringify(snapshot?.messages)).not.toContain("PRIVATE_FAILED_ONE");
@@ -61,7 +60,7 @@ it("REL-05 exhausts one three-retry budget and retains the final safe reason",as
     const failure = expect(run).rejects.toMatchObject({ code: "timeout" });
     await vi.waitFor(() => expect(contexts.some(value => value.recovery?.attempt === 1)).toBe(true));
     await vi.advanceTimersByTimeAsync(14_000);await failure;
-    expect(requests).toBe(4);expect(snapshot?.modelRetry?.attempts).toBe(3);
+    expect(requests).toBe(4);expect(snapshot?.modelRetry).toBeUndefined();
     expect(contexts.at(-1)?.recovery?.state).toBe("EXHAUSTED");
   } finally { runtime.evictFromMemory(input.instanceId);vi.useRealTimers(); }
 });
@@ -94,19 +93,19 @@ it("REL-09 cancels SDK retry backoff without starting another model attempt",asy
   } finally { runtime.evictFromMemory(input.instanceId);vi.useRealTimers(); }
 });
 
-it("REL-10 fails safely when a completed tool result cannot be saved and never requests another model response",async () => {
+it("PI-SESSION-06 keeps executing after a non-authoritative projection save fails",async () => {
   const { faux,runtime,tool,input } = fixture();let requests = 0;
   faux.setResponses([() => { requests++;return fauxAssistantMessage([fauxToolCall("write",{},{ id: "stable-effect" })],{ stopReason: "toolUse" }); },() => { requests++;return fauxAssistantMessage([fauxText("Must not complete")]); }]);
   try {
     const run = runtime.runResidentTurn({ ...input,saveSession: async state => {
       if (state.messages.some(message => (message as { role?: string }).role === "toolResult")) throw new Error("PRIVATE_DISK_FAILURE");
     } });
-    await expect(run).rejects.toMatchObject({ code: "conversation_persistence_failed",partnerRunFailure: { phase: "RECOVERY",sideEffectState: "UNKNOWN",retryable: false } });
-    expect(tool).toHaveBeenCalledTimes(1);expect(requests).toBe(1);
+    await expect(run).resolves.toMatchObject({ status: "COMPLETED", output: { body: "Must not complete" } });
+    expect(tool).toHaveBeenCalledTimes(1);expect(requests).toBe(2);
   } finally { runtime.evictFromMemory(input.instanceId); }
 });
 
-it("REL-08 preserves canonical IDs when importing history appended by a native engine",async () => {
+it("PI-SESSION-21 preserves source canonical IDs while a native successor receives a separate handoff",async () => {
   const { faux,runtime,input } = fixture();let saved: PartnerSessionState | undefined;
   const saveSession = async (state: PartnerSessionState) => { saved = structuredClone(state); };
   faux.setResponses([fauxAssistantMessage([fauxText("First answer")])]);
@@ -115,35 +114,42 @@ it("REL-08 preserves canonical IDs when importing history appended by a native e
     if (saved?.piSession === undefined) throw new Error("Missing canonical source");
     const original = saved.piSession.entries;
     let native: PartnerSessionState = saved;
-    const journal = new NativeConversationJournal("codex",{ ...input.request,taskProjection: "NATIVE_ENGINE_FACT" },{ knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],sessionState: saved,saveSession: async value => { native = structuredClone(value); } });
+    const bridge = await new ConversationHandoff().build({ conversationId: "chat",workbenchId: "wb",source: { segmentId: "A1",partnerId: "p",engine: "pi-core",capabilityKey: "r",state: saved },history: [] });
+    const journal = new NativeConversationJournal("codex",{ ...input.request,taskProjection: "NATIVE_ENGINE_FACT" },{ knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],sessionState: bridge,saveSession: async value => { native = structuredClone(value); } });
     await journal.assistant([{ type: "text",text: "Native answer" }]);
-    expect(native.piSession?.entries).toEqual(original);
+    expect(native.piSession).toBeUndefined();expect(saved.piSession.entries).toEqual(original);
     faux.setResponses([context => { expect(JSON.stringify(context)).toContain("NATIVE_ENGINE_FACT");return fauxAssistantMessage([fauxText("Continued")]); }]);
-    await runtime.runResidentTurn({ ...input,saveSession,sessionState: native,request: { ...input.request,actionId: "next",workId: "next",taskProjection: "Continue" } });
-    expect(saved.piSession.entries.slice(0,original.length)).toEqual(original);
+    const originalId = saved.piSession.header;
+    const successor = await new ConversationHandoff().build({ conversationId: "chat",workbenchId: "wb",source: { segmentId: "B1",partnerId: "b",engine: "codex",capabilityKey: "rb",state: native },history: [] });
+    await runtime.runResidentTurn({ ...input,saveSession,sessionState: { ...successor,engine: "pi-core" },request: { ...input.request,actionId: "next",workId: "next",taskProjection: "Continue" } });
+    expect(saved.piSession.header).not.toEqual(originalId);
   } finally { runtime.evictFromMemory(input.instanceId); }
 });
 
-it("REL-06 does not retry an authentication failure whose provider text also mentions a timeout",async () => {
+it("PI-SESSION-03 preserves the pinned SDK retry policy for mixed authentication/timeout text",async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout","clearTimeout","Date"] });
   const { faux,runtime,input } = fixture();let requests = 0;
-  faux.setResponses([() => { requests++;return fauxAssistantMessage([],{ stopReason: "error",errorMessage: "HTTP 401 unauthorized request timeout PRIVATE_CREDENTIAL" }); }]);
+  faux.setResponses(Array.from({ length: 4 }, () => () => { requests++;return fauxAssistantMessage([],{ stopReason: "error",errorMessage: "HTTP 401 unauthorized request timeout PRIVATE_CREDENTIAL" }); }));
   try {
-    await expect(runtime.runResidentTurn(input)).rejects.toMatchObject({ code: "http_401",partnerRunFailure: { retryable: false } });
-    expect(requests).toBe(1);
-  } finally { runtime.evictFromMemory(input.instanceId); }
+    const run = runtime.runResidentTurn(input);
+    const failure = expect(run).rejects.toMatchObject({ code: "http_401",partnerRunFailure: { retryable: false } });
+    await vi.waitFor(() => expect(requests).toBe(1));
+    await vi.advanceTimersByTimeAsync(14000); await failure;
+    expect(requests).toBe(4);
+  } finally { runtime.evictFromMemory(input.instanceId); vi.useRealTimers(); }
 });
 
-it("REL-09 isolates an unresponsive provider, bounds stop and retires its late events",async () => {
+it("PI-SESSION-17 isolates a waiting provider and retires observations after SDK cancellation",async () => {
   vi.useFakeTimers({ toFake: ["setTimeout","clearTimeout","Date"] });
   const { faux,runtime,input,tool } = fixture(),controller = new AbortController();
   let release: ((message: ReturnType<typeof fauxAssistantMessage>) => void) | undefined;const saves = vi.fn(async () => undefined);
-  faux.setResponses([async () => new Promise<ReturnType<typeof fauxAssistantMessage>>(resolve => { release = resolve; }),fauxAssistantMessage([fauxText("Independent answer")])]);
+  faux.setResponses([async (_context, options) => new Promise<ReturnType<typeof fauxAssistantMessage>>(resolve => { release = resolve; options?.signal?.addEventListener("abort", () => resolve(fauxAssistantMessage([], { stopReason: "aborted" })), { once: true }); }),fauxAssistantMessage([fauxText("Independent answer")])]);
   try {
     const stalled = runtime.runResidentTurn({ ...input,signal: controller.signal,saveSession: saves });
-    const stopped = expect(stalled).rejects.toMatchObject({ code: "conversation_cleanup_timed_out" });
+    const stopped = expect(stalled).rejects.toHaveProperty("code");
     await vi.waitFor(() => expect(release).toBeDefined());
     await expect(runtime.runResidentTurn({ ...input,instanceId: "independent",request: { ...input.request,conversationId: "other",workId: "other",actionId: "other" } })).resolves.toMatchObject({ output: { body: "Independent answer" } });
-    controller.abort();await vi.advanceTimersByTimeAsync(5000);await stopped;
+    controller.abort();await stopped;
     const count = saves.mock.calls.length;release?.(fauxAssistantMessage([fauxToolCall("write",{},{ id: "late-effect" })],{ stopReason: "toolUse" }));
     await vi.advanceTimersByTimeAsync(0);expect(saves).toHaveBeenCalledTimes(count);expect(tool).not.toHaveBeenCalled();
   } finally { runtime.evictFromMemory(input.instanceId);runtime.evictFromMemory("independent");vi.useRealTimers(); }

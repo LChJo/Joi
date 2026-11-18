@@ -1,5 +1,7 @@
 # ADR 0025：目标继续的结论背景与累计预算
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 - 状态：accepted
 - 日期：2026-10-10
 - 关联：ADR 0010、0017、0022；AC-14/AC-33/AC-46/AC-53/AC-67

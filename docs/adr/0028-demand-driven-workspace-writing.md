@@ -1,5 +1,7 @@
 # ADR 0028：本地任务按需申请工作区写租约
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 - 状态：Accepted
 - 日期：2026-10-13
 - 验收：AC-14、AC-33、AC-46、AC-53、AC-54、AC-62、AC-67；AC-WR-01..06

@@ -26,7 +26,7 @@ export interface ModelSourceRevision {
 
 export interface ModelRevision {
   capability: ModelCapability;
-  /** Percent of the route's window at which the session is compacted. Absent means the runtime default. */
+  /** Context occupancy percentage used by the SDK automatic compaction trigger. */
   compactionThresholdPercent?: number;
   /** Documented window for this exact model, overriding what joi would otherwise infer. */
   contextWindow?: number;

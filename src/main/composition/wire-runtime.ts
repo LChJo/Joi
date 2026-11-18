@@ -302,6 +302,7 @@ export function wireRuntime(input: {
     continuity: new ContinuityService({ clock, publisher, store: database.store }),
     delegations,
     drain: async () => {
+      await partnerStack.stopPiUsageReconciliation();
       modelSourceStack.recovery.stop();
       try { await modelRecoveryDispatcher.close(); }
       catch { process.stderr.write("A model source recovery remains queued for retry.\n"); }

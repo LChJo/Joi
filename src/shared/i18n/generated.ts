@@ -651,6 +651,8 @@ export interface MessageParameters {
   "exportState.pair": undefined;
   "exportState.resume": undefined;
   "exportState.none": undefined;
+  "home.piAutomaticCompaction": undefined;
+  "home.piCompactionDefault": undefined;
   "home.image": undefined;
   "home.checkingTheConnectionThisMayIncurASmallModel": undefined;
   "home.connectedJoiIsReadyToThink": undefined;
@@ -1649,6 +1651,7 @@ export interface MessageParameters {
   "skills.noAvailableSkillsFoundInstallASkillAndRefresh": undefined;
   "skills.noMatchingSkills": undefined;
   "skills.saveSkillSelection": undefined;
+  "statistics.cacheWarming": undefined;
   "statistics.evolution": undefined;
   "statistics.orchestration": undefined;
   "statistics.probe": undefined;
@@ -2442,6 +2445,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "Initial pairing (pair)",
     "exportState.resume": "Resume connection (resume)",
     "exportState.none": "None",
+    "home.piAutomaticCompaction": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.",
+    "home.piCompactionDefault": "Pi defaults",
     "home.image": "[Image",
     "home.checkingTheConnectionThisMayIncurASmallModel": "Checking the connection. This may incur a small model charge…",
     "home.connectedJoiIsReadyToThink": "Connected. joi is ready to think.",
@@ -3440,6 +3445,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "skills.noAvailableSkillsFoundInstallASkillAndRefresh": "No available skills found. Install a skill and refresh the catalog.",
     "skills.noMatchingSkills": "No matching skills.",
     "skills.saveSkillSelection": "Save skill selection",
+    "statistics.cacheWarming": "Cache warming",
     "statistics.evolution": "Evolution",
     "statistics.orchestration": "Orchestration",
     "statistics.probe": "Probe",
@@ -4231,6 +4237,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "首次配对 pair",
     "exportState.resume": "恢复连接 resume",
     "exportState.none": "无",
+    "home.piAutomaticCompaction": "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。",
+    "home.piCompactionDefault": "Pi 默认设置",
     "home.image": "[图片",
     "home.checkingTheConnectionThisMayIncurASmallModel": "正在检查连接，这可能产生极少量模型费用…",
     "home.connectedJoiIsReadyToThink": "已连接，joi 可以开始思考了。",
@@ -5229,6 +5237,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "skills.noAvailableSkillsFoundInstallASkillAndRefresh": "还没有发现可用技能。安装 Skill 后刷新目录。",
     "skills.noMatchingSkills": "没有匹配的技能。",
     "skills.saveSkillSelection": "保存技能选择",
+    "statistics.cacheWarming": "缓存预热",
     "statistics.evolution": "进化",
     "statistics.orchestration": "编排",
     "statistics.probe": "探测",
@@ -6575,6 +6584,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "恢复连接 resume": "exportState.resume",
   "None": "exportState.none",
   "无": "exportState.none",
+  "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.": "home.piAutomaticCompaction",
+  "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。": "home.piAutomaticCompaction",
+  "Pi defaults": "home.piCompactionDefault",
+  "Pi 默认设置": "home.piCompactionDefault",
   "[Image": "home.image",
   "[图片": "home.image",
   "Checking the connection. This may incur a small model charge…": "home.checkingTheConnectionThisMayIncurASmallModel",
@@ -8358,6 +8371,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "没有匹配的技能。": "skills.noMatchingSkills",
   "Save skill selection": "skills.saveSkillSelection",
   "保存技能选择": "skills.saveSkillSelection",
+  "Cache warming": "statistics.cacheWarming",
+  "缓存预热": "statistics.cacheWarming",
   "Evolution": "statistics.evolution",
   "进化": "statistics.evolution",
   "Orchestration": "statistics.orchestration",

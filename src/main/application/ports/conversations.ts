@@ -3,11 +3,23 @@ import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerSessionState } from "./partner-instances.js";
 import type { PartnerRunRequest } from "./partner-execution.js";
 
+export interface ConversationSegment {
+  segmentId: string; partnerId: string; engine: PartnerRevision["engine"]; capabilityKey: string;
+  predecessorId?: string; state?: PartnerSessionState;
+}
+export interface ConversationHandoffPort {
+  build(input: { conversationId: string; workbenchId: string; source: ConversationSegment; history: NonNullable<PartnerRunRequest["conversationHistory"]> }): Promise<PartnerSessionState>;
+  read(input: { conversationId: string; workbenchId: string; segments: ConversationSegment[] }): Promise<unknown[]>;
+}
+
 export interface ConversationSubmission {
   conversationId: string; workbenchId: string; turnId: string; requestId: string;
   text: string; at: string; config: ConversationConfigDto; revision?: PartnerRevision;
 }
 export interface ConversationStore {
+  segment(id: string,turnId?: string): Promise<ConversationSegment | undefined>;
+  segments(id: string): Promise<ConversationSegment[]>;
+  activateSegment(id: string,turnId: string,segment: ConversationSegment,expectedPredecessor?: string): Promise<ConversationSegment>;
   history(id: string, beforeTurnId: string): Promise<NonNullable<PartnerRunRequest["conversationHistory"]>>;
   page(id: string,cursor?: string,limit?: number): Promise<ConversationHistoryPageDto>;
   events(id: string,cursor?: string): Promise<ConversationEventsDto>;
@@ -22,6 +34,7 @@ export interface ConversationStore {
   request(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string } | null>;
   turn(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string; revision: PartnerRevision | null } | null>;
   begin(turnId: string): Promise<boolean>;
+  runningPiTurns(): Promise<string[]>;
   update(turnId: string, patch: Pick<ConversationTurnDto, "entries" | "artifacts" | "status"> & Pick<ConversationTurnDto,"errorCode" | "failure">): Promise<void>;
   stop(conversationId: string): Promise<void>;
   stopAll(): Promise<void>;

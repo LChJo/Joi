@@ -60,7 +60,7 @@ async function openWithPartner() {
 
 function makeHandler(
   database: RuntimeDatabase,
-  instances: Pick<PartnerInstanceManager, "dispatch"> & Partial<Pick<PartnerInstanceManager, "validateCheckpoint">>,
+  instances: Pick<PartnerInstanceManager, "dispatch"> & Partial<Pick<PartnerInstanceManager, "validateCheckpoint" | "readSettledResult">>,
   diagnostics: { event: string; fields: Record<string, unknown> }[] = [],
   verifier?: { verify(input: unknown): Promise<{ reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" }> },
   publish: (event: unknown) => Promise<unknown> = async () => undefined,
@@ -96,6 +96,138 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("releases a settled lease before a failed conversation projection and preserves a newer generation on retry", async () => {
+    const { database,root } = await openWithPartner();
+    const clock = new TestClock(),leases = new SqliteWorkspaceLeaseManager({ database,clock });
+    try {
+      database.transaction(db => db.prepare("UPDATE dispatch_attempts SET instance_id='instance_9' WHERE dispatch_attempt_id='attempt_1'").run());
+      const handler = makeHandler(database,{ dispatch: async () => ({ actionId: "action_1",workId: "work_1",status: "COMPLETED",externalRunId: "run",body: "Done",artifacts: [] }) },
+        [],undefined,async () => undefined,clock,leases);
+      const prepared = await handler.prepare({ attemptCount: 0,dispatchAttemptId: "attempt_1",outboxId: "o",payloadJson: "{}" });
+      if (prepared === "skipped_terminal") throw new Error("Expected prepared Work");
+      const held = await leases.acquire({ workId: "work_1",workspaceRef: "workbench_workspace:workbench_1",accessMode: "WRITE" });
+      if (held === null) throw new Error("Expected lease");
+      prepared.workspaceLease = held;
+      database.transaction(db => db.exec(`CREATE TRIGGER fail_conversation BEFORE INSERT ON workbench_agent_conversation_entries BEGIN SELECT RAISE(ABORT,'projection unavailable'); END;`));
+      await expect(handler.complete({ prepared,output: { kind: "terminal",status: "COMPLETED",body: "Done",artifacts: [] } })).rejects.toThrow("projection unavailable");
+      expect(await leases.renew(held)).toBeNull();
+      const newer = await leases.acquire({ workId: "work_1",workspaceRef: held.workspaceRef,accessMode: "WRITE" });
+      expect(newer?.generation).toBeGreaterThan(held.generation);
+      await handler.complete({ prepared,output: { kind: "terminal",status: "COMPLETED",body: "Done",artifacts: [] } });
+      expect(await leases.renew(newer ?? held)).not.toBeNull();
+    } finally { database.close();await rm(root,{ recursive: true,force: true }); }
+  });
+  it("PI-SESSION-12 commits a recovered SDK result without executing an orphaned Pi again", async () => {
+    const { database, root } = await openWithPartner();
+    const dispatch = vi.fn(async () => { throw new Error("The model must not run during result recovery"); });
+    const readSettledResult = vi.fn(async () => ({ externalRunId: "local_pi:action_1", status: "COMPLETED" as const, output: { artifacts: [], body: "Recovered SDK delivery" } }));
+    try {
+      database.transaction(db => db.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run());
+      const handler = makeHandler(database, { dispatch, readSettledResult });
+      await handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "prepare", payloadJson: "{}" });
+      await handler.finalizeOrphan({ dispatchAttemptId: "attempt_1", instanceStatus: "IDLE", kind: "LOCAL_PI", runId: "partner_run:action_1" });
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(readSettledResult).toHaveBeenCalledOnce();
+      await expect(new SqliteWorkResultRepository(database).readBody({ workbenchId: "workbench_1", resultId: "work_result:partner_run:action_1:COMPLETED", offset: 0, limit: 1000 })).resolves.toMatchObject({ body: "Recovered SDK delivery" });
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
+  it("PI-SESSION-16 refuses to replay a legacy Pi tool checkpoint as a new SDK execution", async () => {
+    const { database, root } = await openWithPartner();
+    const clock = new TestClock();
+    const dispatch = vi.fn(async () => { throw new Error("Legacy Pi tools must not replay"); });
+    try {
+      database.transaction(db => {
+        db.prepare("UPDATE work_items SET status = 'RUNNING' WHERE work_id = 'work_1'").run();
+        db.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
+        db.prepare(`INSERT INTO partner_runs(run_id,dispatch_attempt_id,action_id,workbench_id,work_id,partner_revision_id,kind,external_run_id,status,created_at,updated_at)
+          SELECT 'legacy-run',dispatch_attempt_id,action_id,'workbench_1',work_id,partner_revision_id,'LOCAL_PI','legacy','RUNNING',?,? FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'`).run(clock.now().toISOString(),clock.now().toISOString());
+        db.prepare("UPDATE partner_instances SET status = 'SUSPENDED' WHERE instance_id = 'instance_9'").run();
+        db.prepare(`INSERT INTO local_work_execution(dispatch_attempt_id,phase,generation,checkpoint_ref,wait_reason,updated_at)
+          VALUES ('attempt_1','WRITE_QUEUED',1,'partner_instance_messages:instance_9','WORKSPACE_WRITE',?)`).run(clock.now().toISOString());
+      });
+      const handler = makeHandler(database, { dispatch }, [], undefined, async () => undefined, clock);
+      await expect(handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "legacy", payloadJson: "{}", continuationGeneration: 2 })).resolves.toBe("skipped_terminal");
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(database.transaction(db => db.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'").get())).toEqual({ status: "UNKNOWN" });
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
+  it("PI-SESSION-08 queues a Pi writer ahead of later readers and acquires the lease before SDK startup", async () => {
+    const { database, root,partner } = await openWithPartner();
+    const clock = new TestClock();
+    try {
+      database.transaction(db => {
+        db.prepare("UPDATE work_access_policies SET access_mode = 'WRITE' WHERE work_id = 'work_1'").run();
+        db.prepare("UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY' WHERE workbench_id = 'workbench_1'").run();
+        db.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          SELECT workspace_ref, 'synthetic-pi-workspace', ?, ? FROM workbench_workspace_bindings WHERE workbench_id = 'workbench_1'`).run(clock.now().toISOString(), clock.now().toISOString());
+        const reader = db.prepare(`INSERT INTO work_items (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+          VALUES (?,'workbench_1','input_1','Read workspace','{}','READ','READY',?,?)`);
+        for (const workId of ["first-reader","later-reader"]) reader.run(workId,clock.now().toISOString(),clock.now().toISOString());
+      });
+      const dispatch = vi.fn(async (input: Parameters<PartnerInstanceManager["dispatch"]>[0]) => {
+        expect(input.request.workspaceExecution).toMatchObject({ phase: "WRITE_RUNNING", accessCeiling: "WRITE" });
+        return { actionId: "action_1", artifacts: [], body: "Delivered", externalRunId: "run", status: "COMPLETED" as const, workId: "work_1" };
+      });
+      const leases = new SqliteWorkspaceLeaseManager({ database, clock });
+      const workspaceRef = String(database.transaction(db => db.prepare("SELECT workspace_ref FROM workbench_workspace_bindings WHERE workbench_id = 'workbench_1'").get()?.workspace_ref));
+      const handler = makeHandler(database, { dispatch }, [], undefined, async () => undefined, clock, leases);
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox", payloadJson: "{}" };
+      expect(await leases.acquire({ accessMode: "READ",workId: "first-reader",workspaceRef })).not.toBeNull();
+      await expect(handler.prepare(claim)).rejects.toMatchObject({ code: "workspace_lease_conflict" });
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(await leases.acquire({ accessMode: "READ",workId: "later-reader",workspaceRef })).toBeNull();
+      database.transaction(db => {
+        db.prepare(`INSERT INTO outbox(outbox_id,kind,payload_json,status,attempt_count,available_at,created_at)
+          VALUES ('waiting-dispatch','partner.dispatch','{}','PENDING',0,?,?)`).run(new Date(clock.now().getTime() + 5_000).toISOString(),clock.now().toISOString());
+        db.prepare("UPDATE dispatch_attempts SET outbox_id='waiting-dispatch' WHERE dispatch_attempt_id='attempt_1'").run();
+      });
+      const claims = new SqlitePartnerDispatchClaims(database);
+      const scope = { workbenchId: "workbench_1",partnerId: partner.partnerId,now: clock.now().toISOString() };
+      expect(await claims.listClaimable(scope)).toHaveLength(0);
+      await leases.release("first-reader");
+      expect(await claims.listClaimable(scope)).toHaveLength(1);
+      const prepared = await handler.prepare(claim);
+      if (prepared === "skipped_terminal") throw new Error("Unexpected terminal Work");
+      expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases WHERE work_id = 'work_1'").get())).toEqual({ access_mode: "WRITE" });
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(await handler.run(prepared)).toMatchObject({ kind: "terminal", body: "Delivered" });
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
+  it.each(["CANCELED","PAUSED"])("wakes a reader immediately when the earlier writer becomes %s", async status => {
+    const { database,root,partner } = await openWithPartner();
+    const clock = new TestClock();
+    try {
+      const now = clock.now().toISOString();
+      database.transaction(db => {
+        db.prepare(`INSERT INTO joi_inbox_messages(input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES ('paused-input','paused-input','synthetic','ROUTED','workbench_1',?,?)`).run(now,now);
+        db.prepare(`INSERT INTO joi_turns(turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES ('paused-turn','paused-input','workbench_1','paused-session','RUNNING',?,?)`).run(now,now);
+        db.prepare(`INSERT INTO work_items(work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+          VALUES ('writer','workbench_1','paused-input','Write','{}','WRITE','READY',?,?)`).run(now,now);
+        db.prepare(`INSERT INTO work_items(work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+          VALUES ('holder','workbench_1','input_1','Read','{}','READ','READY',?,?)`).run(now,now);
+        db.prepare(`INSERT INTO outbox(outbox_id,kind,payload_json,status,attempt_count,available_at,created_at)
+          VALUES ('waiting-reader','partner.dispatch','{}','PENDING',0,?,?)`).run(new Date(clock.now().getTime() + 5_000).toISOString(),now);
+        db.prepare("UPDATE dispatch_attempts SET outbox_id='waiting-reader' WHERE dispatch_attempt_id='attempt_1'").run();
+      });
+      const leases = new SqliteWorkspaceLeaseManager({ database,clock });
+      await leases.acquire({ accessMode: "READ",workId: "holder",workspaceRef: "shared" });
+      expect(await leases.acquire({ accessMode: "WRITE",workId: "writer",workspaceRef: "shared",queue: true })).toBeNull();
+      expect(await leases.acquire({ accessMode: "READ",workId: "work_1",workspaceRef: "shared",queue: true })).toBeNull();
+      const claims = new SqlitePartnerDispatchClaims(database);
+      const scope = { workbenchId: "workbench_1",partnerId: partner.partnerId,now };
+      expect(await claims.listClaimable(scope)).toHaveLength(0);
+      database.transaction(db => {
+        if (status === "CANCELED") db.prepare("UPDATE work_items SET status='CANCELED' WHERE work_id='writer'").run();
+        else db.prepare(`INSERT INTO joi_goal_execution_gates(goal_input_id,question_id,question_version,status,reason_code,created_at,updated_at)
+          VALUES ('paused-input','synthetic-question',1,'WAITING_INPUT','user_input',?,?)`).run(now,now);
+      });
+      expect(database.transaction(db => db.prepare("SELECT 1 FROM workspace_write_waiters WHERE work_id='writer'").get())).toBeUndefined();
+      expect(await claims.listClaimable(scope)).toHaveLength(1);
+      expect(await leases.acquire({ accessMode: "READ",workId: "work_1",workspaceRef: "shared",queue: true })).not.toBeNull();
+    } finally { database.close();await rm(root,{ recursive: true,force: true }); }
+  });
   it("persists a semantic handoff through delivery without exposing it in result events", async () => {
     const { database, root } = await openWithPartner();
     const handoff = { version: 1 as const, conclusion: "PRIVATE_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: ["PRIVATE_GAP"], conflicts: [] };
@@ -146,10 +278,14 @@ describe("partner dispatch instance routing", () => {
       expect(await Promise.all(running)).toEqual([expect.objectContaining({ kind: "terminal", body: "findings" }), expect.objectContaining({ kind: "terminal", body: "findings" })]);
     } finally { database.close(); await rm(root, { recursive: true, force: true }); }
   });
-  it.each(["direct", "gate-during-upgrade", "resume", "concurrent-resume", "cancel", "cancel-before-run", "cancel-during-run", "missing-checkpoint", "restart"])("AC-WR-05 handles suspended execution through %s", async scenario => {
+  it.each(["direct", "gate-during-upgrade", "resume", "concurrent-resume", "cancel", "cancel-before-run", "cancel-during-run", "missing-checkpoint", "restart"])("AC-WR-05 preserves native CLI suspended execution through %s", async scenario => {
     const opened = await openWithPartner();
     let database = opened.database;
     const root = opened.root;
+    database.transaction(db => {
+      db.prepare("UPDATE partner_revisions SET engine = 'MANA_SDK', cli_protocol = 'CODEX'").run();
+      db.prepare("UPDATE partner_instances SET engine = 'MANA_SDK', external_session_ref = 'native-agent:v1:codex:synthetic-native-session'").run();
+    });
     const clock = new TestClock();
     try {
       database.transaction(db => {
@@ -185,10 +321,10 @@ describe("partner dispatch instance routing", () => {
         database.transaction(db => {
           db.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
           db.prepare("UPDATE partner_instances SET status = 'SUSPENDED' WHERE instance_id = 'instance_9'").run();
-          db.prepare(`INSERT OR IGNORE INTO partner_instance_messages (message_id, instance_id, sequence, message_json, created_at)
+          db.prepare(`INSERT OR IGNORE INTO partner_message_projections (message_id, instance_id, sequence, message_json, created_at)
             VALUES ('checkpoint', 'instance_9', 0, '{"role":"user","content":"private"}', ?)`).run(clock.now().toISOString());
         });
-        return { actionId: "action_1", artifacts: [], body: "", checkpointRef: "partner_instance_messages:instance_9", externalRunId: "same-run", instanceId: "instance_9", status: "SUSPENDED", workId: "work_1" };
+        return { actionId: "action_1", artifacts: [], body: "", checkpointRef: "native-agent:v1:codex:synthetic-native-session", externalRunId: "same-run", instanceId: "instance_9", status: "SUSPENDED", workId: "work_1" };
       } }, [], undefined, async () => undefined, clock, leases);
       const prepared = await handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "initial", payloadJson: "{}" });
       if (prepared === "skipped_terminal") throw new Error("unexpected skip");
@@ -263,7 +399,8 @@ describe("partner dispatch instance routing", () => {
         return;
       }
       if (scenario === "missing-checkpoint") {
-        database.transaction(db => db.prepare("DELETE FROM partner_instance_messages WHERE instance_id = 'instance_9'").run());
+        database.transaction(db => db.prepare("UPDATE partner_instances SET external_session_ref = NULL WHERE instance_id = 'instance_9'").run());
+        database.transaction(db => db.prepare("DELETE FROM partner_message_projections WHERE instance_id = 'instance_9'").run());
         expect(await handler.prepare(continuation)).toBe("skipped_terminal");
         expect(database.transaction(db => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status: "FAILED" });
         expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases").get())).toEqual({ n: 0 });
@@ -1098,11 +1235,11 @@ describe("partner dispatch instance routing", () => {
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
       expect(dispatchInputs).toHaveLength(0);
       await handler.finalizeOrphan({ dispatchAttemptId: "attempt_1", instanceStatus: "IDLE", kind: "LOCAL_PI", runId: "partner_run:action_1" });
-      expect(dispatchInputs).toHaveLength(1);
+      expect(dispatchInputs).toHaveLength(0);
       const attempt = database.transaction((connection) => connection.prepare(
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
       ).get()) as { status: string };
-      expect(attempt.status).toBe("COMPLETED");
+      expect(attempt.status).toBe("UNKNOWN");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

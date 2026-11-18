@@ -1,5 +1,7 @@
 # ADR 0033 — Durable conversation sessions and shared context policy
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 Status: Accepted, 2026-11-11
 
 ## Decision

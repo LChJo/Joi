@@ -484,6 +484,23 @@ describe("AgentDispatchComponent", () => {
     expect(harness.calls.filter((call) => call === "run")).toHaveLength(1);
   });
 
+  it("retains directory ownership until a canceled engine acknowledges that execution stopped", async () => {
+    let canceled = false;
+    const stopped = Promise.withResolvers<DispatchRunOutput>();
+    const harness = makeHarness({ claims: [CLAIM],workCanceled: async () => canceled,
+      prepareResult: { ...PREPARED,workspaceLease: { workId: "work_1",workspaceRef: "root",generation: 1,expiresAt: "2026-08-05T10:05:00.000Z" } },
+      runOverride: () => stopped.promise });
+    await harness.component.update(ctxAt(0));
+    canceled = true;
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.runSignals[0]?.aborted).toBe(true);
+    expect(harness.completed).toHaveLength(0);
+    stopped.resolve(TERMINAL);await new Promise(resolve => setTimeout(resolve,0));
+    await harness.component.update(ctxAt(4_000));
+    expect(harness.completionOutputs).toEqual([expect.objectContaining({ status: "UNKNOWN",failure: expect.objectContaining({ reasonCode: "goal_canceled" }) as unknown })]);
+    expect(harness.component.hasPendingWork).toBe(false);
+  });
+
   it("keeps workspace contention queued with a short retry even after the generic preparation budget", async () => {
     const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
     const harness = makeHarness({

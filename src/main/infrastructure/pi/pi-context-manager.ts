@@ -59,6 +59,8 @@ export interface PiContextManagerOptions {
   onDiagnostic?: (event: PiContextDiagnostic) => void;
   requiredChars?: number;
   backgroundChars?: number;
+  /** The accepted conversation prompt remains mandatory after runtime messages are appended. */
+  currentTask?: string;
   /** Input planning headroom, independent of the model's summary output allowance. */
   reserveTokens?: number;
   /** Source/model revisions form the retry identity; permission phases do not. */
@@ -213,8 +215,18 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     ? []
     : [checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))];
 
-  const anchorsBefore = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [...new Set([
-    ...taskAnchorIndices(messages), ...(checkpoint?.preservedIndices ?? []),
+  const taskAnchors = (messages: readonly AgentMessage[]): number[] => {
+    if (options.currentTask === undefined) return taskAnchorIndices(messages);
+    const current = messages.findLastIndex(message => {
+      if (message.role !== "user") return false;
+      const text = typeof message.content === "string" ? message.content
+        : message.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+      return text === options.currentTask;
+    });
+    return current < 0 ? [] : [current];
+  };
+  const anchorsBefore = (messages: readonly AgentMessage[], cut: number, retainCheckpointAnchors = true): AgentMessage[] => [...new Set([
+    ...taskAnchors(messages), ...(retainCheckpointAnchors ? checkpoint?.preservedIndices ?? [] : []),
   ])].sort((left, right) => left - right)
     .filter(index => index < cut).map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
   const assemble = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [
@@ -258,8 +270,10 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     let request = assemble(messages,covered),omittedChars = 0,omitted = 0;
     for (let start = target; start <= latestExchange; start += 1) {
       if (messages[start]?.role === "toolResult") continue;
-      const anchors = anchorsBefore(messages,start),preserved = new Set(anchors);
-      const source = messages.slice(covered,start).filter(message => !preserved.has(message) && !isCheckpointMessage(message));
+      const anchors = anchorsBefore(messages,start,options.currentTask === undefined),preserved = new Set(anchors);
+      const released = options.currentTask === undefined ? [] : (checkpoint?.preservedIndices ?? []).filter(index => index < covered)
+        .map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
+      const source = [...released,...messages.slice(covered,start)].filter(message => !preserved.has(message) && !isCheckpointMessage(message));
       omitted = source.length;
       omittedChars = source.reduce((sum,message) => sum + JSON.stringify(message).length,0);
       request = [...messages.slice(0,floor),...anchors,...summaryMessages(),
@@ -275,7 +289,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     const target = Math.max(from, targetCut(messages, floor));
     const end = cutAt(messages, target, floor + 1);
     if (end === undefined || end <= from) return undefined;
-    const anchors = taskAnchorIndices(messages);
+    const anchors = taskAnchors(messages);
     const released = (checkpoint?.preservedIndices ?? []).filter(index => index < from && !anchors.includes(index))
       .map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
     const capacity = options.model.contextWindow > 0 ? Math.max(1, options.model.contextWindow - (checkpoint?.summary.length ?? 0) - settings.reserveTokens - 4096) : HISTORY_SOFT_TARGET_CHARS;

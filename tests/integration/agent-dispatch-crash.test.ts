@@ -145,10 +145,12 @@ describe("agent dispatch crash recovery", () => {
     }
   });
 
-  it("resumes an acked run whose resident instance survived the crash", async () => {
+  it("preserves native recovery for an acked run whose resident instance survived the crash", async () => {
     const { database, partner, root } = await openFixture();
     try {
       database.transaction((connection) => {
+        connection.prepare("UPDATE partner_revisions SET engine='MANA_SDK', cli_protocol='CODEX'").run();
+        connection.prepare("UPDATE partner_instances SET engine='MANA_SDK', external_session_ref='native-agent:v1:codex:resident-crash'").run();
         connection.prepare("UPDATE outbox SET status = 'DONE' WHERE outbox_id = 'outbox_1'").run();
         connection.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
         connection.prepare(`INSERT INTO workbench_context_snapshots

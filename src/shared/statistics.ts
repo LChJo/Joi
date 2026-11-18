@@ -1,4 +1,4 @@
-export type UsagePurpose = "orchestration" | "routing" | "partner" | "evolution" | "summary" | "probe";
+export type UsagePurpose = "orchestration" | "routing" | "partner" | "evolution" | "summary" | "probe" | "cache_warming";
 export type UsageEngine = "pi" | "codex" | "claude-code" | "a2a";
 export type UsageStatus = "running" | "completed" | "failed" | "canceled" | "interrupted";
 /** Input includes cache reads/writes; output includes reasoning. Breakdowns are subsets. */

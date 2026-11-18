@@ -1,4 +1,6 @@
 {
+  "piAutomaticCompaction": "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。",
+  "piCompactionDefault": "Pi 默认设置",
   "image": "[图片",
   "checkingTheConnectionThisMayIncurASmallModel": "正在检查连接，这可能产生极少量模型费用…",
   "connectedJoiIsReadyToThink": "已连接，joi 可以开始思考了。",

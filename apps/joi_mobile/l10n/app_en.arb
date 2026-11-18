@@ -3376,6 +3376,16 @@
     "description": "No diagnostic failure",
     "placeholders": {}
   },
+  "homePiAutomaticCompaction": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.",
+  "@homePiAutomaticCompaction": {
+    "description": "Explains the automatic compaction trigger",
+    "placeholders": {}
+  },
+  "homePiCompactionDefault": "Pi defaults",
+  "@homePiCompactionDefault": {
+    "description": "Native automatic compaction defaults",
+    "placeholders": {}
+  },
   "homeImage": "[Image",
   "@homeImage": {
     "description": "home: [Image",
@@ -8812,6 +8822,11 @@
   "skillsSaveSkillSelection": "Save skill selection",
   "@skillsSaveSkillSelection": {
     "description": "skills: Save skill selection",
+    "placeholders": {}
+  },
+  "statisticsCacheWarming": "Cache warming",
+  "@statisticsCacheWarming": {
+    "description": "Usage reported by SDK background cache warming",
     "placeholders": {}
   },
   "statisticsEvolution": "Evolution",

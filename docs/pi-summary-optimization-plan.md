@@ -1,5 +1,7 @@
 # Pi 摘要机制复盘与优化方案
 
+> Historical Pi host-policy evidence: [ADR 0035](adr/0035-sdk-owned-pi-sessions.md) now defines SDK ownership. Current behavior and replacement regressions are mapped in [the implementation validation](pi-session-ownership-validation.md). Retained past results do not establish the current runtime policy.
+
 日期：2026-11-12。状态：两批实现与本地质量门禁已完成。初始复盘基于代码/官方契约核对、合成探针与 20 项历史预算基线测试；以下问题描述记录的是优化前行为。真实模型对话复测尚未执行。
 
 ## 问题与证据

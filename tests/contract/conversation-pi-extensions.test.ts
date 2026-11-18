@@ -107,14 +107,11 @@ it.each(["CUSTOM","READ"] as const)("CHAT-31 respects the %s ceiling when extens
   } finally { await f.close(); }
 },30_000);
 
-it("CHAT-33 requests a write lease before starting the local browser and needs no cloud credentials",async () => {
+it("PI-SESSION-08 runs admitted browser capability without an in-turn resource pause",async () => {
   const f = await setup(["read","browser_list_tabs"]);
   const spawn = fakeBrowserProcess();
   f.faux.setResponses([fauxAssistantMessage([fauxToolCall("browser_list_tabs",{})])]);
   try {
-    const paused = await f.run({ piExtensions: ["agent-browser"],workspaceExecution: { accessCeiling: "WRITE",phase: "READ_RUNNING",generation: 1 } });
-    expect(paused.status).toBe("SUSPENDED");
-    expect(spawn).not.toHaveBeenCalled();
     f.faux.setResponses([fauxAssistantMessage([fauxToolCall("browser_list_tabs",{})]),fauxAssistantMessage([fauxText("Local browser inspected")])]);
     const result = await f.run({ actionId: "local-browser-check",workId: "local-browser-check",piExtensions: ["agent-browser"] });
     expect(JSON.stringify(result.messages)).toContain("privateConfig");expect(JSON.stringify(result.messages)).not.toContain("Kernel API key");
@@ -125,7 +122,7 @@ it("CHAT-33 requests a write lease before starting the local browser and needs n
 
 it("CHAT-35 closes the local browser even when parent child settlement fails",async () => {
   const f = await setup(["read","browser_list_tabs"]);const spawn = fakeBrowserProcess();
-  const settle = vi.fn().mockResolvedValueOnce([]).mockImplementation(async () => { throw new Error("Synthetic child settlement failure"); });
+  const settle = vi.fn().mockImplementation(async () => { throw new Error("Synthetic child settlement failure"); });
   f.runtime.setSubagents({ start: async () => { throw new Error("No child expected"); },list: async () => [],cancel: async () => undefined,settle });
   f.faux.setResponses([fauxAssistantMessage([fauxToolCall("browser_list_tabs",{})]),fauxAssistantMessage([fauxText("Done")])]);
   try {

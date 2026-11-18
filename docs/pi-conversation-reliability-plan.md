@@ -1,5 +1,7 @@
 # 对话搭档稳定性与可靠性修复方案
 
+> Historical Pi host-policy evidence: [ADR 0035](adr/0035-sdk-owned-pi-sessions.md) now defines SDK ownership. Current behavior and replacement regressions are mapped in [the implementation validation](pi-session-ownership-validation.md). Retained past results do not establish the current runtime policy.
+
 日期：2026-11-13。状态：已实施，本地质量门禁通过。本文保留修复前的证据边界和设计依据，并以 REL-01–16 约束实现验收。
 
 实施基线为主分支 `3ad74b7`，Pi 三个运行时包均为 `1.5.2`。主干整合基线为 `40a62b2`，同时保留对话重命名、回复实时推送、摘要优化、耗时观测和界面变更。开发和验证在 `20261112-bugfix` 工作树完成，测试使用临时数据和凭据替身。

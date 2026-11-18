@@ -8,6 +8,25 @@ import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.
 import { TestClock } from "../support/runtime-fixture.js";
 
 describe("workspace lease lifecycle", () => {
+  it("coordinates overlapping existing directories while admitting sibling directories and reusing read ownership", async () => {
+    const db = new DatabaseSync(":memory:");
+    db.exec(`CREATE TABLE workbench_workspace_roots(workspace_ref TEXT PRIMARY KEY,root_path TEXT);
+      CREATE TABLE work_run_directories(work_id TEXT PRIMARY KEY,root_path TEXT);
+      CREATE TABLE workspace_leases(workspace_ref TEXT,work_id TEXT,access_mode TEXT,lease_owner TEXT,generation INTEGER,expires_at TEXT,root_key TEXT,PRIMARY KEY(workspace_ref,work_id));
+      INSERT INTO workbench_workspace_roots VALUES ('parent','C:/project'),('docs','C:/project/docs'),('src','C:/project/src'),('separate','C:/project-extra');`);
+    const leases = new SqliteWorkspaceLeaseManager({ clock: new TestClock(),database: { transaction: op => op(db) } });
+    try {
+      const first = await leases.acquire({ accessMode: "READ",workId: "docs-reader",workspaceRef: "docs" });
+      expect(await leases.acquire({ accessMode: "READ",workId: "docs-reader",workspaceRef: "docs" })).toEqual(first);
+      expect(await leases.acquire({ accessMode: "WRITE",workId: "src-writer",workspaceRef: "src" })).not.toBeNull();
+      expect(await leases.acquire({ accessMode: "WRITE",workId: "other-writer",workspaceRef: "separate" })).not.toBeNull();
+      expect(await leases.acquire({ accessMode: "WRITE",workId: "parent-writer",workspaceRef: "parent" })).toBeNull();
+      expect(await leases.acquire({ accessMode: "READ",workId: "parent-reader",workspaceRef: "parent" })).toBeNull();
+      await leases.release("docs-reader");await leases.release("src-writer");
+      expect(await leases.acquire({ accessMode: "WRITE",workId: "parent-writer",workspaceRef: "parent" })).not.toBeNull();
+      expect(await leases.acquire({ accessMode: "READ",workId: "child-reader",workspaceRef: "docs" })).toBeNull();
+    } finally { db.close(); }
+  });
   it("allows writes in distinct managed run directories of the same Workbench", async () => {
     const database = new DatabaseSync(":memory:");
     database.exec(`

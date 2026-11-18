@@ -650,6 +650,23 @@ describe("joi reasoning tools", () => {
     expect((harness.planCalls[0] as { dependencies?: unknown }).dependencies).toEqual([]);
   });
 
+  it.each([
+    { dependsOnKey: "implement", workKey: "review" },
+    { dependsOnKey: "missing-producer", workKey: "review" },
+    { dependsOnKey: "implement", workKey: "missing-review" },
+  ])("preserves the declared execution order for application validation: %j", async dependency => {
+    const harness = makeTools();
+    await harness.call("work_dispatch", {
+      dependencies: [dependency],
+      work: [
+        { key: "implement", title: "改动", partnerId: "partner_1", accessMode: "WRITE", executionNeeds: ["FILE_WRITE"], instructions: "实现改动并交付验证结果。", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+        { key: "review", title: "审查", partnerId: "partner_1", accessMode: "READ", executionNeeds: [], instructions: "审查已完成的改动。", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+      ],
+    });
+    expect(harness.planCalls).toHaveLength(1);
+    expect(harness.planCalls[0]).toMatchObject({ dependencies: [dependency] });
+  });
+
   it("lets joi expand a local partner to all bounded built-in tools", async () => {
     const harness = makeTools();
     await expect(harness.call("partner_set_tools", { partnerId: "partner_1", tools: [] }))
@@ -767,13 +784,16 @@ describe("joi reasoning tools", () => {
     })).resolves.toMatchObject({ attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"] });
   });
 
-  it("treats an unknown historical dependency as a bounded self-correction", async () => {
-    const harness = makeTools({ planError: new DomainError("work_dependency_unknown", "private detail") });
-    const result = await harness.call("work_dispatch", {
+  it.each(["work_dependency_unknown", "work_dependency_cycle", "work_key_duplicate"])("corrects %s once without removing order constraints or asking for a partner", async reasonCode => {
+    const harness = makeTools({ planError: new DomainError(reasonCode, "private detail") });
+    const args = {
       dependencies: [{ dependsOnKey: "historical-work", workKey: "supplement" }],
       work: [{ accessMode: "READ", key: "supplement", partnerId: "partner_1", title: "补充缺失交付物" }],
-    });
-    expect(result).toEqual({ reasonCode: "work_dependency_unknown", status: "RETRY_REQUIRED" });
+    };
+    const correction = await harness.call("work_dispatch", args) as { hint?: unknown };
+    expect(correction).toMatchObject({ reasonCode, status: "RETRY_REQUIRED" });
+    expect(correction.hint).toContain("Preserve the required execution order");
+    await expect(harness.call("work_dispatch", args)).resolves.toEqual({ reasonCode, status: "FAILED" });
     expect(harness.clarificationCalls).toEqual([]);
   });
 

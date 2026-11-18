@@ -40,9 +40,9 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
       const parsed = Number(raw);
       return Number.isFinite(parsed) ? parsed : undefined;
     };
-    const compactionThresholdPercent = numeric("compactionThresholdPercent");
     const contextWindow = numeric("contextWindow");
     const maxOutputTokens = numeric("maxOutputTokens");
+    const compactionThresholdPercent = numeric("compactionThresholdPercent");
     const thinkingEffort = value("thinkingEffort");
     setBusy(true); setNotice(noticeMessage("home.checkingTheConnectionThisMayIncurASmallModel"));
     try {
@@ -51,9 +51,9 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         apiKey: value("apiKey"),
         kind: selected,
         protocol: selectedProtocol,
-        ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
         ...(contextWindow === undefined ? {} : { contextWindow }),
         ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+        ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
         ...(thinkingEffort === "" ? {} : { thinkingEffort: thinkingEffort as ThinkingEffort }),
         ...(selected === "generic-openai" ? {
           baseUrl: value("baseUrl"), displayName: value("displayName"), modelId: value("modelId"),
@@ -118,7 +118,8 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         <p className="model-source-hint">{t("home.leaveBlankForRecommendedValuesChooseContextAndOutput")}</p>
         <label>{t("home.contextWindowTokens")}<select defaultValue={1_000_000} name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS)}</select></label>
         <label>{t("home.maximumOutputTokens")}<select defaultValue={131_072} name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS)}</select></label>
-        <label>{t("home.contextWindowUsagePercentageThatTriggersCompaction")}<select defaultValue="" name="compactionThresholdPercent">{limitOptions(COMPACTION_TIERS, undefined, "%")}</select></label>
+        <p className="model-source-hint">{t("home.piAutomaticCompaction")}</p>
+        <label>{t("home.compactionThresholdWindowPercentage")}<input min={50} max={95} step={1} name="compactionThresholdPercent" type="number" placeholder={t("home.piCompactionDefault")} /></label>
         <label>{t("home.thinkingEffort")}<select defaultValue="" name="thinkingEffort">
             <option value="">{t("home.defaultChosenByJoi")}</option>
             {thinkingEffortOptions()}
@@ -223,16 +224,6 @@ const MAX_OUTPUT_TIERS: readonly LimitTier[] = [
   { label: "4K", value: 4_096 },
 ];
 
-const COMPACTION_TIERS: readonly LimitTier[] = [
-  { label: "50%", value: 50 },
-  { label: "60%", value: 60 },
-  { label: "70%", value: 70 },
-  { label: "75%", value: 75 },
-  { label: "80%", value: 80 },
-  { get label() { return t("home.message85Recommended"); }, value: 85 },
-  { label: "90%", value: 90 },
-  { label: "95%", value: 95 },
-];
 
 /**
  * A tier list as options, preceded by the source's own figure whenever the tiers do not name it.
@@ -309,9 +300,9 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     const body = {
       ...(apiKey === "" ? {} : { apiKey }),
       modelId: field("modelId"),
-      ...numericPatch("compactionThresholdPercent", "compactionThresholdPercent"),
       ...numericPatch("contextWindow", "contextWindow"),
       ...numericPatch("maxOutputTokens", "maxOutputTokens"),
+      ...numericPatch("compactionThresholdPercent", "compactionThresholdPercent"),
       // Same explicit-clear shape as the numeric fields: the revision is append-only, so an
       // emptied select has to reach the service as null to mean "back to joi's own judgement".
       ...(thinkingEffort === "" ? { thinkingEffort: null } : { thinkingEffort }),
@@ -345,10 +336,10 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>
         <details className="model-source-advanced">
           <summary>{t("home.advancedSettings")}</summary>
-          <p className="model-source-hint">{t("home.chooseTheRecommendedDefaultToResetThisValueCompaction")}</p>
+          <p className="model-source-hint">{t("home.piAutomaticCompaction")}</p>
           <label>{t("home.contextWindowTokens")}<select defaultValue={source.activeModel.contextWindow ?? ""} name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS, source.activeModel.contextWindow)}</select></label>
           <label>{t("home.maximumOutputTokens")}<select defaultValue={source.activeModel.maxOutputTokens ?? ""} name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS, source.activeModel.maxOutputTokens)}</select></label>
-          <label>{t("home.compactionThresholdWindowPercentage")}<select defaultValue={source.activeModel.compactionThresholdPercent ?? ""} name="compactionThresholdPercent">{limitOptions(COMPACTION_TIERS, source.activeModel.compactionThresholdPercent, "%")}</select></label>
+          <label>{t("home.compactionThresholdWindowPercentage")}<input defaultValue={source.activeModel.compactionThresholdPercent ?? ""} min={50} max={95} step={1} name="compactionThresholdPercent" type="number" placeholder={t("home.piCompactionDefault")} /></label>
           <label>{t("home.thinkingEffort")}<select defaultValue={source.activeModel.thinkingEffort ?? ""} name="thinkingEffort">
               <option value="">{t("home.defaultChosenByJoi")}</option>
               {thinkingEffortOptions()}
@@ -679,8 +670,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
     return () => clearTimeout(timer);
   }, [loadMore, page]);
   const trailing = page?.items.at(-1);
-  // pi executes tools sequentially, so a trailing TOOL_CALL with no result after it is the
-  // one running now. The RUNNING gate keeps a crashed run's dangling call from claiming life.
+  // Only a trailing unmatched tool call in a RUNNING session receives live styling.
   const runningEntryId = page?.agent.status === "RUNNING" && trailing?.kind === "TOOL_CALL" ? trailing.entryId : undefined;
   // Grouping walks the whole page, and the poll timer re-renders this component even when the
   // page came back unchanged, so the derivation is memoized on the item list.
@@ -1085,8 +1075,8 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
 function agentExecutionLabel(agent: Pick<WorkbenchAgentCardDto, "executionPhase" | "waitReason" | "resultAssessment"> & { status: string }): string {
   if (agent.status === "FAILED" && agent.resultAssessment === "INSUFFICIENT") return t("home.insufficient");
   if (agent.waitReason === "CAPACITY") return t("home.waitingForExecutionCapacity");
+  if (agent.waitReason === "WORKSPACE_WRITE" || agent.executionPhase === "WRITE_QUEUED") return t("home.waitingToWrite");
   if (agent.executionPhase === "READ_QUEUED") return t("home.waitingForWorkspaceReadAccess");
-  if (agent.executionPhase === "WRITE_QUEUED") return t("home.waitingToWrite");
   if (agent.executionPhase === "READ_RUNNING") return t("home.analyzing");
   if (agent.executionPhase === "WRITE_RUNNING") return t("home.writing");
   return agent.status;

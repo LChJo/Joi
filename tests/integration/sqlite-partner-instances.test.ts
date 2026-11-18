@@ -46,7 +46,7 @@ describe("SQLite partner instances", () => {
       expect(await messages.load("instance_resident")).toEqual([{ content: "hello", role: "user" }, { content: "hi", role: "assistant" }]);
 
       database.transaction((connection) => connection.prepare(
-        "INSERT INTO partner_instance_messages (message_id, instance_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO partner_message_projections (message_id, instance_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?)",
       ).run("corrupt_row", "instance_resident", 5, "{not json", "2026-07-29T10:07:00.000Z"));
       expect(await messages.load("instance_resident")).toHaveLength(2);
 

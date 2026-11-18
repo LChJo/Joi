@@ -1,4 +1,6 @@
 {
+  "piAutomaticCompaction": { "message": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.", "description": "Explains the automatic compaction trigger" },
+  "piCompactionDefault": { "message": "Pi defaults", "description": "Native automatic compaction defaults" },
   "image": {
     "message": "[Image",
     "description": "home: [Image",

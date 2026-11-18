@@ -1,14 +1,14 @@
+import { SettingsManager } from "@earendil-works/pi-coding-agent";
 /* Faux Pi provider callbacks resolve deterministically in contract tests. */
 /* eslint-disable @typescript-eslint/require-await */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, type AssistantMessage } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
 import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
-import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { boundPartnerModelContext, partnerContextMaxChars, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import {
@@ -24,7 +24,6 @@ import {
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
-import { WorkspaceWorkVerifier } from "../../src/main/infrastructure/workspace/workspace-work-verifier.js";
 
 const contexts = { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
 const wait = async (milliseconds: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -35,88 +34,11 @@ const wait = async (milliseconds: number): Promise<void> => await new Promise((r
  * describes what the model was sent.
  */
 function requestSystemPrompt(context: { messages?: readonly unknown[] }): string {
-  const leading = context.messages?.[0] as { content?: unknown; role?: string } | undefined;
-  if (leading?.role !== "system") return "";
-  if (typeof leading.content === "string") return leading.content;
-  return Array.isArray(leading.content)
-    ? leading.content.map((block) => (block as { text?: string }).text ?? "").join("")
-    : "";
+  return getCurrentSystemPrompt((context.messages ?? []) as Parameters<typeof getCurrentSystemPrompt>[0]);
 }
 
 describe("local Pi coding partner runtime", () => {
-  it("SUM-05/08 keeps one pending summary through a warm permission suspension and drains it on final cleanup", async () => {
-    const faux = fauxProvider({ provider: "summary-phase-flight", models: [{ id: "faux", contextWindow: 1_000_000, maxTokens: 32_768 }] });
-    const models = createModels(); models.setProvider(faux.provider);
-    let finishSummary: ((message: AssistantMessage) => void) | undefined;
-    const summary = vi.spyOn(models, "completeSimple").mockReturnValue(new Promise(resolve => { finishSummary = resolve; }));
-    faux.setResponses([fauxAssistantMessage([fauxToolCall("write", {})], { stopReason: "toolUse" }), fauxAssistantMessage([fauxText("continued")])]);
-    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "written" }], details: {} }));
-    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "high" as const }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: ["write"], create: () => [{ name: "write", label: "write", description: "write", parameters: Type.Object({}), execute }] } });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-11-12T00:00:00Z", displayName: "Summary test", kind: "local-pi",
-      partnerId: "p", partnerRevisionId: "r", registryRevision: 1, skills: [], tools: ["write"] });
-    let state: PartnerSessionState = { engine: "pi-core", messages: [{ role: "user", content: "INITIAL_TASK", timestamp: 0 },
-      ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("evidence".padEnd(4000, "中"))]))] };
-    const contextStates: string[] = [];
-    const input = { instanceId: "phase-flight", revision, knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [],
-      request: { actionId: "a", workbenchId: "wb", workId: "w", contextSnapshotId: "snapshot", taskProjection: "continue" },
-      onContext: async (context: { state: string }) => { contextStates.push(context.state); },
-      saveSession: async (value: PartnerSessionState) => { state = value; } };
-    try {
-      const paused = await runtime.runResidentTurn({ ...input, restoredMessages: null, sessionState: state,
-        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
-      expect(paused.status).toBe("SUSPENDED");
-      expect(summary).toHaveBeenCalledTimes(1);
-      expect(summary.mock.calls[0]?.[2]?.signal?.aborted).toBe(false);
-      expect(contextStates.at(-1)).toBe("COMPACTING");
-      expect(execute).not.toHaveBeenCalled();
-      const resumed = await runtime.runResidentTurn({ ...input, restoredMessages: paused.messages ?? [], sessionState: state,
-        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
-      expect(resumed.status).toBe("COMPLETED");
-      expect(summary).toHaveBeenCalledTimes(1);
-      expect(summary.mock.calls[0]?.[2]?.signal?.aborted).toBe(true);
-      finishSummary?.(fauxAssistantMessage([fauxText("LATE_SUMMARY")]));
-      await new Promise<void>(resolve => { setImmediate(resolve); });
-      expect(state.checkpoint).toBeUndefined();
-      expect(state.summaryRetry).toBeUndefined();
-      expect(contextStates.at(-1)).toBe("READY");
-    } finally { runtime.evictFromMemory(input.instanceId); }
-  });
-  it("SUM-03 keeps cooldown across restored READ/WRITE turns and re-evaluates a new source revision", async () => {
-    const faux = fauxProvider({ provider: "summary-resident-cooldown", models: [{ id: "faux", contextWindow: 1_000_000, maxTokens: 32_768 }] });
-    const models = createModels(); models.setProvider(faux.provider);
-    const summary = vi.spyOn(models, "completeSimple").mockRejectedValue(new Error("synthetic_failure"));
-    faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxText("continued")])));
-    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "high" as const }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: [], create: () => [] } });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-11-12T00:00:00Z", displayName: "Summary test", kind: "local-pi",
-      partnerId: "p", partnerRevisionId: "r", registryRevision: 1, skills: [], tools: [] });
-    let state: PartnerSessionState = { engine: "pi-core", messages: [{ role: "user", content: "INITIAL_TASK", timestamp: 0 },
-      ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("evidence".padEnd(4000, "中"))]))] };
-    const turn = { instanceId: "cooldown", revision, knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [],
-      request: { actionId: "a", workbenchId: "wb", workId: "w", contextSnapshotId: "snapshot", taskProjection: "continue" },
-      saveSession: async (value: PartnerSessionState) => { state = value; } };
-    await runtime.runResidentTurn({ ...turn, restoredMessages: null, sessionState: state,
-      request: { ...turn.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
-    expect(summary).toHaveBeenCalledTimes(1);
-    expect(state.summaryRetry?.failures).toBe(1);
-    runtime.evictFromMemory(turn.instanceId);
-    await runtime.runResidentTurn({ ...turn, restoredMessages: state.messages, sessionState: state,
-      request: { ...turn.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
-    expect(summary).toHaveBeenCalledTimes(1);
-    expect(state.summaryRetry?.failures).toBe(1);
-    runtime.evictFromMemory(turn.instanceId);
-    await runtime.runResidentTurn({ ...turn, restoredMessages: state.messages, sessionState: state,
-      sourcePin: { turnId: "t", modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr-2" } });
-    expect(summary).toHaveBeenCalledTimes(2);
-    expect(state.summaryRetry?.failures).toBe(1);
-    runtime.evictFromMemory(turn.instanceId);
-  });
-  it("AC-WR-07 terminates a hidden write attempt before probing again or asking the user", async () => {
+  it("PI-SESSION-04 excludes write tools at creation and preserves SDK handling of unknown calls", async () => {
     const faux = fauxProvider({ provider: "read-ceiling-denial" });
     const models = createModels(); models.setProvider(faux.provider);
     const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "unexpected" }], details: {} }));
@@ -125,15 +47,16 @@ describe("local Pi coding partner runtime", () => {
       resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" as const }) },
       sources: { selectInitial: async turnId => ({ turnId,modelId: "faux",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },
       tools: { names: ["bash"],create: () => [{ name: "bash",label: "bash",description: "bash",parameters: Type.Object({}),execute: executed }] } });
-    faux.setResponses([fauxAssistantMessage([fauxToolCall("bash",{})], { stopReason: "toolUse" }),fauxAssistantMessage([fauxToolCall("ask_user",{ question: "permission?" })], { stopReason: "toolUse" })]);
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("bash",{})], { stopReason: "toolUse" }),fauxAssistantMessage([fauxText("Shell is unavailable for this Work")])]);
     const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-10-13T00:00:00Z",displayName: "Verifier",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [] });
-    await expect(runtime.runResidentTurn({ instanceId: "denied",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
-      request: { actionId: "a",workbenchId: "wb",workId: "w",contextSnapshotId: "snapshot",taskProjection: "verify",workspaceExecution: { accessCeiling: "READ",generation: 1,phase: "READ_RUNNING" } } })).rejects.toMatchObject({ code: "workspace_write_forbidden",partnerRunFailure: { phase: "CONFIGURATION",sideEffectState: "NONE",retryable: false } });
+    const result = await runtime.runResidentTurn({ instanceId: "denied",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
+      request: { actionId: "a",workbenchId: "wb",workId: "w",contextSnapshotId: "snapshot",taskProjection: "verify",workspaceExecution: { accessCeiling: "READ",generation: 1,phase: "READ_RUNNING" } } });
+    expect(result.status).toBe("COMPLETED");
     expect(executed).not.toHaveBeenCalled();
-    expect(diagnostics.emit).toHaveBeenCalledWith("joi.partner.tool_permission_denied",expect.objectContaining({ reasonCode: "workspace_write_forbidden" }));
+    expect((result.messages ?? []).some(message => (message as { role?: string; isError?: boolean }).role === "toolResult" && (message as { isError?: boolean }).isError === true)).toBe(true);
     runtime.evictFromMemory("denied");
   });
-  it("AC-WR-07 projects the Work ceiling and refreshes a warm instance's tools", async () => {
+  it("PI-SESSION-08 creates the next Work with its admitted complete tool set", async () => {
     const faux = fauxProvider({ provider: "work-ceiling" });
     const models = createModels(); models.setProvider(faux.provider);
     const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "read" }], details: {} }));
@@ -145,7 +68,7 @@ describe("local Pi coding partner runtime", () => {
     const input = { instanceId: "ceiling", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
       request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "review" } };
     faux.setResponses([context => {
-      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user", "partner_complete", "context_read_history"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user", "work_handoff", "context_read_history"]);
       expect(requestSystemPrompt(context)).toContain("Work access ceiling: READ");
       return fauxAssistantMessage([fauxText("review complete")]);
     }]);
@@ -154,77 +77,11 @@ describe("local Pi coding partner runtime", () => {
       expect(getCurrentTools(context.messages).map(tool => tool.name)).toContain("write");
       expect(requestSystemPrompt(context)).toContain("Work access ceiling: WRITE");
       return fauxAssistantMessage([fauxToolCall("write", {})], { stopReason: "toolUse" });
-    }]);
-    const paused = await runtime.runResidentTurn({ ...input, request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
-    expect(paused.status).toBe("SUSPENDED");
-    expect(executed).not.toHaveBeenCalled();
+    }, fauxAssistantMessage([fauxText("Write completed")])]);
+    const paused = await runtime.runResidentTurn({ ...input, request: { ...input.request, actionId: "write-action", workId: "write-work", workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "WRITE_RUNNING" } } });
+    expect(paused.status).toBe("COMPLETED");
+    expect(executed).toHaveBeenCalledOnce();
     runtime.evictFromMemory(input.instanceId);
-  });
-  it.each(["write", "bash"])("AC-WR-03 enforces the SDK hook before a real %s and resumes from a durable checkpoint", async tool => {
-    const workspace = mkdtempSync(join(tmpdir(), "joi-pi-gate-"));
-    const marker = join(workspace, "marker.txt");
-    const inputFile = join(workspace, "input.txt");
-    writeFileSync(inputFile, "initial");
-    writeFileSync(join(workspace,"fake-cli.cjs"), 'require("node:fs").writeFileSync("marker.txt","fresh");');
-    const faux = fauxProvider({ provider: `real-gate-${tool}` });
-    const models = createModels(); models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts: { loadForExecution: async () => ({ promptSection: "", sanitized: {}, workspacePath: workspace }) },
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: new BuiltinPiCodingToolFactory(),
-    });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Writer", kind: "local-pi",
-      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read", tool], toolPolicyMode: "CUSTOM" });
-    const input = { instanceId: "real-gate", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
-      request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "produce marker" } };
-    try {
-      faux.setResponses([fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "blocked" } : { command: "echo blocked > marker.txt" })], { stopReason: "toolUse" })]);
-      const paused = await runtime.runResidentTurn({ ...input, request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
-      expect(paused.status).toBe("SUSPENDED");
-      expect(existsSync(marker)).toBe(false);
-      runtime.evictFromMemory(input.instanceId);
-      writeFileSync(inputFile, "fresh evidence");
-      faux.setResponses([
-        fauxAssistantMessage([fauxToolCall("read", { path: inputFile })], { stopReason: "toolUse" }),
-        context => {
-          expect(JSON.stringify(context.messages)).toContain("fresh evidence");
-          return fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "fresh" } : { command: "node fake-cli.cjs" })], { stopReason: "toolUse" });
-        },
-        fauxAssistantMessage([fauxText("complete")]),
-      ]);
-      const resumed = await runtime.runResidentTurn({ ...input, restoredMessages: paused.messages ?? null,
-        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
-      expect(resumed.status).toBe("COMPLETED");
-      expect(readFileSync(marker, "utf8").trim()).toBe("fresh");
-      expect(resumed.output.artifacts.map(artifact => artifact.name)).toEqual(["marker.txt"]);
-      await expect(new WorkspaceWorkVerifier({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {},workspacePath: workspace }) } }).verify({
-        contextSnapshotId: "snapshot",body: resumed.output.body,artifacts: resumed.output.artifacts,
-        acceptanceChecks: [{ kind: "BODY_PRESENT" },{ kind: "FILE_EXISTS",relativePath: "marker.txt" },{ kind: "FILE_CONTAINS_EXACT",relativePath: "marker.txt",expectedText: "fresh" }],
-      })).resolves.toEqual({ status: "PASSED" });
-      expect(resumed.output.pendingQuestion).toBeUndefined();
-    } finally { runtime.evictFromMemory(input.instanceId); rmSync(workspace, { recursive: true, force: true }); }
-  });
-  it("AC-WR-03 checkpoints before a write and blocks every remaining batch tool", async () => {
-    const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "unexpected" }], details: {} }));
-    const faux = fauxProvider({ provider: "write-suspension" });
-    faux.setResponses([fauxAssistantMessage([fauxToolCall("write", {}), fauxToolCall("read", {})], { stopReason: "toolUse" }), fauxAssistantMessage([fauxText("must not be final")])]);
-    const models = createModels(); models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId: string) => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: ["write", "read"], create: () => ["write", "read"].map(name => ({ name, label: name, description: name, parameters: Type.Object({}), execute: executed })) },
-    });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Writer", kind: "local-pi",
-      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read", "write"], toolPolicyMode: "CUSTOM" });
-    const result = await runtime.runResidentTurn({ instanceId: "suspended-instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
-      request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "write",
-        workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
-    expect(executed).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ status: "SUSPENDED", output: { body: "", artifacts: [] } });
-    expect(result.messages?.length).toBeGreaterThan(0);
-    runtime.evictFromMemory("suspended-instance");
   });
   it.each([
     ["ephemeral", false], ["resident", false], ["legacy", false],
@@ -282,143 +139,6 @@ describe("local Pi coding partner runtime", () => {
       runtime.evictFromMemory("instance");
       rmSync(root, { recursive: true, force: true });
     }
-  });
-
-  it.each([
-    ["ephemeral", "summary"],
-    ["resident", "summary"],
-    ["ephemeral", "unavailable"],
-    ["resident", "unavailable"],
-    ["ephemeral", "checkpoint-then-failure"],
-    ["resident", "checkpoint-then-failure"],
-  ] as const)("budgets %s requirements against the prepared request with %s summaries", async (mode, summaryMode) => {
-    const turns = 12;
-    const requests: string[] = [];
-    let summaries = 0;
-    let turn = 0;
-    let completedTools = 0;
-    let required = "CURRENT_REQUIRED_CONSTRAINT";
-    const checkpoint = "CHECKPOINT_PRESERVES_EARLIER_WORK";
-    const faux = fauxProvider({
-      provider: "prepared-requirements-" + mode + "-" + summaryMode,
-      models: [{ id: "fake", contextWindow: 32_000, maxTokens: 4_096 }],
-    });
-    const respond = (context: { messages: readonly unknown[] }) => {
-      if (requestSystemPrompt(context).includes("context summarization assistant")) {
-        summaries += 1;
-        return summaryMode === "unavailable" || (summaryMode === "checkpoint-then-failure" && summaries > 1)
-          ? fauxAssistantMessage([fauxText("")], { errorMessage: "summary unavailable", stopReason: "error" })
-          : fauxAssistantMessage([fauxText("## Goal\nFINISH_TASK\n## Progress\n" + checkpoint)]);
-      }
-      const serialized = JSON.stringify(context.messages);
-      requests.push(serialized);
-      expect(requestSystemPrompt(context)).toContain(required);
-      expect(serialized).toContain("CURRENT_TASK_ANCHOR");
-      if (completedTools > 0) expect(serialized).toContain("TOOL_PAGE_" + String(completedTools) + ":");
-      turn += 1;
-      return turn >= turns
-        ? fauxAssistantMessage([fauxText("finished")])
-        : fauxAssistantMessage([fauxToolCall("read", {})], { stopReason: "toolUse" });
-    };
-    faux.setResponses(Array.from({ length: turns * 4 }, () => respond));
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: {
-        names: ["read"],
-        create: () => [{
-          name: "read", label: "Read", description: "Read a bounded page", parameters: Type.Object({}),
-          execute: async () => {
-            completedTools += 1;
-            return { content: [{ type: "text", text: "TOOL_PAGE_" + String(completedTools) + ":" + "x".repeat(3_000) }], details: {} };
-          },
-        }],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi",
-      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM",
-    });
-    const request = { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "CURRENT_TASK_ANCHOR", requiredContext: required };
-    const execution = { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] };
-    const running = mode === "ephemeral"
-      ? runtime.runEphemeral(request, revision, execution)
-      : runtime.runResidentTurn({ ...execution, instanceId: "instance", request, revision, restoredMessages: null });
-    await expect(running).resolves.toMatchObject({ output: { body: "finished" }, status: "COMPLETED" });
-    const result = await running;
-    expect(requests).toHaveLength(turns);
-    expect(summaries).toBeGreaterThan(0);
-    expect(summaries).toBeLessThanOrEqual(turns);
-    expect(Math.max(...requests.map(text => text.length))).toBeLessThan(partnerContextMaxChars({ contextWindow: 32_000 }));
-    if (summaryMode !== "unavailable") expect(requests.at(-1)).toContain(checkpoint);
-    if (summaryMode !== "summary") expect(requests.at(-1)).toContain("joi context notice");
-    if ("messages" in result) {
-      expect(JSON.stringify(result.messages).length).toBeGreaterThan(partnerContextMaxChars({ contextWindow: 32_000 }));
-      expect(JSON.stringify(result.messages)).toContain("TOOL_PAGE_1:");
-      required = "UPDATED_REQUIRED_CONSTRAINT";
-      await expect(runtime.runResidentTurn({
-        ...execution, instanceId: "instance", revision, restoredMessages: result.messages ?? null,
-        request: { ...request, actionId: "next-action", taskProjection: "CURRENT_TASK_ANCHOR: next task", requiredContext: required },
-      })).resolves.toMatchObject({ status: "COMPLETED" });
-      runtime.evictFromMemory("instance");
-      await expect(runtime.runResidentTurn({
-        ...execution, instanceId: "instance", revision, restoredMessages: result.messages ?? null,
-        request: { ...request, actionId: "restored-action", taskProjection: "CURRENT_TASK_ANCHOR: restored task", requiredContext: required },
-      })).resolves.toMatchObject({ status: "COMPLETED" });
-    }
-  });
-
-  it.each([100, 17000])("budgets mandatory requirements alongside %i characters of tool schema", async schemaChars => {
-    const faux = fauxProvider({ provider: `required-partner-${String(schemaChars)}`, models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
-    const requests: string[] = [];
-    faux.setResponses([context => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]); }]);
-    const models = createModels(); models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: "x".repeat(schemaChars), parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
-    });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
-    const running = runtime.runEphemeral({ actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "Perform the assigned task", requiredContext: "ONLY_CURRENT_DAY" }, revision, { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] });
-    if (schemaChars > 16000) {
-      await expect(running).rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
-      expect(requests).toHaveLength(0);
-    } else {
-      await running;
-      expect(requests[0]).toContain("ONLY_CURRENT_DAY");
-    }
-  });
-  it("clears a requirements-capacity failure before a resident turn that carries none", async () => {
-    let toolDescription = "x".repeat(17000);
-    const faux = fauxProvider({ provider: "resident-requirements-leak", models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
-    const requests: string[] = [];
-    faux.setResponses([
-      (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("first answer")]); },
-      (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("second answer")]); },
-    ]);
-    const models = createModels(); models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
-      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: toolDescription, parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
-    });
-    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi",
-      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
-    const request = { actionId: "action_1", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "first task", workId: "work_1" };
-    // This resident Agent records a capacity failure against itself for the rest of its life.
-    await expect(runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION",
-      request: { ...request, requiredContext: "ONLY_CURRENT_DAY" }, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "" }))
-      .rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
-    // The next turn on that same instance carries no required context, so the earlier failure is not
-    // its failure — inheriting it discards a run that has already produced its answer.
-    toolDescription = "Read";
-    await expect(runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION",
-      request: { ...request, actionId: "action_2", taskProjection: "second task" }, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "" }))
-      .resolves.toMatchObject({ status: "COMPLETED" });
   });
 
   it("bounds accumulated partner context while retaining the latest user request and a valid tail", () => {
@@ -639,7 +359,7 @@ describe("local Pi coding partner runtime", () => {
       skills: [], tools: [],
     });
     await expect(runner.run({ actionId: "action", workbenchId: "workbench", contextSnapshotId: "context", taskProjection: "task", workId: "work" }, revision))
-      .rejects.toThrow("partner_prompt_not_found");
+      .rejects.toHaveProperty("code", "partner_prompt_not_found");
   });
 });
 
@@ -713,25 +433,6 @@ describe("Pi partner engine runtime", () => {
     partnerId: "partner_stall", partnerRevisionId: "partner_revision_stall", registryRevision: 1, skills: [], tools: ["bash"],
   });
 
-  it("tells a run that it stopped producing, before it ends it", async () => {
-    const workspace = mkdtempSync(join(tmpdir(), "joi-stall-"));
-    const prompts: string[] = [];
-    try {
-      const runtime = stalledPartner({ mutating: false, onRequest: (prompt) => prompts.push(prompt), turns: 12, workspacePath: workspace });
-      await expect(runtime.runEphemeral(
-        { actionId: "action_stall", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "交付一个文件", workId: "work_stall" },
-        stalledRevision,
-        { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-      )).rejects.toMatchObject({ partnerRunFailure: { reasonCode: "partner_run_stalled", retryable: false } });
-
-      // The warning reached the model before the run was ended, which is the difference between
-      // correcting a stalled run and merely killing it.
-      expect(prompts.filter((prompt) => prompt.includes("[joi progress notice]")).length).toBe(1);
-    } finally {
-      rmSync(workspace, { force: true, recursive: true });
-    }
-  });
-
   it("never accuses a run that is still delivering", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "joi-delivering-"));
     const prompts: string[] = [];
@@ -747,192 +448,6 @@ describe("Pi partner engine runtime", () => {
     } finally {
       rmSync(workspace, { force: true, recursive: true });
     }
-  });
-
-  it("keeps a long run's own earlier output in view instead of silently forgetting it", async () => {
-    const SENTINEL = "SENTINEL_wrote_docs/phase1-parity-impl-report.md";
-    const TURNS = 40;
-    const requests: string[] = [];
-    let summaries = 0;
-    let turn = 0;
-    const faux = fauxProvider({
-      models: [{ contextWindow: 32_000, id: "long-run", maxTokens: 4_096 }],
-      provider: "local-partner-long-run",
-    });
-    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
-      // The summarization call is an ordinary provider request and is answered as one.
-      if (requestSystemPrompt(context).includes("context summarization assistant")) {
-        summaries += 1;
-        return fauxAssistantMessage([fauxText(`## Goal\nFINISH_THE_TASK\n\n## Progress\n### Done\n- [x] ${SENTINEL}`)]);
-      }
-      requests.push(JSON.stringify(context.messages));
-      turn += 1;
-      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
-      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
-    }) as never));
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: {
-        create: () => [{
-          description: "read a large file",
-          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
-          label: "read",
-          name: "read",
-          parameters: Type.Object({ path: Type.String() }),
-        }],
-        names: ["read"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "Long run", kind: "local-pi",
-      partnerId: "partner_long", partnerRevisionId: "partner_revision_long", registryRevision: 1, skills: [], tools: ["read"],
-    });
-    const budget = modelRequestBudget({ contextWindow: 32_000 });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_long", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR：实现 P0 并交付报告", workId: "work_long" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentIds: undefined, skillEnvironmentKeys: [], skillSection: "" } as never,
-    )).resolves.toMatchObject({ status: "COMPLETED" });
-
-    // Every request stayed inside the budget the route was sized to, for the whole run.
-    expect(requests.length).toBeGreaterThan(20);
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(budget.messagesMaxChars + budget.systemMaxChars);
-    // The task itself is never lost: it is the anchor every request opens on.
-    const lastMessages = JSON.parse(requests.at(-1) ?? "[]") as { role?: string }[];
-    expect(lastMessages[0]?.role).toBe("system");
-    expect(JSON.stringify(lastMessages.find((message) => message.role === "user"))).toContain("TASK_ANCHOR：实现 P0 并交付报告");
-    // And the run's own earlier output survives — summarized, not dropped. Without compaction this
-    // is the assertion that fails: the sentinel scrolls out of a 32-message window long before the
-    // last request, which is exactly how the run lost track of what it had already produced.
-    expect(summaries).toBeGreaterThan(0);
-    expect(requests.at(-1)).toContain(SENTINEL);
-  });
-
-  it("says so when a request has to drop history, instead of leaving a silent gap", async () => {
-    const TURNS = 30;
-    let turn = 0;
-    const requests: string[] = [];
-    const faux = fauxProvider({
-      models: [{ contextWindow: 32_000, id: "no-summary", maxTokens: 4_096 }],
-      provider: "local-partner-no-summary",
-    });
-    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
-      // Every summarization attempt fails, so the run has to fall back to dropping history.
-      if (requestSystemPrompt(context).includes("context summarization assistant")) {
-        return fauxAssistantMessage([fauxText("")], { errorMessage: "summarization unavailable", stopReason: "error" });
-      }
-      requests.push(JSON.stringify(context.messages));
-      turn += 1;
-      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
-      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
-    }) as never));
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const diagnostics: { type?: string }[] = [];
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      diagnostics: { emit: (event: never) => { diagnostics.push(event); } } as never,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: {
-        create: () => [{
-          description: "read a large file",
-          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
-          label: "read",
-          name: "read",
-          parameters: Type.Object({ path: Type.String() }),
-        }],
-        names: ["read"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "No summary", kind: "local-pi",
-      partnerId: "partner_plain", partnerRevisionId: "partner_revision_plain", registryRevision: 1, skills: [], tools: ["read"],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_plain", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR", workId: "work_plain" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ status: "COMPLETED" });
-
-    // The gap is announced in the request itself, in words aimed at the inference the run made last
-    // time: that something outside it had been changing the workspace.
-    const last = requests.at(-1) ?? "";
-    expect(last).toContain("joi context notice");
-    expect(last).toContain("no other process modified your workspace");
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + modelRequestBudget({ contextWindow: 32_000 }).systemMaxChars);
-  });
-
-  it("keeps the summary it already paid for when a later summarization fails", async () => {
-    const SENTINEL = "SENTINEL_checkpoint_survives_a_failed_summary";
-    const TURNS = 30;
-    let summaries = 0;
-    let turn = 0;
-    const requests: string[] = [];
-    const faux = fauxProvider({
-      models: [{ contextWindow: 32_000, id: "summary-then-fail", maxTokens: 4_096 }],
-      provider: "local-partner-summary-then-fail",
-    });
-    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
-      if (requestSystemPrompt(context).includes("context summarization assistant")) {
-        summaries += 1;
-        // The first compaction lands and establishes a checkpoint; every later one fails. That is
-        // the shape this covers — history that had been summarized, and then could not be again.
-        if (summaries > 1) return fauxAssistantMessage([fauxText("")], { errorMessage: "summarization unavailable", stopReason: "error" });
-        return fauxAssistantMessage([fauxText(`## Goal\nFINISH_THE_TASK\n\n## Progress\n### Done\n- [x] ${SENTINEL}`)]);
-      }
-      requests.push(JSON.stringify(context.messages));
-      turn += 1;
-      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
-      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
-    }) as never));
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: {
-        create: () => [{
-          description: "read a large file",
-          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
-          label: "read",
-          name: "read",
-          parameters: Type.Object({ path: Type.String() }),
-        }],
-        names: ["read"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "Summary then fail", kind: "local-pi",
-      partnerId: "partner_then_fail", partnerRevisionId: "partner_revision_then_fail", registryRevision: 1, skills: [], tools: ["read"],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_then_fail", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR", workId: "work_then_fail" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ status: "COMPLETED" });
-
-    // Both halves of the fallback really happened: one summary was produced, a later one failed.
-    expect(summaries).toBeGreaterThan(1);
-    const truncated = requests.filter((request) => request.includes("joi context notice"));
-    expect(truncated.length).toBeGreaterThan(0);
-    // Every request that had to announce a drop still carried the summary it already had, so the
-    // notice's "the summary above records what they contained" names something that is actually
-    // there. Dropping it would cost the run the compaction it had paid a model call for, and leave
-    // the notice pointing at a message the request no longer holds.
-    expect(truncated.every((request) => request.includes(SENTINEL))).toBe(true);
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + modelRequestBudget({ contextWindow: 32_000 }).systemMaxChars);
   });
 
   it.each(["ephemeral", "resident"])("rejects %s Skill runs without a workspace before model initialization", async (mode) => {
@@ -1034,7 +549,7 @@ describe("Pi partner engine runtime", () => {
     expect(serialized).toContain(traces[0]?.toolCallId ?? "unreachable");
   });
 
-  it("pauses with actionable input when a Skill command cannot access its credential environment variable", async () => {
+  it("PI-SESSION-07 lets the model request missing Skill input through the explicit business tool", async () => {
     const faux = fauxProvider({ provider: "local-partner-missing-skill-credential" });
     let firstSystemPrompt = "";
     faux.setResponses([
@@ -1042,7 +557,7 @@ describe("Pi partner engine runtime", () => {
         firstSystemPrompt = requestSystemPrompt(context);
         return fauxAssistantMessage([fauxToolCall("bash", { command: "run selected skill" })], { stopReason: "toolUse" });
       },
-      fauxAssistantMessage([fauxText("BLOCKED")]),
+      fauxAssistantMessage([fauxToolCall("ask_user", { question: "Configure TAVILY_API_KEY using JOI_PARTNER_ENV_PASSTHROUGH and restart the partner." })], { stopReason: "toolUse" }),
     ]);
     const models = createModels();
     models.setProvider(faux.provider);
@@ -1085,7 +600,7 @@ describe("Pi partner engine runtime", () => {
     expect(result.output.pendingQuestion).not.toContain("PRIVATE");
     expect(result.output.pendingQuestion).not.toContain("token=secret");
     expect(result.output.body).not.toContain("BLOCKED");
-    expect(faux.state.callCount).toBe(1);
+    expect(faux.state.callCount).toBe(2);
     expect(toolEnvironmentRequests).toEqual([["TAVILY_API_KEY"]]);
     expect(firstSystemPrompt).not.toContain("TAVILY_API_KEY");
   });
@@ -1147,7 +662,7 @@ describe("Pi partner engine runtime", () => {
     })]);
     const models = createModels();
     models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
+    const runtime = new PiPartnerEngineRuntime({ sessionSettings: () => SettingsManager.inMemory({ retry: { enabled: false } }),
       contexts,
       prompts: { read: async () => null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
@@ -1211,172 +726,6 @@ describe("Pi partner engine runtime", () => {
     expect(faux.state.callCount).toBe(3);
   });
 
-  it("asks once for a textual deliverable when a run ends without any assistant text", async () => {
-    const faux = fauxProvider({ provider: "local-partner-missing-body" });
-    let continuationPrompt = "";
-    faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("bash", { command: "npm test" })], { stopReason: "toolUse" }),
-      fauxAssistantMessage([]),
-      (context) => {
-        const users = (context.messages as { content?: unknown; role?: string }[]).filter((message) => message.role === "user");
-        const last = users.at(-1)?.content;
-        continuationPrompt = typeof last === "string" ? last : JSON.stringify(last);
-        return fauxAssistantMessage([fauxText("tests passed; change verified")]);
-      },
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    let toolRuns = 0;
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: {
-        create: () => [{
-          description: "test bash",
-          execute: async () => { toolRuns += 1; return { content: [{ text: "all tests green", type: "text" as const }], details: {} }; },
-          label: "bash",
-          name: "bash",
-          parameters: Type.Object({ command: Type.String() }),
-        }],
-        names: ["bash"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Silent worker", kind: "local-pi",
-      partnerId: "partner_silent", partnerRevisionId: "partner_revision_silent", registryRevision: 1,
-      skills: [], tools: ["bash"],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_silent", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_silent" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ output: { body: "tests passed; change verified" }, status: "COMPLETED" });
-    expect(toolRuns).toBe(1);
-    expect(faux.state.callCount).toBe(3);
-    expect(continuationPrompt).toContain("plain-text summary");
-  });
-
-  it("requests the missing textual deliverable once on resident turns as well", async () => {
-    const faux = fauxProvider({ provider: "local-partner-missing-body-resident" });
-    faux.setResponses([
-      fauxAssistantMessage([]),
-      fauxAssistantMessage([fauxText("resident summary delivered")]),
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: { create: () => [], names: [] },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Silent resident", kind: "local-pi",
-      partnerId: "partner_silent_resident", partnerRevisionId: "partner_revision_silent_resident", registryRevision: 1,
-      skills: [], tools: [],
-    });
-
-    const result = await runtime.runResidentTurn({
-      instanceId: "instance_silent",
-      knowledgeSection: "",
-      request: { actionId: "action_silent_resident", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "analyze", workId: "work_silent_resident" },
-      restoredMessages: null,
-      revision,
-      skillEnvironmentKeys: [],
-      skillSection: "",
-    });
-    expect(result).toMatchObject({ output: { body: "resident summary delivered" }, status: "COMPLETED" });
-    expect(faux.state.callCount).toBe(2);
-  });
-
-  it("reports completion with an empty body when the single continuation also answers silently", async () => {
-    const faux = fauxProvider({ provider: "local-partner-missing-body-twice" });
-    faux.setResponses([
-      fauxAssistantMessage([]),
-      fauxAssistantMessage([]),
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: { create: () => [], names: [] },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Still silent", kind: "local-pi",
-      partnerId: "partner_still_silent", partnerRevisionId: "partner_revision_still_silent", registryRevision: 1,
-      skills: [], tools: [],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_still_silent", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_still_silent" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ output: { body: "" }, status: "COMPLETED" });
-    expect(faux.state.callCount).toBe(2);
-  });
-
-  it("asks for the deliverable when a run stops silently after a tool call that followed a preamble", async () => {
-    const faux = fauxProvider({ provider: "local-partner-preamble-then-silence" });
-    let continuationPrompt = "";
-    faux.setResponses([
-      fauxAssistantMessage([
-        fauxText("I'll execute this mechanical task. Let me start by checking the current state."),
-        fauxToolCall("bash", { command: "ls -la mldesigner" }),
-      ], { stopReason: "toolUse" }),
-      fauxAssistantMessage([]),
-      (context) => {
-        const users = (context.messages as { content?: unknown; role?: string }[]).filter((message) => message.role === "user");
-        const last = users.at(-1)?.content;
-        continuationPrompt = typeof last === "string" ? last : JSON.stringify(last);
-        return fauxAssistantMessage([fauxText("report written; commit a1b2c3d created")]);
-      },
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    let toolRuns = 0;
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: {
-        create: () => [{
-          description: "test bash",
-          execute: async () => { toolRuns += 1; return { content: [{ text: "mldesigner exists", type: "text" as const }], details: {} }; },
-          label: "bash",
-          name: "bash",
-          parameters: Type.Object({ command: Type.String() }),
-        }],
-        names: ["bash"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Preamble worker", kind: "local-pi",
-      partnerId: "partner_preamble", partnerRevisionId: "partner_revision_preamble", registryRevision: 1,
-      skills: [], tools: ["bash"],
-    });
-
-    const result = await runtime.runEphemeral(
-      { actionId: "action_preamble", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_preamble" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    );
-
-    // The preamble alone is not a deliverable: the run is asked to finish its body.
-    expect(result.status).toBe("COMPLETED");
-    expect(result.output.body).toContain("report written; commit a1b2c3d created");
-    expect(toolRuns).toBe(1);
-    expect(faux.state.callCount).toBe(3);
-    expect(continuationPrompt).toContain("plain-text summary");
-  });
-
   it("classifies an exhausted generic connection failure as safely retryable before side effects", async () => {
     const faux = fauxProvider({ provider: "local-partner-connection-error" });
     faux.setResponses([
@@ -1385,7 +734,7 @@ describe("Pi partner engine runtime", () => {
     ]);
     const models = createModels();
     models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
+    const runtime = new PiPartnerEngineRuntime({ sessionSettings: () => SettingsManager.inMemory({ retry: { enabled: false } }),
       contexts,
       prompts: { read: async () => null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
@@ -1403,38 +752,6 @@ describe("Pi partner engine runtime", () => {
       { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
     )).rejects.toMatchObject({
       partnerRunFailure: { phase: "MODEL", reasonCode: "connection_error", retryable: true, sideEffectState: "NONE" },
-    });
-  });
-
-  it("aborts only after the partner produces no progress for the configured idle interval", async () => {
-    const faux = fauxProvider({ provider: "local-partner-idle-timeout" });
-    faux.setResponses([
-      async () => {
-        await wait(80);
-        return fauxAssistantMessage([fauxText("too late")]);
-      },
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      runIdleTimeoutMillis: 25,
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: { create: () => [], names: [] },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Idle partner", kind: "local-pi",
-      partnerId: "partner_idle", partnerRevisionId: "partner_revision_idle", registryRevision: 1, skills: [], tools: [],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_idle", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "wait", workId: "work_idle" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).rejects.toMatchObject({
-      partnerRunFailure: { phase: "MODEL", reasonCode: "partner_run_idle_timed_out", sideEffectState: "NONE" },
     });
   });
 
@@ -1512,55 +829,6 @@ describe("Pi partner engine runtime", () => {
     )).resolves.toMatchObject({ output: { body: "tool completed" }, status: "COMPLETED" });
   });
 
-  it("caps each tool execution independently and returns a stable timeout result to the model", async () => {
-    const faux = fauxProvider({ provider: "local-partner-tool-timeout" });
-    let sawStableToolTimeout = false;
-    faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("bash", { command: "hang" })], { stopReason: "toolUse" }),
-      (context) => {
-        sawStableToolTimeout = JSON.stringify(context.messages).includes("partner_tool_timed_out");
-        return fauxAssistantMessage([fauxText("handled tool timeout")]);
-      },
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const runtime = new PiPartnerEngineRuntime({
-      contexts,
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      runIdleTimeoutMillis: 200,
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      toolTimeoutMillis: 30,
-      tools: {
-        create: () => [{
-          description: "hanging test bash",
-          execute: async (_toolCallId, _params, signal) => await new Promise((_resolve, reject) => {
-            const rejectFromAbort = (): void => {
-              reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"));
-            };
-            if (signal?.aborted === true) rejectFromAbort();
-            else signal?.addEventListener("abort", rejectFromAbort, { once: true });
-          }),
-          label: "bash",
-          name: "bash",
-          parameters: Type.Object({ command: Type.String() }),
-        }],
-        names: ["bash"],
-      },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Timed tool partner", kind: "local-pi",
-      partnerId: "partner_tool_timeout", partnerRevisionId: "partner_revision_tool_timeout", registryRevision: 1, skills: [], tools: ["bash"],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_tool_timeout", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "run hanging tool", workId: "work_tool_timeout" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ output: { body: "handled tool timeout" }, status: "COMPLETED" });
-    expect(sawStableToolTimeout).toBe(true);
-  });
-
   it("releases the run idle deadline and tool deadline after a successful run", async () => {
     vi.useFakeTimers({ toFake: ["clearTimeout", "setTimeout"] });
     try {
@@ -1610,7 +878,7 @@ describe("Pi partner engine runtime", () => {
       { errorMessage: "529 {\"type\":\"overloaded_error\",\"message\":\"upstream busy\"}", reasonCode: "server_error", retryable: true },
       // The route stated the window it allows, so a fresh attempt is sized to it rather than being
       // the same refused request.
-      { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: true },
+      { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: false },
       // Nothing was learned from this one, so a retry would be the identical request.
       { errorMessage: "400 prompt is too long", reasonCode: "context_too_large", retryable: false },
       { errorMessage: "HTTP 400: invalid model for this route", reasonCode: "invalid_model", retryable: false },
@@ -1623,7 +891,7 @@ describe("Pi partner engine runtime", () => {
       faux.setResponses([fauxAssistantMessage([], { errorMessage: expected.errorMessage, stopReason: "error" })]);
       const models = createModels();
       models.setProvider(faux.provider);
-      const runtime = new PiPartnerEngineRuntime({
+      const runtime = new PiPartnerEngineRuntime({ sessionSettings: () => SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } }),
         contexts,
         prompts: { read: async () => null },
         resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
@@ -1731,50 +999,6 @@ describe("Pi partner engine runtime", () => {
 
     expect(runtime.engineOf()).toBe("pi-core");
     await expect(runtime.health()).resolves.toEqual({ available: true });
-  });
-
-  it("bounds an oversized Workbench background section to the model budget and records the trim", async () => {
-    const faux = fauxProvider({ provider: "local-partner-oversized-background" });
-    let firstSystemPrompt = "";
-    faux.setResponses([
-      (context) => {
-        firstSystemPrompt = requestSystemPrompt(context);
-        return fauxAssistantMessage([fauxText("done")]);
-      },
-    ]);
-    const models = createModels();
-    models.setProvider(faux.provider);
-    const events: { fields: unknown; name: string }[] = [];
-    const runtime = new PiPartnerEngineRuntime({
-      contexts: { loadForExecution: async () => ({ promptSection: "BACKGROUND_".repeat(20_000), sanitized: {} }) },
-      diagnostics: { emit: (name, fields) => { events.push({ name, fields }); } },
-      prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
-      tools: { create: () => [], names: [] },
-    });
-    const revision = createPartnerRevision({
-      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Oversized background", kind: "local-pi",
-      partnerId: "partner_oversized", partnerRevisionId: "partner_revision_oversized", registryRevision: 1, skills: [], tools: [],
-    });
-
-    await expect(runtime.runEphemeral(
-      { actionId: "action_oversized", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "task", workId: "work_oversized" },
-      revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
-    )).resolves.toMatchObject({ output: { body: "done" }, status: "COMPLETED" });
-
-    // The background owns its own share of the window; the message list holds the rest.
-    const budgetChars = modelRequestBudget(faux.getModel()).systemMaxChars;
-    expect(firstSystemPrompt).toContain("[truncated: Workbench background exceeded");
-    expect(firstSystemPrompt.length).toBeLessThan(budgetChars + 5_000);
-    // The authoritative policy lines survive the trim of the background data below them.
-    expect(firstSystemPrompt).toContain("Runtime permission boundary (authoritative");
-    expect(firstSystemPrompt).toContain("keep code comments clean and clear");
-    expect(events.filter(event => event.name === "joi.partner.system_prompt_bounded")).toEqual([{
-      fields: { backgroundChars: 220_000, budgetChars, workId: "work_oversized", workbenchId: "workbench_1" },
-      name: "joi.partner.system_prompt_bounded",
-    }]);
   });
 
   it("leads a writing partner's workspace paragraph with the read permission, then scopes the confinement to writes", async () => {

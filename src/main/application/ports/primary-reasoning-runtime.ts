@@ -1,5 +1,6 @@
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import type { SummaryRetryState } from "./summary-state.js";
+import type { PartnerSessionState } from "./partner-instances.js";
 
 export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED" | "MAP_CLEARED";
 
@@ -35,10 +36,14 @@ export interface StartReasoningTurnInput {
   sourceId: string;
   sourceRevisionId: string;
   systemPrompt: string;
+  /** Selected skill metadata and its scoped read instructions. */
+  skillContext?: string;
   turnId: string;
 }
 
 export interface JoiReasoningSessionSnapshot {
+  piSession?: PartnerSessionState["piSession"];
+  piNativeSession?: PartnerSessionState["piNativeSession"];
   summaryRetry?: SummaryRetryState | undefined;
   workbenchId: string;
   /** Immutable private source messages replaced by checkpoints, available only to this session's history tool. */

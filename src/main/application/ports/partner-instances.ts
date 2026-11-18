@@ -81,6 +81,8 @@ export interface ResidentTurnInput extends PartnerExecutionContext {
 
 /** Private execution history, separate from the safe UI projection and disposable instances. */
 export interface PartnerSessionState {
+  handoff?: { sourceSegmentId: string; sourcePiSession?: NonNullable<PartnerSessionState["piNativeSession"]> };
+  piNativeSession?: { version: 1; key: string; sessionId: string; leafId: string | null; lastEntryId: string | null };
   modelRetry?: { turnId: string;attempts: number };
   piSession?: { version: 1;header: unknown;entries: unknown[];leafId: string | null };
   summaryRetry?: SummaryRetryState;
@@ -92,6 +94,8 @@ export interface PartnerSessionState {
 }
 
 export interface PartnerExecutionContext {
+  readHistory?: () => Promise<unknown[]>;
+  skillPaths?: readonly string[];
   onThinking?: (thinking: ConversationThinkingDto) => Promise<void>;
   onContext?: (context: ConversationContextDto) => Promise<void>;
   sessionState?: PartnerSessionState;
@@ -123,6 +127,7 @@ export interface ResidentTurnResult {
 
 /** Implemented per engine under infrastructure/; joi reasoning never touches it. */
 export interface PartnerEngineRuntime {
+  readSettledResult?(input: { instanceId?: string; request: PartnerRunRequest; revision: PartnerRevision }): Promise<ResidentTurnResult | null>;
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;

@@ -12,6 +12,10 @@ export class SqliteUsageStore implements UsageStore {
     database.transaction((db) => db.prepare("INSERT OR IGNORE INTO statistics_metadata(singleton,collected_since) VALUES (1,?)").run(now()));
   }
   markDegraded(): void { this.database.transaction((db) => db.prepare("UPDATE statistics_metadata SET collection_degraded = 1 WHERE singleton = 1").run()); }
+  hasRecorded(id: string): boolean {
+    return this.database.transaction(db => db.prepare(`SELECT 1 FROM usage_invocations i WHERE invocation_id=?
+      AND status NOT IN ('running','interrupted') AND EXISTS (SELECT 1 FROM usage_observations o WHERE o.invocation_id=i.invocation_id)`).get(id) !== undefined);
+  }
   begin(id: string, context: UsageContext, at: string): void {
     this.database.transaction((db) => {
       const work = context.workId === undefined ? undefined : db.prepare("SELECT input_id,workbench_id FROM work_items WHERE work_id = ?").get(context.workId) as Row | undefined;
@@ -22,7 +26,7 @@ export class SqliteUsageStore implements UsageStore {
       const workbench = workbenchId === undefined ? undefined : db.prepare("SELECT name FROM workbenches WHERE workbench_id = ?").get(workbenchId) as Row | undefined;
       const source = context.sourceId === undefined ? undefined : db.prepare(`SELECT r.display_name FROM model_sources s JOIN model_source_revisions r ON r.source_revision_id = s.active_source_revision_id WHERE s.source_id = ?`).get(context.sourceId) as Row | undefined;
       db.prepare(`INSERT OR IGNORE INTO usage_invocations VALUES (?,?,'running',?,?,?,?,?,?,?,?,?,?)`).run(id, at, context.engine, context.purpose,
-        workbenchId ?? null, string(workbench?.name) ?? null, goalId ?? null, context.workId ?? null, context.partnerId ?? null, context.sourceId ?? null, string(source?.display_name) ?? context.sourceName ?? null, context.modelId ?? null);
+        workbenchId ?? null, string(workbench?.name) ?? null, goalId ?? null, context.workId ?? null, context.partnerId ?? null, context.sourceId ?? null, context.sourceName ?? string(source?.display_name) ?? null, context.modelId ?? null);
     });
   }
   observe(id: string, observation: UsageObservation, at: string): void {
@@ -33,7 +37,7 @@ export class SqliteUsageStore implements UsageStore {
     });
   }
   finish(id: string, status: Exclude<UsageStatus, "running">): void {
-    this.database.transaction((db) => db.prepare("UPDATE usage_invocations SET status = ? WHERE invocation_id = ? AND status = 'running'").run(status, id));
+    this.database.transaction((db) => db.prepare("UPDATE usage_invocations SET status = ? WHERE invocation_id = ? AND status IN ('running','interrupted')").run(status, id));
   }
   recover(): void { this.database.transaction((db) => db.prepare("UPDATE usage_invocations SET status = 'interrupted' WHERE status = 'running'").run()); }
   snapshot(fromUtc: string, toUtc: string): StatisticsSnapshot {

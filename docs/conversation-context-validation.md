@@ -1,5 +1,7 @@
 # Conversation context validation
 
+> Historical Pi host-policy evidence: [ADR 0035](adr/0035-sdk-owned-pi-sessions.md) now defines SDK ownership. Current behavior and replacement regressions are mapped in [the implementation validation](pi-session-ownership-validation.md). Retained past results do not establish the current runtime policy.
+
 The acceptance source is [CHAT-18–26](21-normal-conversations.md), refined by [SUM-01–12](pi-summary-optimization-plan.md); the implementation boundaries are [ADR 0033](adr/0033-conversation-context-sessions.md) and [ADR 0034](adr/0034-background-summary-policy.md). Dated gate reports below retain their original scope; the summary-policy increment records its current checks in the SUM plan.
 
 ## Regression evidence

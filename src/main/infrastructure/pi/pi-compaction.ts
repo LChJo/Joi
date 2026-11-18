@@ -90,13 +90,12 @@ export function checkpointMessage(summary: string, timestampMillis: number): Age
 
 /** Whether a message is a checkpoint. Reads both the block and the older plain-string shape. */
 export function isCheckpointMessage(message: AgentMessage | undefined): boolean {
-  if (message === undefined) return false;
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") return content.includes(CHECKPOINT_MARKER);
-  if (!Array.isArray(content)) return false;
-  return content.some((block) => block !== null && typeof block === "object"
-    && typeof (block as { text?: unknown }).text === "string"
-    && (block as { text: string }).text.includes(CHECKPOINT_MARKER));
+  if (message?.role !== "user") return false;
+  const { content } = message;
+  const block = Array.isArray(content) && content.length === 1 ? content[0] : undefined;
+  const text = typeof content === "string" ? content : block?.type === "text" ? block.text : undefined;
+  return text !== undefined && text.startsWith(`${COMPACTION_SUMMARY_PREFIX}${CHECKPOINT_MARKER}\n`)
+    && text.endsWith(COMPACTION_SUMMARY_SUFFIX);
 }
 
 export type SummaryFailureReason = "summary_truncated" | "summary_canceled" | "summary_incomplete" | "summary_provider_error"

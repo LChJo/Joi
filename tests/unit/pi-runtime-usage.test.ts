@@ -12,7 +12,14 @@ function fixture() {
   faux.setResponses(Array.from({ length: 12 }, () => fauxAssistantMessage("done")));
   const models = createModels(); models.setProvider(faux.provider);
   const contexts: UsageContext[] = []; const observations: UsageObservation[] = [];
-  const usage: UsageRecorder = { begin(context) { contexts.push(context); return { id: "id", record(value) { observations.push(value); }, finish: () => undefined }; } };
+  const indices = new Map<string, number>();
+  const usage: UsageRecorder = { begin(context, identity) {
+    const id = identity?.id ?? `invocation-${String(contexts.length)}`;
+    let index = indices.get(id);
+    if (index === undefined) { index = contexts.length; indices.set(id, index); contexts.push(context); }
+    const position = index;
+    return { id, record(value) { observations[position] = value; }, finish: () => undefined };
+  } };
   const pin = { modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId: "t" };
   return { faux, models, contexts, observations, usage, pin };
 }
@@ -56,18 +63,18 @@ describe("Pi runtime usage attribution", () => {
     expect(f.contexts.map((context) => context.workId)).toEqual(["work1", "work2"]);
     expect(f.observations).toHaveLength(2);
   });
-  it("attributes compaction separately while retaining the goal and source", async () => {
+  it("retains goal and source attribution without invoking the retired Joi compactor", async () => {
     const f = fixture();
     const diagnostics = { emit: vi.fn() };
     const runtime = new PiReasoningRuntime({ diagnostics, usage: f.usage, model: f.faux.getModel(), models: f.models, tools: [], thinkingLevel: "off" as const,
       compaction: { keepRecentMessages: 2, maxMessages: 4, maxSummaryCharacters: 80 },
       sessionStore: { load: () => Promise.resolve(null), save: () => Promise.resolve() },
     });
-    for (let index = 0; index < 3; index++) await runtime.startTurn({ ...f.pin, workbenchId: "wb", inputId: `derived${String(index)}`, goalInputId: "goal", sessionId: "session", prompt: "task", systemPrompt: "system" });
+    for (let index = 0; index < 3; index++) await runtime.startTurn({ ...f.pin, turnId: `turn-${String(index)}`, workbenchId: "wb", inputId: `derived${String(index)}`, goalInputId: "goal", sessionId: "session", prompt: "task", systemPrompt: "system" });
     expect(f.contexts.filter((context) => context.purpose === "orchestration")).toHaveLength(3);
-    expect(f.contexts.some((context) => context.purpose === "summary")).toBe(true);
+    expect(f.contexts.some((context) => context.purpose === "summary")).toBe(false);
     expect(f.contexts.every((context) => context.goalId === "goal" && context.workbenchId === "wb" && context.sourceId === "source")).toBe(true);
-    expect(diagnostics.emit).toHaveBeenCalledWith("joi.context.model_completed", expect.objectContaining({ purpose: "summary" }));
+    expect(diagnostics.emit).not.toHaveBeenCalledWith("joi.context.model_completed", expect.objectContaining({ purpose: "summary" }));
     expect(diagnostics.emit).toHaveBeenCalledWith("joi.context.model_completed", expect.objectContaining({ purpose: "orchestration" }));
     const calls = diagnostics.emit.mock.calls as unknown as [string, { durationMs?: unknown }][];
     expect(calls.filter(([name]) => name === "joi.context.model_completed").every(([, fields]) => typeof fields.durationMs === "number" && fields.durationMs >= 0)).toBe(true);

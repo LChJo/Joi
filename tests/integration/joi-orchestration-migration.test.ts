@@ -32,6 +32,44 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
 
 describe("JOI-01 non-destructive migration", () => {
+  it("preserves the ordering and identity of existing queued writers during the admission upgrade", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),"joi-admission-upgrade-"));
+    const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");
+    await copyMigrationsThrough(previousMigrations,101);
+    const previous = await openRuntimeDatabase({ databasePath,migrationsDirectory: previousMigrations });
+    previous.transaction(db => db.exec(`INSERT INTO workspace_write_waiters(work_id,workspace_ref,root_key,generation)
+      VALUES ('first','workspace','C:/repo',3),('second','workspace','C:/repo',5)`));
+    previous.close();
+    const upgraded = await openRuntimeDatabase({ databasePath,migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.transaction(db => db.prepare("SELECT work_id,generation,access_mode FROM workspace_write_waiters ORDER BY sequence").all()))
+        .toEqual([{ work_id: "first",generation: 3,access_mode: "WRITE" },{ work_id: "second",generation: 5,access_mode: "WRITE" }]);
+      expect(upgraded.transaction(db => db.prepare("PRAGMA foreign_key_check").all())).toEqual([]);
+    } finally { upgraded.close();await rm(root,{ recursive: true,force: true }); }
+  });
+  it("PI-SESSION-05/16 preserves projections while blocking legacy session readers after upgrade", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-pi-schema-boundary-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 99);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    oldDatabase.transaction(connection => {
+      connection.exec(`INSERT INTO workbenches
+        (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+        VALUES ('wb','W','p','','','','m','ACTIVE','now','now')`);
+      connection.prepare(`INSERT INTO joi_session_messages(message_id,session_id,workbench_id,sequence,message_json,created_at)
+        VALUES ('legacy','s','wb',0,?,'now')`).run(JSON.stringify({ messages: [{ role: "user", content: "Preserved source" }] }));
+    });
+    oldDatabase.close();
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.transaction(connection => connection.prepare("SELECT message_json FROM joi_reasoning_projections WHERE message_id='legacy'").get())).toMatchObject({ message_json: expect.stringContaining("Preserved source") as unknown });
+      for (const name of ["joi_session_messages", "partner_instance_messages", "conversation_execution_sessions"]) {
+        expect(() => upgraded.transaction(connection => connection.prepare(`SELECT * FROM ${name}`).all())).toThrow(/no such table/u);
+      }
+      expect(upgraded.transaction(connection => connection.prepare("PRAGMA foreign_key_check").all())).toEqual([]);
+    } finally { upgraded.close(); await rm(root, { force: true, recursive: true }); }
+  });
   it("moves an unresolved derived question onto its original goal and creates a versioned gate", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-gate-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");
@@ -575,7 +613,7 @@ describe("JOI-01 non-destructive migration", () => {
         "joi_attachments",
         "joi_inbox_attachments",
         "joi_turns",
-        "joi_session_messages",
+        "joi_reasoning_projections",
         "work_items",
         "work_dependencies",
         "dispatch_attempts",

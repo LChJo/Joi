@@ -1,5 +1,7 @@
 # ADR 0022：用 pi 原生压缩替换 joi 手写的上下文裁剪
 
+> Pi execution policy is superseded by [ADR 0035](0035-sdk-owned-pi-sessions.md) and [PI-SESSION-01-24](../pi-session-ownership-spec.md). The decision below is retained as historical rationale. Native engine protocols, business admission, evidence and result invariants continue where applicable.
+
 - 状态：accepted
 - 日期：2026-09-27
 - 相关：ADR 0004（搭档引擎的多样性）、ADR 0014（原生 Agent SDK 适配）、ADR 0021（token 统计）

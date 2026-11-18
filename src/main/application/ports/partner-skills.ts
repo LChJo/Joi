@@ -12,6 +12,7 @@ export interface PartnerSkillOption {
 
 /** Pi receives catalog metadata up front and reads the skill files on demand. */
 export interface PartnerPiSkillDispatch {
+  skillPaths?: readonly string[];
   /** Environment variable names required by the exact selected Skills; never values. */
   environmentKeys: readonly string[];
   promptSection: string;

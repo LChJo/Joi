@@ -20,6 +20,7 @@ export interface PiLatencyFields {
 }
 
 export interface RuntimeDiagnosticEventMap {
+  "joi.pi.projection_degraded": { workId: string };
   "joi.context.summary_boundary": {
     stage: "hard_wait" | "cleanup";
     durationMs: number;

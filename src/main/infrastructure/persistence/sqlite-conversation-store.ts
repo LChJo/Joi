@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
-import type { ConversationStore, ConversationSubmission } from "../../application/ports/conversations.js";
+import type { ConversationStore, ConversationSubmission, ConversationSegment } from "../../application/ports/conversations.js";
 import type { ConversationDto, ConversationSummaryDto, ConversationTurnDto } from "../../../shared/conversations.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerSessionState } from "../../application/ports/partner-instances.js";
@@ -10,14 +10,28 @@ import { sanitizeAgentConversationText } from "../../application/partners/agent-
 
 interface Database { transaction<T>(operation: (db: DatabaseSync) => T): T; }
 type Row = Record<string, unknown>;
+function segmentFromRow(row: Row): ConversationSegment {
+  return { segmentId: String(row.segment_id),partnerId: String(row.partner_id),engine: row.engine as ConversationSegment["engine"],capabilityKey: String(row.capability_key),
+    ...(typeof row.predecessor_id === "string" ? { predecessorId: row.predecessor_id } : {}),
+    ...(typeof row.state_json === "string" ? { state: JSON.parse(row.state_json) as PartnerSessionState } : {}) };
+}
 function summary(row: Row): ConversationSummaryDto {
   return { conversationId: String(row.conversation_id), workbenchId: String(row.workbench_id), title: String(row.title), updatedAt: String(row.updated_at),
     ...(typeof row.archived_at === "string" ? { archivedAt: row.archived_at } : {}),...(row.can_archive === undefined ? {} : { canArchive: row.can_archive === 1 }) };
 }
 function turn(row: Row): ConversationTurnDto {
+  const config = JSON.parse(String(row.config_json)) as ConversationTurnDto["config"];
+  const entries = JSON.parse(String(row.entries_json)) as ConversationTurnDto["entries"];
   return { turnId: String(row.turn_id), text: sanitizeAgentConversationText(String(row.body)), createdAt: String(row.created_at),
-    status: row.status as ConversationTurnDto["status"], config: JSON.parse(String(row.config_json)) as ConversationTurnDto["config"],
-    entries: JSON.parse(String(row.entries_json)) as ConversationTurnDto["entries"], artifacts: JSON.parse(String(row.artifacts_json)) as ConversationTurnDto["artifacts"],
+    status: row.status as ConversationTurnDto["status"], config,
+    entries: config.networkId === "native" ? entries : entries.map(entry => {
+      if (entry.kind !== "ACTIVITY" || entry.activity.type !== "THINKING") return entry;
+      const thinking = { ...entry.activity.thinking };
+      delete thinking.summary;
+      delete thinking.summaryTruncated;
+      return { ...entry,activity: { ...entry.activity,thinking } };
+    }),
+    artifacts: JSON.parse(String(row.artifacts_json)) as ConversationTurnDto["artifacts"],
     ...(typeof row.error_code === "string" ? { errorCode: row.error_code } : {}),
     ...(typeof row.failure_json === "string" ? { failure: JSON.parse(row.failure_json) as NonNullable<ConversationTurnDto["failure"]> } : {}) };
 }
@@ -81,9 +95,14 @@ export class SqliteConversationStore implements ConversationStore {
     });
   }
   async session(id: string) {
+    const segment = await this.segment(id);
+    if (segment !== undefined) return segment.state;
+    return this.#legacySession(id);
+  }
+  async #legacySession(id: string): Promise<PartnerSessionState | undefined> {
     return this.database.transaction(db => {
       requireConversation(db,id);
-      const row = db.prepare("SELECT state_json FROM conversation_execution_sessions WHERE conversation_id=?").get(id);
+      const row = db.prepare("SELECT state_json FROM conversation_session_projections WHERE conversation_id=?").get(id);
       if (row === undefined) return undefined;
       const stored = db.prepare("SELECT sequence,message_json FROM conversation_execution_messages WHERE conversation_id=? ORDER BY sequence").all(id);
       const messages = stored.map((message,index) => {
@@ -108,6 +127,12 @@ export class SqliteConversationStore implements ConversationStore {
       requireConversation(db,id);
       // Only the currently executing owner may advance a private session.
       if (!db.prepare("SELECT 1 FROM conversation_turns WHERE conversation_id=? AND turn_id=? AND status='RUNNING'").get(id,turnId)) return;
+      const segment = db.prepare("SELECT segment_id FROM conversation_turn_segments WHERE conversation_id=? AND turn_id=?").get(id,turnId);
+      if (segment !== undefined) {
+        db.prepare("UPDATE conversation_execution_segments SET state_json=? WHERE conversation_id=? AND segment_id=?")
+          .run(JSON.stringify(state),id,String(segment.segment_id));
+        return;
+      }
       const entries = state.piSession?.entries.map(entry => JSON.stringify(entry));
       if (entries !== undefined) {
         const previousEntries = this.#sessionEntries.get(id) ?? db.prepare("SELECT entry_json FROM conversation_pi_entries WHERE conversation_id=? ORDER BY sequence").all(id).map(row => String(row.entry_json));
@@ -128,9 +153,9 @@ export class SqliteConversationStore implements ConversationStore {
       const insert = db.prepare("INSERT INTO conversation_execution_messages(conversation_id,sequence,message_json) VALUES (?,?,?)");
       for (let index = common;index < messages.length;index++) insert.run(id,index,messages[index] ?? "null");
       const metadata = JSON.stringify({ ...state,messages: [],...(state.piSession === undefined ? {} : { piSession: { ...state.piSession,entries: [] } }) });
-      db.prepare(`INSERT INTO conversation_execution_sessions(conversation_id,state_json,updated_at) VALUES (?,?,?)
+      db.prepare(`INSERT INTO conversation_session_projections(conversation_id,state_json,updated_at) VALUES (?,?,?)
         ON CONFLICT(conversation_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at
-        WHERE conversation_execution_sessions.state_json<>excluded.state_json`).run(id,metadata,at);
+        WHERE conversation_session_projections.state_json<>excluded.state_json`).run(id,metadata,at);
       return { messages,entries };
     });
     if (saved !== undefined) {
@@ -140,6 +165,44 @@ export class SqliteConversationStore implements ConversationStore {
   }
   #rememberSession(id: string,messages: string[]): void {
     this.#remember(this.#sessionMessages,id,messages);
+  }
+  async segment(id: string,turnId?: string): Promise<ConversationSegment | undefined> {
+    return this.database.transaction(db => {
+      requireConversation(db,id);
+      const row = turnId === undefined
+        ? db.prepare("SELECT * FROM conversation_execution_segments WHERE conversation_id=? ORDER BY sequence DESC LIMIT 1").get(id)
+        : db.prepare(`SELECT s.* FROM conversation_execution_segments s JOIN conversation_turn_segments t
+          ON t.conversation_id=s.conversation_id AND t.segment_id=s.segment_id WHERE t.conversation_id=? AND t.turn_id=?`).get(id,turnId);
+      return row === undefined ? undefined : segmentFromRow(row);
+    });
+  }
+  async segments(id: string): Promise<ConversationSegment[]> {
+    const segments = this.database.transaction(db => {
+      requireConversation(db,id);
+      return db.prepare("SELECT * FROM conversation_execution_segments WHERE conversation_id=? ORDER BY sequence").all(id).map(segmentFromRow);
+    });
+    const legacy = await this.#legacySession(id);
+    return legacy === undefined ? segments : [{ segmentId: "legacy",partnerId: "legacy",engine: legacy.engine,capabilityKey: "legacy",state: legacy },...segments];
+  }
+  async activateSegment(id: string,turnId: string,segment: ConversationSegment,expectedPredecessor?: string): Promise<ConversationSegment> {
+    return this.database.transaction(db => {
+      requireConversation(db,id);
+      if (!db.prepare("SELECT 1 FROM conversation_turns WHERE conversation_id=? AND turn_id=? AND status='RUNNING'").get(id,turnId)) {
+        throw new DomainError("conversation_execution_retired","The conversation execution is no longer active.");
+      }
+      const bound = db.prepare(`SELECT s.* FROM conversation_execution_segments s JOIN conversation_turn_segments t
+        ON t.conversation_id=s.conversation_id AND t.segment_id=s.segment_id WHERE t.conversation_id=? AND t.turn_id=?`).get(id,turnId);
+      if (bound !== undefined) return segmentFromRow(bound);
+      const latest = db.prepare("SELECT * FROM conversation_execution_segments WHERE conversation_id=? ORDER BY sequence DESC LIMIT 1").get(id);
+      if ((latest?.segment_id ?? undefined) !== expectedPredecessor) throw new DomainError("conversation_handoff_conflict","The conversation execution changed during handoff.");
+      if (latest?.segment_id !== segment.segmentId) {
+        db.prepare(`INSERT INTO conversation_execution_segments(conversation_id,segment_id,sequence,partner_id,engine,capability_key,predecessor_id,state_json)
+          VALUES (?,?,?,?,?,?,?,?)`).run(id,segment.segmentId,Number(latest?.sequence ?? 0) + 1,segment.partnerId,segment.engine,segment.capabilityKey,segment.predecessorId ?? null,
+          segment.state === undefined ? null : JSON.stringify(segment.state));
+      }
+      db.prepare("INSERT INTO conversation_turn_segments(turn_id,conversation_id,segment_id) VALUES (?,?,?)").run(turnId,id,segment.segmentId);
+      return latest?.segment_id === segment.segmentId ? segmentFromRow(latest) : segment;
+    });
   }
   #remember(cache: Map<string,string[]>,id: string,items: string[]): void {
     cache.delete(id);cache.set(id,items);
@@ -221,6 +284,12 @@ export class SqliteConversationStore implements ConversationStore {
     if (changed) db.prepare("UPDATE work_items SET status='RUNNING' WHERE work_id=?").run(id);
     return changed;
   }); }
+  async runningPiTurns(): Promise<string[]> {
+    return this.database.transaction(db => db.prepare(`SELECT t.turn_id FROM conversation_turns t
+      JOIN conversation_turn_segments binding ON binding.turn_id=t.turn_id
+      JOIN conversation_execution_segments s ON s.conversation_id=binding.conversation_id AND s.segment_id=binding.segment_id
+      WHERE t.status='RUNNING' AND s.engine='pi-core'`).all().map(row => String(row.turn_id)));
+  }
   async update(id: string, patch: Parameters<ConversationStore["update"]>[1]) {
     this.database.transaction(db => {
       const changed = db.prepare("UPDATE conversation_turns SET entries_json=?,artifacts_json=?,status=?,error_code=?,failure_json=? WHERE turn_id=? AND status='RUNNING'")

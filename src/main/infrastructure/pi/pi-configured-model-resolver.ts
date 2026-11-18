@@ -4,9 +4,9 @@ import type { ModelSourceRepository } from "../../application/ports/model-source
 import { createPiSourceProvider, defaultThinkingLevel, piSourceProviderInput } from "./source-provider-factory.js";
 
 export interface ResolvedPiModel {
-  /** The session-compaction threshold configured on the model source; absent means the runtime
-   *  falls back to its own default. Only the reasoning runtime has a session to compact. */
+  /** Context occupancy trigger, translated into official per-model compaction settings. */
   compactionThresholdPercent?: number;
+  sourceName?: string;
   model: Model<Api>;
   models: Models;
   /** The level every request on this route runs at: the user's configured thinking effort,
@@ -61,6 +61,7 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
         compactionThresholdPercent: Math.min(95, Math.max(50, activeModelRevision.compactionThresholdPercent)),
       }),
       model,
+      sourceName: source.activeSourceRevision.displayName,
       models,
       thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl),
     };

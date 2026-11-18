@@ -140,6 +140,7 @@ export function createJoiReasoningTools(input: {
   work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement"> & Partial<Pick<WorkOrchestrationService, "listForGoal" | "listGoalPage" | "readBrief" | "refreshBrief">>;
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
+  let dependencyCorrectionOffered = false;
   let acceptanceCorrectionOffered = false;
   let evidenceCorrectionOffered = false;
   let synthesisCorrections = 0;
@@ -257,7 +258,10 @@ export function createJoiReasoningTools(input: {
     // Optional in the schema: models routinely omit the array when the DAG has
     // no edges, and a failed argument validation aborts the whole Turn before
     // any repair path can run. The execute path coerces the missing value.
-    dependencies: Type.Optional(Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() }))),
+    dependencies: Type.Optional(Type.Array(Type.Object({
+      dependsOnKey: Type.String({ description: "Exact key of the predecessor Work in this invocation; it must complete successfully before the dependent Work starts." }),
+      workKey: Type.String({ description: "Exact key of the dependent Work in this invocation, such as the reviewer that consumes the completed implementation." }),
+    }), { description: "Execution order, independent of array order. For implementation followed by review, use [{dependsOnKey: 'implement', workKey: 'review'}] with both Work keys in this call. A Work waits for all its predecessors; omit or use [] only for independent Work. Never replace required ordering with instructions to wait." })),
     work: Type.Array(Type.Object({
       acceptanceChecks: Type.Array(Type.Union([
         Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
@@ -271,8 +275,8 @@ export function createJoiReasoningTools(input: {
       evidenceResultIds: Type.Optional(Type.Array(Type.String(), { uniqueItems: true, description: "Explicit stored result ids from this goal; these precede automatically selected dependency evidence." })),
       requirementIds: Type.Optional(Type.Array(Type.String())),
       allRequirements: Type.Optional(Type.Boolean()),
-      executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. WRITE is a ceiling; initial workspace lease remains READ. Respect explicit user read-only restrictions." }),
-      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling, not initial lease: READ forbids writes and unrestricted shell; WRITE permits demand-driven lease upgrade." }),
+      executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. Pi acquires WRITE admission before execution; native engines retain demand-driven upgrade. Respect explicit user read-only restrictions." }),
+      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling: READ forbids writes and unrestricted shell; Pi WRITE admission precedes execution, while native engines retain demand-driven upgrade." }),
       instanceId: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String({ description: "Required self-contained task brief. Include only applicable effective requirements, corrections, facts, boundaries and deliverable. The cumulative user request is not attached automatically.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
       key: Type.String(),
@@ -290,15 +294,11 @@ export function createJoiReasoningTools(input: {
         ...(submission.started ? {} : { details: { ...output.details, replaySafeRejection: true } }),
       });
       try {
-        const currentKeys = new Set(arguments_.work.map((item) => item.key));
-        const currentDependencies = (arguments_.dependencies ?? []).filter((dependency) => (
-          currentKeys.has(dependency.workKey) && currentKeys.has(dependency.dependsOnKey)
-        ));
         return result(await input.work.plan({
           onCommitStart: () => { submission.started = true; },
           ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
           workbenchId: input.workbenchId,
-          dependencies: currentDependencies,
+          dependencies: arguments_.dependencies ?? [],
           // Derived inputs (harness review) dispatch on behalf of the original goal so the
           // result set and synthesis closure stay attached to the goal, not the review row.
           inputId: goalContext(),
@@ -358,9 +358,18 @@ export function createJoiReasoningTools(input: {
             reasonCode, status: "RETRY_REQUIRED",
           }));
         }
+        if (reasonCode === "work_dependency_unknown" || reasonCode === "work_dependency_cycle" || reasonCode === "work_key_duplicate") {
+          if (!submission.started && !dependencyCorrectionOffered) {
+            dependencyCorrectionOffered = true;
+            return rejected(result({
+              hint: "No Work was committed. Use unique Work keys and an acyclic dependencies graph whose endpoints are exact keys in this invocation. Preserve the required execution order: fix references or include the missing predecessor, never drop required dependencies or substitute instructions to wait. Historical Work ids are evidence, not dependency keys. Retry the complete plan once; do not ask the user to repair these internal parameters.",
+              reasonCode, status: "RETRY_REQUIRED",
+            }));
+          }
+          return rejected(result({ reasonCode, status: "FAILED" }, true));
+        }
         const correctable = reasonCode === "partner_not_found"
           || reasonCode === "partner_not_available"
-          || reasonCode === "work_dependency_unknown"
           || reasonCode.startsWith("partner_instance_");
         if (correctable && !dispatchCorrectionOffered) {
           dispatchCorrectionOffered = true;
@@ -396,8 +405,8 @@ export function createJoiReasoningTools(input: {
       Type.Object({ expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
       Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
     ]), { maxItems: 8 })),
-    executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. WRITE is a ceiling; initial workspace lease remains READ. Respect explicit user read-only restrictions." }),
-      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling, not initial lease: READ forbids writes and unrestricted shell; WRITE permits demand-driven lease upgrade." }),
+    executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. Pi acquires WRITE admission before execution; native engines retain demand-driven upgrade. Respect explicit user read-only restrictions." }),
+      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling: READ forbids writes and unrestricted shell; Pi WRITE admission precedes execution, while native engines retain demand-driven upgrade." }),
     instructions: Type.Optional(Type.String({ description: "Required self-contained instructions for this supplemental Work, including relevant established facts and current requirements.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
     partnerId: Type.String(),
     sourceWorkId: Type.String(),

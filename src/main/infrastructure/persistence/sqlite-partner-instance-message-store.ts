@@ -14,13 +14,13 @@ export class SqlitePartnerInstanceMessageStore implements PartnerInstanceMessage
 
   async clear(instanceId: string): Promise<void> {
     this.database.transaction((connection) => connection.prepare(
-      "DELETE FROM partner_instance_messages WHERE instance_id = ?",
+      "DELETE FROM partner_message_projections WHERE instance_id = ?",
     ).run(instanceId));
   }
 
   async load(instanceId: string, strict = false): Promise<unknown[] | null> {
     const rows = this.database.transaction((connection) => connection.prepare(
-      "SELECT message_json FROM partner_instance_messages WHERE instance_id = ? ORDER BY sequence",
+      "SELECT message_json FROM partner_message_projections WHERE instance_id = ? ORDER BY sequence",
     ).all(instanceId)) as { message_json?: unknown }[];
     if (rows.length === 0) return null;
     const messages: unknown[] = [];
@@ -38,8 +38,8 @@ export class SqlitePartnerInstanceMessageStore implements PartnerInstanceMessage
 
   async save(instanceId: string, messages: unknown[]): Promise<void> {
     this.database.transaction((connection) => {
-      connection.prepare("DELETE FROM partner_instance_messages WHERE instance_id = ?").run(instanceId);
-      const insert = connection.prepare(`INSERT INTO partner_instance_messages
+      connection.prepare("DELETE FROM partner_message_projections WHERE instance_id = ?").run(instanceId);
+      const insert = connection.prepare(`INSERT INTO partner_message_projections
         (message_id, instance_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?)`);
       const createdAt = new Date().toISOString();
       messages.forEach((message, sequence) => insert.run(randomUUID(), instanceId, sequence, JSON.stringify(message), createdAt));

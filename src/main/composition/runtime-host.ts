@@ -275,6 +275,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       work: workbenchStack.workRepository,
     };
     emergencyStopAll = async () => {
+      await partnerStack.stopPiUsageReconciliation();
       await conversationStack.emergencyStop();
       joiStack.evolution.emergencyStop();
       partnerStack.partnerMemory.emergencyStop();

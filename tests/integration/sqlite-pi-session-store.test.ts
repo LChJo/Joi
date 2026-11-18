@@ -17,9 +17,9 @@ describe("Pi SQLite session restore", () => {
           (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
           VALUES ('wb', '研究', 'p', '', '', '', 'm', '', 'ACTIVE', 'now', 'now')`).run();
         connection.exec(`CREATE TABLE session_mutation_audit (kind TEXT NOT NULL);
-          CREATE TRIGGER session_insert AFTER INSERT ON joi_session_messages BEGIN INSERT INTO session_mutation_audit VALUES ('insert'); END;
-          CREATE TRIGGER session_update AFTER UPDATE ON joi_session_messages BEGIN INSERT INTO session_mutation_audit VALUES ('update'); END;
-          CREATE TRIGGER session_delete AFTER DELETE ON joi_session_messages BEGIN INSERT INTO session_mutation_audit VALUES ('delete'); END;
+          CREATE TRIGGER session_insert AFTER INSERT ON joi_reasoning_projections BEGIN INSERT INTO session_mutation_audit VALUES ('insert'); END;
+          CREATE TRIGGER session_update AFTER UPDATE ON joi_reasoning_projections BEGIN INSERT INTO session_mutation_audit VALUES ('update'); END;
+          CREATE TRIGGER session_delete AFTER DELETE ON joi_reasoning_projections BEGIN INSERT INTO session_mutation_audit VALUES ('delete'); END;
           CREATE TRIGGER archive_insert AFTER INSERT ON joi_session_archived_messages BEGIN INSERT INTO session_mutation_audit VALUES ('archive-insert'); END;
           CREATE TRIGGER archive_update AFTER UPDATE ON joi_session_archived_messages BEGIN INSERT INTO session_mutation_audit VALUES ('archive-update'); END;
           CREATE TRIGGER archive_delete AFTER DELETE ON joi_session_archived_messages BEGIN INSERT INTO session_mutation_audit VALUES ('archive-delete'); END;`);
@@ -31,7 +31,7 @@ describe("Pi SQLite session restore", () => {
           coverage: { checkpointId: "checkpoint-1", coveredFrom: 0, coveredTo: archived.length, transcriptId: "incremental" },
         } };
       // An old database record embeds the complete archive in its metadata row.
-      database.transaction(connection => connection.prepare(`INSERT INTO joi_session_messages
+      database.transaction(connection => connection.prepare(`INSERT INTO joi_reasoning_projections
         (message_id, session_id, workbench_id, sequence, message_json, created_at) VALUES (?, ?, ?, 0, ?, ?)`)
         .run("incremental:metadata", "incremental", "wb", JSON.stringify(snapshot), "now"));
       const store = new SqlitePiReasoningSessionStore(database);
@@ -39,7 +39,7 @@ describe("Pi SQLite session restore", () => {
       expect(legacy?.archivedMessages).toEqual(archived);
       await store.save(snapshot);
       const persisted = database.transaction(connection => ({
-        metadata: connection.prepare("SELECT message_json FROM joi_session_messages WHERE session_id = ? AND sequence = 0").get("incremental") as { message_json: string },
+        metadata: connection.prepare("SELECT message_json FROM joi_reasoning_projections WHERE session_id = ? AND sequence = 0").get("incremental") as { message_json: string },
         archives: connection.prepare("SELECT COUNT(*) AS count FROM joi_session_archived_messages WHERE session_id = ?").get("incremental") as { count: number },
       }));
       expect(JSON.parse(persisted.metadata.message_json)).not.toHaveProperty("archivedMessages");

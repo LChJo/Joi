@@ -24,6 +24,29 @@ function history(): AgentMessage[] {
 }
 
 describe("AC-43/48/53/67 context soft budget", () => {
+  it.each([false,true])("CHAT-20 treats prior tasks as omittable context while Joi retains its goal anchors (restored=%s)",async restored => {
+    const f = fixture(`separate-turn-context-${String(restored)}`);
+    vi.spyOn(f.models,"completeSimple").mockRejectedValue(new Error("synthetic_summary_failure"));
+    const currentTask = "Implement BUG-4242 now.";
+    const messages: AgentMessage[] = [{ role: "user",content: "OLD_READ_ONLY_TASK".padEnd(60_000,"中"),timestamp: 0 },
+      fauxAssistantMessage([fauxText("Prior report")]),{ role: "user",content: currentTask,timestamp: 1 },
+      { role: "user",content: "Runtime continuation",timestamp: 2 },fauxAssistantMessage([fauxText("Latest observation")])];
+    const original = JSON.stringify(messages);
+    const checkpoint = restored ? { cut: 2,summary: "Prior task context",count: 1,compactedMessages: 1,lastCompactedAt: "2026-11-17T00:00:00Z",messagesBefore: 2,tokensBefore: 100,
+      preservedIndices: [0],sourceFingerprint: transcriptFingerprint(messages,2) } : undefined;
+    const options = { ...f,messagesMaxChars: 55_000,thinkingLevel: "off" as const,...(checkpoint === undefined ? {} : { restored: checkpoint }) };
+    const conversation = createPiContextManager({ ...options,currentTask });
+    const request = JSON.stringify(await conversation.transformContext(messages));
+    expect(request.includes(currentTask)).toBe(true);
+    expect(request.includes("OLD_READ_ONLY_TASK")).toBe(false);
+    expect(request.includes("joi context notice")).toBe(true);
+    expect(request.length).toBeLessThanOrEqual(55_000);
+    await conversation.close(messages);
+    const joi = createPiContextManager(options);
+    expect(JSON.stringify(await joi.transformContext(messages)).includes("OLD_READ_ONLY_TASK")).toBe(true);
+    await joi.close(messages);
+    expect(JSON.stringify(messages)).toBe(original);
+  });
   it("CHAT-20 re-evaluates an in-place source edit and keeps the outgoing view within budget",async () => {
     const f = fixture("pi-mutated-history");vi.spyOn(f.models,"completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("SUMMARY")]));
     const mutable = fauxAssistantMessage([fauxText("small")]);
@@ -122,7 +145,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(JSON.stringify(snapshot.messages)).toContain("Prior finding");
   });
 
-  it("checkpoints a long joi tool loop before its next provider request without changing the stored transcript", async () => {
+  it("PI-SESSION-02/18 leaves long Joi tool history to the SDK without a host character checkpoint", async () => {
     const f = fixture("joi-midflight-soft");
     const summary = vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("Sources 0 through 5 checked; keep pending gap.")]));
     const requests: string[] = [];
@@ -138,17 +161,16 @@ describe("AC-43/48/53/67 context soft budget", () => {
       execute: async (_id, raw) => ({ content: [{ type: "text", text: `PAGE_${(raw as { resultId: string }).resultId} `.padEnd(20_000, "x") }], details: {} }),
     }], sessionStore: { load: async () => null, save: async value => { snapshot = value; } } });
     await runtime.startTurn({ workbenchId: "wb", sessionId: "loop", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: "turn", prompt: "CURRENT_TASK", requiredContext: "REQUIRED_NOW" });
-    expect(requests.at(-1)).toContain("joi session checkpoint");
+    expect(requests.at(-1)).not.toContain("joi session checkpoint");
     expect(requests.at(-1)).toContain("PAGE_9");
-    expect(requests.at(-1)?.length).toBeLessThan(128_000);
-    expect(JSON.stringify(snapshot?.archivedMessages)).toContain("PAGE_0");
+    expect(requests.at(-1)?.length).toBeGreaterThan(128_000);
+    expect(JSON.stringify(snapshot?.messages)).toContain("PAGE_0");
     expect(JSON.stringify(snapshot?.messages)).toContain("CURRENT_TASK");
     expect(JSON.stringify(snapshot?.messages)).toContain("PAGE_9");
-    // A request checkpoint must become the durable checkpoint without a second summary call.
     expect(summary).toHaveBeenCalledTimes(callsAtFinalRequest);
-    expect(snapshot?.compaction?.count).toBeGreaterThan(0);
-    expect(snapshot?.compaction?.coverage).toMatchObject({ coveredFrom: 0, transcriptId: "loop" });
-    expect(snapshot?.compaction?.coverage?.coveredTo).toBe(snapshot?.archivedMessages?.length);
+    expect(callsAtFinalRequest).toBe(0);
+    expect(snapshot?.compaction).toBeUndefined();
+    expect(snapshot?.piSession).toBeDefined();
     const originalResults = [...(snapshot?.archivedMessages ?? []), ...(snapshot?.messages ?? [])]
       .filter(message => (message as { role?: string }).role === "toolResult");
     expect(originalResults).toHaveLength(10);
@@ -209,7 +231,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(manager.checkpoint()).toBeUndefined();
     expect(JSON.stringify(request)).toBe(JSON.stringify(history()));
   });
-  it("rolls back both archived and live history after a checkpointed replay-safe turn", async () => {
+  it("PI-SESSION-18 rolls back the active SDK branch while retaining immutable tool facts", async () => {
     const f = fixture("joi-checkpoint-rollback");
     const summary = vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("summary")]));
     f.faux.setResponses(Array.from({ length: 11 }, (_, index) => index < 10
@@ -221,12 +243,13 @@ describe("AC-43/48/53/67 context soft budget", () => {
       execute: async () => ({ content: [{ type: "text", text: "TURN_EVIDENCE".padEnd(20_000, "x") }], details: {} }),
     }], sessionStore: { load: async () => null, save: async value => { snapshot = structuredClone(value); } } });
     await runtime.startTurn({ workbenchId: "wb", sessionId: "rollback", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: "turn", prompt: "TASK" });
-    expect(snapshot?.archivedMessages?.length).toBeGreaterThan(0);
+    expect(JSON.stringify(snapshot?.piSession?.entries)).toContain("TURN_EVIDENCE");
     const calls = summary.mock.calls.length;
     expect(await runtime.rollbackTurn("rollback", "turn")).toBe(true);
-    expect(snapshot?.archivedMessages).toEqual([]);
+    expect(snapshot?.archivedMessages).toBeUndefined();
     expect(snapshot?.compaction).toBeUndefined();
     expect(JSON.stringify(snapshot?.messages)).not.toContain("TURN_EVIDENCE");
+    expect(JSON.stringify(snapshot?.piSession?.entries)).toContain("TURN_EVIDENCE");
     expect(summary).toHaveBeenCalledTimes(calls);
   });
   it("preserves the current task as well as the initial task when a request checkpoint covers intervening history", async () => {
@@ -286,7 +309,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     } while (offset > 0);
     expect(body).toBe(JSON.stringify(source));
   });
-  it("keeps a failed joi summary's old checkpoint and its uncovered source history", async () => {
+  it("PI-SESSION-16/18 imports source history without reusing legacy Joi compaction metadata", async () => {
     const f = fixture("joi-summary-failure");
     const previous = { compactedMessages: 8, count: 1, lastCompactedAt: "2026-10-18T00:00:00Z", summary: "PREVIOUS_CONCLUSION_END" };
     let snapshot: JoiReasoningSessionSnapshot = { workbenchId: "wb", sessionId: "failed", modelRevisionId: "mr", sourceRevisionId: "sr", systemPrompt: "POLICY", updatedAt: "2026-10-19T00:00:00Z", compaction: previous, messages: history() };
@@ -296,7 +319,8 @@ describe("AC-43/48/53/67 context soft budget", () => {
       load: async () => snapshot, save: async value => { snapshot = value; },
     } });
     await runtime.startTurn({ workbenchId: "wb", sessionId: "failed", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: "turn", prompt: "continue" });
-    expect(snapshot.compaction).toEqual(previous);
+    expect(snapshot.compaction).toBeUndefined();
+    expect(snapshot.piSession).toBeDefined();
     expect(JSON.stringify(snapshot.messages)).toContain("evidence-0");
     expect(snapshot.messages.length).toBeGreaterThan(50);
   });
@@ -316,7 +340,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(messages).toHaveLength(51);
   });
 
-  it("compacts joi on the same independent budget and preserves the current requirements", async () => {
+  it("PI-SESSION-02/18 preserves current requirements without Joi's character compactor", async () => {
     const f = fixture("joi-soft-budget");
     vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("checkpoint with references and unresolved gaps")]));
     f.faux.setResponses(Array.from({ length: 4 }, () => context => {
@@ -327,7 +351,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
       load: async () => snapshot, save: async value => { snapshot = value; },
     } });
     for (let index = 0; index < 4; index += 1) await runtime.startTurn({ workbenchId: "wb", sessionId: "session", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: `turn-${String(index)}`, prompt: "continue", requiredContext: "REQUIRED_NOW" });
-    expect(snapshot.compaction?.count).toBeGreaterThan(1);
-    expect(JSON.stringify(snapshot.messages).length).toBeLessThanOrEqual(64_000);
+    expect(snapshot.compaction).toBeUndefined();
+    expect(JSON.stringify(snapshot.messages).length).toBeGreaterThan(64_000);
   });
 });

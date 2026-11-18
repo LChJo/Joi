@@ -9,8 +9,9 @@ import { Tooltip } from "./Tooltip";
 type DatePreset = "today" | "7" | "30" | "90" | "year" | "custom";
 
 const POLL_MS = 15_000;
-const PURPOSES: readonly UsagePurpose[] = ["orchestration", "routing", "partner", "evolution", "summary", "probe"];
+const PURPOSES: readonly UsagePurpose[] = ["orchestration", "routing", "partner", "evolution", "summary", "probe", "cache_warming"];
 const PURPOSE_LABELS: Record<UsagePurpose, string> = {
+  get cache_warming() { return t("statistics.cacheWarming"); },
   get evolution() { return t("statistics.evolution"); }, get orchestration() { return t("statistics.orchestration"); }, get partner() { return t("common.partners"); }, get probe() { return t("statistics.probe"); }, get routing() { return t("statistics.routing"); }, get summary() { return t("statistics.summary"); },
 };
 const ENGINE_LABELS: Record<UsageEngine, string> = { a2a: "A2A", "claude-code": "Claude Code", codex: "Codex", pi: "pi" };

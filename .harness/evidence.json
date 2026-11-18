@@ -102,29 +102,29 @@
     {
       "id": "6c84adef-da3b-49e2-8c3c-3162e41cb524",
       "kind": "source-code",
-      "claim": "Composition wires runtime application services, transport, events, artifacts and persistence.",
+      "claim": "Runtime drain stops numeric reconciliation with owned lifecycle shutdown; existing business workers and dispatch contracts remain.",
       "location": {
         "path": "src/main/composition/wire-runtime.ts"
       },
-      "hash": "2cea65bd0062facd627e4a85825a97bb4e6a168596012666bec3bd60966fc299",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "e2fc9ea33f21ba60c2002bb2bf93aa1168763acf4dbc9593ec17adca0ed16d5a",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 95
+        "endLine": 327
       }
     },
     {
       "id": "8d9826b0-5e9d-43c8-b4c4-5e247ac56d15",
       "kind": "source-code",
-      "claim": "Composition wires Joi inbox/coordinator, automation, reasoning and bounded learning.",
+      "claim": "Primary Joi uses the same private native history adapter as partners while retaining its own business tool and scheduling boundary.",
       "location": {
         "path": "src/main/composition/wire-joi.ts"
       },
-      "hash": "eb7459c34a8e69fab7bbc070398751acab52b51b5dbabcb30888bec407ef2304",
-      "observedAt": "2026-11-11T04:10:28.623Z",
+      "hash": "e6431885701ab61a8857371640ce6e1b4221757924bf635a97b64666f78168b3",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 75
+        "endLine": 138
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "dec022c5e46a2016398712f0122ec4154102812f0e0f44c879e354b64ec1cb6d",
-      "observedAt": "2026-11-14T11:23:51.965Z",
+      "hash": "bf042b519c020edb6b2b935a535c9b3367898548e70191c17747d0743193084c",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 416
+        "endLine": 417
       }
     },
     {
@@ -330,39 +330,39 @@
       "location": {
         "path": "src/renderer/ConversationWorkspace.tsx"
       },
-      "hash": "b9d6a45cb83b4159142c3ab80de18684fd7bc36fc74f3b5346a39f8b459fcbb0",
-      "observedAt": "2026-11-11T09:48:24.965159Z",
+      "hash": "cca18a9ca2187de1b3d5adb3b068ea90a48a9bab60a9bba1809912f3ac8a4058",
+      "observedAt": "2026-11-17T05:58:49.978Z",
       "range": {
         "startLine": 1,
-        "endLine": 117
+        "endLine": 116
       }
     },
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Conversation service retains frozen configuration, READ/WRITE admission and metadata-only title edits. Observers receive committed safe prefixes and terminal snapshots, including whitelisted failure facts, partial artifacts and unknown cleanup outcomes. Provider exceptions remain private.",
+      "claim": "Ordinary conversations bind turns to execution segments and treat current user intent as the task. Startup restores trustworthy Pi results by stable turn and segment identity without dispatching.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "7e763bf2dd619fa39843965a51fa63dab79b592442076198ac41338d2de97310",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "f5cb312225dd841055156fc22623aed1315bdb3adcd7aa1a46b6a2c1a705daab",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 288
+        "endLine": 349
       }
     },
     {
       "id": "db8263f3-5e65-499b-b358-e54b40a000cd",
       "kind": "source-code",
-      "claim": "Transactional conversations preserve stable requests, workbench ownership, tombstones and non-replayed interrupted runs. Title edits preserve turn and execution state. Canonical SDK entries append behind RUNNING ownership; immutable prefixes and safe terminal failure facts remain durable.",
+      "claim": "SQLite binds running turns to stable execution segments, lists Pi recovery candidates and guards terminal updates. Public Pi history suppresses stale thinking summaries.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-conversation-store.ts"
       },
-      "hash": "9a0d951d868cfb2cd675e44a0a74d34ba1afbeac474e756196fbeb899635197a",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "26e531415af0f2585fb3141dbc5bf445db0d9b3744ca18767dbb8fa36a6e0000",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 249
+        "endLine": 318
       }
     },
     {
@@ -396,26 +396,26 @@
     {
       "id": "0928551c-008e-4486-b324-fdd3cc15e717",
       "kind": "source-code",
-      "claim": "Wires concurrent conversation turns independently of serial explicit Git operations and child delivery; shutdown stops claim admission and drains all started batches.",
+      "claim": "Composition wires private handoff and Pi result recovery before resuming conversation dispatch. Isolated child turns retain their own outbox and pinned capabilities.",
       "location": {
         "path": "src/main/composition/wire-conversations.ts"
       },
-      "hash": "8a23941f012a9556da7092f975802fb3ececfab7260036cd1547b8208205c3fb",
-      "observedAt": "2026-11-12T07:00:19.609Z",
+      "hash": "48ca79b8ef78f491649a5b6f0ec3af4e51275966215feee57ca7272e4700fe2e",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 119
+        "endLine": 115
       }
     },
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Shared conversation DTOs expose bounded model recovery, safe failure facts and committed turn updates independently of execution status, retaining extension selections, history pages, title summaries and cursor contracts.",
+      "claim": "Shared conversation DTOs expose safe committed turn updates, scoped history, timing and explicitly public provider summaries.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "1bb6dbc62f49b9444ff0bf135c4042175a68cd1b0d77431645db8eca6489d0b5",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "308e1de665d6b101d2cf5d60f76b272bdfcc82419be1f13fbc3e31cd1f2a8966",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
         "endLine": 119
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "Conversation acceptance defines ownership, configuration, archive, independent admission, safe context and child progress; imported missing-private-history markers remain internal under CHAT-37.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "09ece8e2e0807181fa3e1d795650eb8e6995bb28b28355f8ff44794132bbb742",
-      "observedAt": "2026-11-14T11:23:51.963Z",
+      "hash": "38ce5d5a51537a5fcc20a6db55107fce3e12db3a6a8eb141369ccbab64ab03cc",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 47
+        "endLine": 46
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "645ca3dda2274d76b9aa2d99ecd6df30041c1529f16fdd0f54bc361ee29416e5",
-      "observedAt": "2026-11-14T11:23:51.966Z",
+      "hash": "d6e8d11bbba8b5a1053c5e7132f2d0f901927b4e1528a4dc42296348060efb27",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 320
+        "endLine": 323
       }
     },
     {
@@ -550,15 +550,15 @@
     {
       "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
       "kind": "source-code",
-      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact.",
+      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact. Completed turns show context metadata inside existing activity disclosures and omit standalone context rows.",
       "location": {
         "path": "src/renderer/ConversationOutput.tsx"
       },
-      "hash": "beb6bd68d423b22c76b412c6d27eaf71392412bbb187da312f84412a273f84a8",
-      "observedAt": "2026-11-12T06:21:45.368Z",
+      "hash": "6128ac335f087029a2ec67235bb7c1af33d29d599594020c7aa49f0ec83bfbd0",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 87
+        "endLine": 88
       }
     },
     {
@@ -620,57 +620,57 @@
     {
       "id": "54304c25-7793-4c5a-b601-f649f10df3f1",
       "kind": "source-code",
-      "claim": "Session-owned single-flight background batches validate frozen coverage; route-scoped backoff survives candidate changes; hard waits and cleanup are bounded and observable.",
+      "claim": "Historical host compaction implementation remains for retained algorithm regressions. Active primary and partner SDK runtimes do not instantiate it.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-context-manager.ts"
       },
-      "hash": "518ab4c83562ff79f80b4156b2c002ea7cc6d42e1aece02eea7e3d27c15f5b05",
-      "observedAt": "2026-11-12T17:43:19.460Z",
+      "hash": "48a2d102117d696b943bb47b16cc67f6f40b7ada640330d2e98b1e24538b08c8",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 432
+        "endLine": 446
       }
     },
     {
       "id": "629887d6-ca08-4e3b-9116-9def218c167e",
       "kind": "source-code",
-      "claim": "Pi SDK session restores versioned canonical entries and context edits through public SessionManager APIs. Incomplete effects become reference data. Resource discovery and SDK compaction remain disabled; configurable agent retries have zero provider retries.",
+      "claim": "The public SDK factory manages resources, requests, retry, parallel scheduling and compaction. Auditable context edits retain unknown effects and omit fully framed legacy checkpoints from model context.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-pi-session.ts"
       },
-      "hash": "9d702f0eebbe35e141bea8a93316608d2343675f4ed34649f36ffae42ecbb3c6",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "a9d510a832295035bbc04ce3d5566beecb6f16d9c18a8ccd37f09b3ca3b81512",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 84
+        "endLine": 107
       }
     },
     {
       "id": "90a83f7c-9a38-475a-a9ec-49d540abde2d",
       "kind": "source-code",
-      "claim": "Private normalized execution journal and native session references, independent of safe events.",
+      "claim": "Native engines journal their own messages and native thread references. New segment handoffs do not carry an old Pi canonical identity into a native execution.",
       "location": {
         "path": "src/main/infrastructure/pi/native-conversation-journal.ts"
       },
-      "hash": "38f4af3a1d3e802d299a56ac8cc6add7c1e33d28c70b789794a1471b4c038b58",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "8d64cd2d94b190cb5eb89b57a0de839f46b9b2cc54588a100dca4d0eecc14d0a",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 75
+        "endLine": 74
       }
     },
     {
       "id": "c3ae40e3-2672-4b92-b011-b2ef3c6044a8",
       "kind": "document",
-      "claim": "Accepted conversation session, shared compaction, durable child-provider and reconnect boundary.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/adr/0033-conversation-context-sessions.md"
       },
-      "hash": "27e0e7923dad868219da1239e3bca86a44e08fa9a07b65c85fd85e85ad2aee35",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "ea48f78cdbbe25c1606f4986762256325999941bc417f3d802c21c970269bfb1",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 33
+        "endLine": 35
       }
     },
     {
@@ -690,15 +690,15 @@
     {
       "id": "4ceef8ae-0316-4837-943b-ab9e9599acc3",
       "kind": "document",
-      "claim": "Synthetic regression scenarios and verification scope; no token or memory-quality claims.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "89024ded19537f8a39515cd21b9da981d98475724bc3589db22c6c7cd8bf7dd2",
-      "observedAt": "2026-11-12T17:43:19.461Z",
+      "hash": "04522e11181978d744ca0bd0c9f4c7a4864b6e2c5cd9e71ce061dd121314cc0d",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 190
+        "endLine": 192
       }
     },
     {
@@ -718,12 +718,12 @@
     {
       "id": "dae0093b-300e-4129-8563-fa0ff2ad9f33",
       "kind": "source-code",
-      "claim": "SDK lifecycle observations use stable host phase identities; raw reasoning and signatures are not accepted as public summaries.",
+      "claim": "Pi SDK lifecycle observations retain stable phase identities and timing. Only explicitly public summaries enter the bounded shared projection.",
       "location": {
         "path": "src/main/infrastructure/pi/conversation-thinking.ts"
       },
-      "hash": "105bd50ac8f9af06d46a3365d3821da2b5c2d5a2f382e19b808d9ea5dab574db",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "6c476b0702914d21da14b5187bc7d81beb4e2ad95ca712cecce41034b302a6a1",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
         "endLine": 46
@@ -732,12 +732,12 @@
     {
       "id": "793588d4-9226-45ea-bcb5-58e60334355c",
       "kind": "source-code",
-      "claim": "Dedicated reads precede necessary file writes and shell commands.",
+      "claim": "Capability-scoped inspection guidance supplements official tool rules, with read fallback only when official metadata is absent; it does not introduce tool-level lease or scheduling policy.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
       },
-      "hash": "e5b4d7dde021d6aa35d0aa66c04acf7be918eff5704c31a9f58a5c4ce167dfeb",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "268b7ecb6c1697ae38658ea3eaa6f08f03d5b535eca10b4574e21bcadc0e0cd6",
+      "observedAt": "2026-11-17T16:33:24.058935Z",
       "range": {
         "startLine": 1,
         "endLine": 12
@@ -816,15 +816,15 @@
     {
       "id": "2554deb1-dde9-4858-bb55-e867f1d4d116",
       "kind": "source-code",
-      "claim": "Actual SDK requests verify static local selection, READ/CUSTOM ceilings, no process before WRITE admission, no cloud credentials and cleanup after child settlement failure.",
+      "claim": "Retained synthetic regressions verify this boundary under official Pi ownership. Historical host algorithms are tested only as retained utility evidence; current execution does not invoke them. Live providers and real user data remain unverified.",
       "location": {
         "path": "tests/contract/conversation-pi-extensions.test.ts"
       },
-      "hash": "5ce6410ea93b101791a0891328830148f2949435c0d2f5414346b7e17abe9307",
-      "observedAt": "2026-11-12T17:43:19.462Z",
+      "hash": "706269f622db4e3d077974ffd2ae6ce93204b16b2e05ce2af9e67a98138f2337",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 149
+        "endLine": 146
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation. CI-04/05 retain quality gates on all refs while restricting installers and main-only releases to stable version upgrades. Generated version notes, repeated Latest checks, consistent package-lock versions and both platforms gate publication. AC-07/14/44/48/53 also specify Worker environment casing, current source admission, canonical Work paths and guarded recovery reopening.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "3350e9e8bf6f3adedb24bf8cfc789d8bdf0905c4bf78a23d6595e0ed7c0ac29c",
-      "observedAt": "2026-11-16T06:38:13.972Z",
+      "hash": "2898b5f9ec971ce83acbb7ab665b8a28458ddc628ecaf65852baf1cc8a1b2593",
+      "observedAt": "2026-11-18T03:39:04.300Z",
       "range": {
         "startLine": 1,
-        "endLine": 720
+        "endLine": 736
       }
     },
     {
@@ -900,12 +900,12 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime polling starts concurrent conversation claim batches independently of serial Git and child dispatch. Runtime composition wires the existing conversation service into remote commands and projects only safe workbench/network/partner and Skill display metadata into the paired catalog.",
+      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "69aab046a2e161d25086691584b9fab49c0bd8cb29f9dfc0a9285b42699f545b",
-      "observedAt": "2026-11-14T11:23:51.964Z",
+      "hash": "38efba96b77bc5487fa2acb1602eb554cdcb81a1ec5a28e1f73b8656f06d3337",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
         "endLine": 378
@@ -984,99 +984,99 @@
     {
       "id": "38b09d5f-50f2-43a2-b6f7-2a4e31675e77",
       "kind": "source-code",
-      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "claim": "Private session references, optional history readers and execution callbacks remain application-owned DTO contracts, without exposed SDK objects.",
       "location": {
         "path": "src/main/application/ports/partner-instances.ts"
       },
-      "hash": "0db1c041ebf5d12620b9546fb3ae9eb2d0224b5d3cf33d21a2199d94d831458e",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "3a53cd7418bf2a1923731e35cbd5cc1d607735752053b4c23533c710a1fc5ffb",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 138
+        "endLine": 143
       }
     },
     {
       "id": "60fe6b4d-06e2-46f5-8e7f-e680ff854cf9",
       "kind": "source-code",
-      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "claim": "The primary reasoning port separates selected skill metadata from role policy and request context while keeping existing event, session and execution contracts.",
       "location": {
         "path": "src/main/application/ports/primary-reasoning-runtime.ts"
       },
-      "hash": "b607de1a802557ff6dd7b091e6707b504edecd7bb70a8502df802e9190da5bd1",
-      "observedAt": "2026-11-12T17:43:19.467Z",
+      "hash": "6ecd68d6e52e813f8a2611dc334363ab86afd555f6279049ee1963227234f7b7",
+      "observedAt": "2026-11-17T16:33:24.059502Z",
       "range": {
         "startLine": 1,
-        "endLine": 87
+        "endLine": 92
       }
     },
     {
       "id": "16802d66-5c1a-4e9f-8db6-af5647932e94",
       "kind": "source-code",
-      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded.",
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "c7ed13d75e2eda58f796400f7dd3d3b958e4b2c376fcdb1dd5f28cd747f7e674",
-      "observedAt": "2026-11-12T17:43:19.467Z",
+      "hash": "281c6a38794ac630ee1cb57a4e3e33010a33f40cc5b3e9062a829d1375fd6360",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 882
+        "endLine": 883
       }
     },
     {
       "id": "b3dad04a-df5c-45cd-a2da-86f7e73d273e",
       "kind": "source-code",
-      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "claim": "SQLite stores incremental primary projections and native references under the migrated projection table. Legacy archives remain import/audit sources, without overwriting native canonical facts.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.ts"
       },
-      "hash": "4d2aebcb5a90c63d5643ef77395b4c533c5ef776a05a68107cfa3f5d4ec1de74",
-      "observedAt": "2026-11-12T17:43:19.468Z",
+      "hash": "ef69a50d8118be5d44fcbbbd6ca6219ed313370ad287e7cb61afc42397e426c1",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 177
+        "endLine": 185
       }
     },
     {
       "id": "040ebe4f-d281-4996-8db8-54d727c6e716",
       "kind": "source-code",
-      "claim": "Pinned SDK summary responses are strictly classified; full-request output geometry and required thinking capabilities determine generation allowance independently of context reserve.",
+      "claim": "Active execution uses SDK compaction. Legacy helper recognizes complete checkpoint framing, and stable candidate hashing remains available for child identity.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-compaction.ts"
       },
-      "hash": "e1d12d6f40713a10e4cd68a6aaffe438ada39691b09a6a94fd42b39ff5e85ab8",
-      "observedAt": "2026-11-12T17:43:19.468Z",
+      "hash": "92a0f5077f4ce72620c09a80f6f13c01a69a97f07662a5d88fbc8dc25fcd90bb",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 248
+        "endLine": 247
       }
     },
     {
       "id": "c0fbdf81-21b8-46b1-9b34-73d31b228a96",
       "kind": "source-code",
-      "claim": "Partner runtime owns frozen permissions and shared summaries while AgentSession owns normal conversation continuation. One persisted three-retry budget, durable tool/request barriers, independent retry/idle waits and bounded abort precede final cleanup.",
+      "claim": "Partner entries share official execution, native history and settled result markers. Observation is non-blocking, initial tools respect admission, optional private handoff never terminates, and task-scoped history cannot bypass current Work evidence readers. Child identities are separate.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "a55f64443ef78cdf920d67aa780d86ab9e15fec41f3fd4293a207c99c5d9642d",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "39f64c3e50205191a28840ef6f0320337b0d77b7e17df3742c724d029537a91c",
+      "observedAt": "2026-11-17T16:34:59.281788Z",
       "range": {
         "startLine": 1,
-        "endLine": 1325
+        "endLine": 548
       }
     },
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary Joi shares request compaction while retaining canonical archive, rollback, safe final capacity and private retry persistence.",
+      "claim": "Primary reasoning uses the official SDK, shared structured prompt sections and scoped selected-skill context; native rollback, durable results, parallel tools and question/completion barriers remain intact.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "5a5597d9142714f5fd9abb0a5cd2936c28a9b66a41737082240bdee0e4ea6b89",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "6b0f81531bb2547f236604e2589cfe73a0e455c8236735aadd353ce6e173206b",
+      "observedAt": "2026-11-17T16:33:24.059191Z",
       "range": {
         "startLine": 1,
-        "endLine": 892
+        "endLine": 364
       }
     },
     {
@@ -1096,40 +1096,40 @@
     {
       "id": "2f34eed3-5d77-426a-b98b-b96e7eb41ebc",
       "kind": "source-code",
-      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
       "location": {
         "path": "tests/contract/local-pi-partner-runtime.test.ts"
       },
-      "hash": "bfb16f6e19c331f3f27cf2154e1e703779a5be09df164a4aa7f50bdb914114b8",
-      "observedAt": "2026-11-12T17:43:19.471Z",
+      "hash": "ead4ce510d43b83aea0eb96191979151325cd3cf9467d9e0a0730b7ef961ab8c",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 1825
+        "endLine": 1049
       }
     },
     {
       "id": "64c24ebe-09b2-47ab-9204-f66893cf8d48",
       "kind": "source-code",
-      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "claim": "Primary reasoning contract regressions cover selected skill metadata in actual structured system prompts, clearing selections on subsequent turns, and existing dispatch, outcome and session boundaries.",
       "location": {
         "path": "tests/contract/pi-runtime-contract.test.ts"
       },
-      "hash": "12f7c932798341423e629c548230aa0a5ee4c1a0e562a2057030ead98a6c63cd",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "e54a869c8f80aed8478b1165c5fab061832a1ff04ebf1b652477013aa874e8a7",
+      "observedAt": "2026-11-17T16:33:24.060052Z",
       "range": {
         "startLine": 1,
-        "endLine": 1424
+        "endLine": 1030
       }
     },
     {
       "id": "92db4a86-9834-4071-bf2c-9fd0724b43c3",
       "kind": "source-code",
-      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
       "location": {
         "path": "tests/integration/sqlite-pi-session-store.test.ts"
       },
-      "hash": "ba4431e994c14b3d1210e1aed22ee3135018f0ac0fb856bc00badab7e438b629",
-      "observedAt": "2026-11-12T17:43:19.473Z",
+      "hash": "f9830892658618a9eb4b9740d3501d79fdde97529796fd67ed1d486e1663af21",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
         "endLine": 118
@@ -1152,43 +1152,43 @@
     {
       "id": "cd436d72-ed57-4452-880d-27cbabeb27fa",
       "kind": "source-code",
-      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "claim": "Retained synthetic regressions verify this boundary under official Pi ownership. Historical host algorithms are tested only as retained utility evidence; current execution does not invoke them. Live providers and real user data remain unverified.",
       "location": {
         "path": "tests/unit/pi-history-budget.test.ts"
       },
-      "hash": "097020f1ac61cf71f262e8a98a67526a6f56915e16e04867e8dc385caf6dabb6",
-      "observedAt": "2026-11-12T17:43:19.475Z",
+      "hash": "9f4cbae02c37df6af2f730ae7cd0bb96f8a3ba4a59209de04ea2c8083a29de29",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 333
+        "endLine": 357
       }
     },
     {
       "id": "dd47d686-75af-4f9e-a3be-93a47f07280c",
       "kind": "document",
-      "claim": "Retained summary policy, acceptance criteria and implementation evidence; real-provider latency and answer-quality replay remain unverified.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/adr/0034-background-summary-policy.md"
       },
-      "hash": "cb461b1da11bc8cbf7bd89725a9c92921c7c27eb95bb80aaf1690d8d348374aa",
-      "observedAt": "2026-11-12T17:43:19.476Z",
+      "hash": "b32c869fbf73edb16f54245478b10ccacb1776ac04122c7016f27c1db6735419",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 13
+        "endLine": 15
       }
     },
     {
       "id": "9b7ef723-ee6b-4710-b18a-84c606f6a1a0",
       "kind": "document",
-      "claim": "Implemented summary optimization policy, acceptance scenarios and local validation; live-provider performance remains unverified.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/pi-summary-optimization-plan.md"
       },
-      "hash": "96150c55ef75082268ccd5bb9a4937dd858fb7630758b704dc906b37467359a2",
-      "observedAt": "2026-11-12T17:43:19.477Z",
+      "hash": "10518da907f51a24743715323adcab05ea015609e6a4de3ac01e62eb550d50b4",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 149
+        "endLine": 151
       }
     },
     {
@@ -1236,15 +1236,15 @@
     {
       "id": "d3ce4801-6708-4041-a84e-7a5fa383272a",
       "kind": "source-code",
-      "claim": "Regression verifies session-owned summary behavior with synthetic data and isolated resources.",
+      "claim": "The synthetic Pi SDK exposes lifecycle and timing for readable, empty, whitespace, long and redacted thinking without publishing private text or signatures.",
       "location": {
         "path": "tests/contract/conversation-pi-session.test.ts"
       },
-      "hash": "c8a795907dd1dadb2698a239e24651de4b4af04c0341dabdf6abde2b9acd4721",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "6859d269ac9a4ad577c676507d87e92295d4516a82b7576a27ade54f0159303f",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 224
+        "endLine": 260
       }
     },
     {
@@ -1292,43 +1292,43 @@
     {
       "id": "70712ab8-9239-417e-ae73-bc61ce09c371",
       "kind": "source-code",
-      "claim": "Resident turn diagnostics separate SDK tool duration, context preparation, awaited session persistence and live/progress callbacks without changing execution policy.",
+      "claim": "Partners preserve configured role policy, pass access and delivery rules separately, and supply workbench references independently. All partner entries retain SDK-owned execution, native history, non-blocking observations and settled result boundaries.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "a55f64443ef78cdf920d67aa780d86ab9e15fec41f3fd4293a207c99c5d9642d",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "39f64c3e50205191a28840ef6f0320337b0d77b7e17df3742c724d029537a91c",
+      "observedAt": "2026-11-17T16:33:24.058716Z",
       "range": {
         "startLine": 1,
-        "endLine": 1325
+        "endLine": 548
       }
     },
     {
       "id": "d6750325-b5ac-4ba2-9f0b-b4aa31532e73",
       "kind": "source-code",
-      "claim": "CHAT-40 synthetic SDK contract distinguishes tool execution from awaited persistence/display latency and rejects private markers in JSONL.",
+      "claim": "Retained synthetic regressions verify this boundary under official Pi ownership. Historical host algorithms are tested only as retained utility evidence; current execution does not invoke them. Live providers and real user data remain unverified.",
       "location": {
         "path": "tests/contract/conversation-pi-latency.test.ts"
       },
-      "hash": "04721b9a63ee59bfb6e8260483963fa7b8a19d1cf10af819d81e072b92333b38",
-      "observedAt": "2026-11-12T17:43:19.482Z",
+      "hash": "c85e8f8b94467d6798088d1780e371c3937f9240fd812304e7800bbb16919c1f",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 48
+        "endLine": 47
       }
     },
     {
       "id": "d3e5a5bf-cf8a-4b5f-8b48-5f680226b435",
       "kind": "source-code",
-      "claim": "Model error/cancellation streams, callback aggregation and failing diagnostic sinks preserve caller results.",
+      "claim": "Retained synthetic regressions verify this boundary under official Pi ownership. Historical host algorithms are tested only as retained utility evidence; current execution does not invoke them. Live providers and real user data remain unverified.",
       "location": {
         "path": "tests/unit/pi-runtime-usage.test.ts"
       },
-      "hash": "191c9b768eef39060f37012c1a1c22c24a63ca126371d728232c3aea92a11a5e",
-      "observedAt": "2026-11-12T17:43:19.483Z",
+      "hash": "011cc6e3a4ff2d5d993347b082e3cab190a9961401b402f9750cdee1d1d2515e",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 75
+        "endLine": 82
       }
     },
     {
@@ -1348,29 +1348,29 @@
     {
       "id": "70cfe0d8-8277-4d50-a38e-99188dc3d467",
       "kind": "source-code",
-      "claim": "Typed Pi latency diagnostic contract contains lifecycle stages, internal identifiers and numeric timings.",
+      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded.",
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "c7ed13d75e2eda58f796400f7dd3d3b958e4b2c376fcdb1dd5f28cd747f7e674",
-      "observedAt": "2026-11-12T17:43:19.484Z",
+      "hash": "281c6a38794ac630ee1cb57a4e3e33010a33f40cc5b3e9062a829d1375fd6360",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 882
+        "endLine": 883
       }
     },
     {
       "id": "825e4057-6213-455e-8530-d1efa5bfd42e",
       "kind": "document",
-      "claim": "Implemented summary optimization policy, acceptance scenarios and local validation; live-provider performance remains unverified.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/pi-summary-optimization-plan.md"
       },
-      "hash": "96150c55ef75082268ccd5bb9a4937dd858fb7630758b704dc906b37467359a2",
-      "observedAt": "2026-11-12T17:43:19.485Z",
+      "hash": "10518da907f51a24743715323adcab05ea015609e6a4de3ac01e62eb550d50b4",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 149
+        "endLine": 151
       }
     },
     {
@@ -1404,15 +1404,15 @@
     {
       "id": "ac69fa43-cea7-401a-a580-5f894151a348",
       "kind": "source-code",
-      "claim": "Real SQLite conversation integration retains 501 individually persisted turns and all atomicity assertions, with a bounded 60-second CI-only budget and the existing local budget.",
+      "claim": "SQLite regressions cover durable and scoped turn reads, atomic session state, and historical Pi thinking privacy while native public summaries remain readable.",
       "location": {
         "path": "tests/integration/normal-conversation-store.test.ts"
       },
-      "hash": "5c4945b03f4f8198f17a865ec05b2ac32df939dc9ea6e5e4a2c0d1a2831cebb0",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "bf0787c91bd207e6d4620edb6313be6f0b851d18f75b2bc515406d80356283fd",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 148
+        "endLine": 167
       }
     },
     {
@@ -1460,15 +1460,15 @@
     {
       "id": "44b4de62-537a-42f1-8a5c-40d72900430b",
       "kind": "source-code",
-      "claim": "Failing-first regressions cover paused prefix flush, observer failure isolation and committed terminal notifications. Safe failure facts and partial artifacts agree between live observers and cold reads, including terminal persistence and cleanup failures.",
+      "claim": "Disposable SQLite integration covers safe conversation progress, segments and repeatable recovery of trusted Pi result state without redispatch.",
       "location": {
         "path": "tests/integration/normal-conversation-execution.test.ts"
       },
-      "hash": "934e20ba90499dc0628eae514b3a0b189c0242fb311ec24f942ae0e8e78cdd9a",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "a2ed3d0f23c782295a96e135860f657b00cc3818105fd715239c0c27289f35bc",
+      "observedAt": "2026-11-18T01:03:46.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 532
+        "endLine": 632
       }
     },
     {
@@ -1502,15 +1502,15 @@
     {
       "id": "924fa695-204b-44c7-a782-358227365952",
       "kind": "source-code",
-      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission.",
+      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission. Renderer regressions cover Enter, Shift+Enter, composition, draft preservation, indicators through stop and the completed footer with reply copy.",
       "location": {
         "path": "tests/renderer/conversation-interactions.test.tsx"
       },
-      "hash": "05d0d7e359b6feac8e17c73787d85152d9462548ba85850b1dab5cb6ba82551d",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "3f17521ea1835dd708e9c89a690d8380cf6bd483d666017c795acbb6c7505873",
+      "observedAt": "2026-11-18T01:07:38.692Z",
       "range": {
         "startLine": 1,
-        "endLine": 352
+        "endLine": 384
       }
     },
     {
@@ -1544,15 +1544,15 @@
     {
       "id": "16e763de-7d1e-4378-bd91-b3d8bc924d05",
       "kind": "document",
-      "claim": "Implemented conversation reliability and REL-01-16 acceptance, pinned research, SDK-owned continuation, canonical private entries, scoped reconnect and bounded cancellation. Fixed gates pass, with synthetic-provider and real-provider evidence limits documented.",
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
       "location": {
         "path": "docs/pi-conversation-reliability-plan.md"
       },
-      "hash": "24349147636bbde288e5a991f09b9eb6d4769b16625e97ae96d6851144355523",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "3eb11b80d10b90a04442959ccba8f9fc03f8be4eaa6b01bfc6afe9535a1f75fb",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 171
+        "endLine": 173
       }
     },
     {
@@ -1586,15 +1586,15 @@
     {
       "id": "0de54a1c-29ec-47aa-b79b-17f9b4842974",
       "kind": "source-code",
-      "claim": "Real SDK synthetic-provider regressions exercise two timeouts after one stable tool call, single retry budget, provider retry zero, abort, idle separation, persistence failure, native history and unresponsive-provider isolation.",
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
       "location": {
         "path": "tests/contract/conversation-reliability.test.ts"
       },
-      "hash": "448c3434d47cb90dade29e54f34f5a717091a54a316888f0a8139c1fe839e843",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "fd8f3cd6b005bd2f1d14436314fd826e56feee435b3afbbcffb420e8f84544ea",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 150
+        "endLine": 156
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "New model forms select 1M context and binary 128K output. Shared create/edit ladders offer 2M/3M context and binary 256K/300K/512K output while preserving explicit recommended resets and nonstandard stored values.",
-      "hash": "6d0ddb6480c8ac16091df5ae4730e847116e2c5d3b1a23c4a12a5334c477188b",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling.",
+      "hash": "d8de72f078d68792bc296eecc4932167710db5ec3f4bbe2d6c1f6c2df05c8302",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 1929
+        "endLine": 1918
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Renderer regressions verify default 1M/128K submission, expanded context/output selection, explicit recommended resets and preservation of nonstandard model limits.",
-      "hash": "98d3905c7c1d1a5db24c724491b110a2efd5e7f3b118d2efb6b4d80f6a3dce07",
-      "observedAt": "2026-11-14T10:03:13.841Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter.",
+      "hash": "400e562313bf9fac9f2170c0dcce0c4bdba6e34c3734530254a5961d8520dde8",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
-        "startLine": 474,
-        "endLine": 750
+        "startLine": 1,
+        "endLine": 2387
       }
     },
     {
@@ -1660,25 +1660,25 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "67a00eded0511c8c0ea93d2644b771b49dbfe794ffa16921dc925551a78cc7de",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "f9a69c3bd655d845d652a103549947ce6e59b8129feabdca0216ef5d0a68293a",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 9736
+        "endLine": 9751
       }
     },
     {
       "id": "4b0b84e3-24d0-44f7-aac1-2c450c507e80",
       "kind": "source-code",
-      "claim": "The Android home offers a conversation destination; supported controllers open the native conversation screen and older hosts receive an upgrade notice.",
+      "claim": "The Android home offers a conversation destination; supported controllers open the native conversation screen and older hosts receive an upgrade notice. The home composer uses the shared keyboard submission behavior and connection guard.",
       "location": {
         "path": "apps/joi_mobile/lib/home_screen.dart"
       },
-      "hash": "69b2dffd7cad040bd3289a8823407615a3b416c725052b766e6e930e58d41587",
-      "observedAt": "2026-11-14T11:23:51.958Z",
+      "hash": "90b312a61c8efc4e44ab98a623ac4c3a4acd3bac146c7f96fa3dd3c18e28e205",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 692
+        "endLine": 691
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "7a55f7b25d3b3321bbb4eeca6222c4d4927f72e42bb45a18ce051bc72408a58e",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "f8ebac953956cb38724ab2f0658a3a6e548b2468c9f2ea72cfe48e50a3415625",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 6846
+        "endLine": 6858
       }
     },
     {
@@ -1772,11 +1772,11 @@
       "location": {
         "path": "resources/locales/en/chat.json"
       },
-      "hash": "3b00ecbd4b3948ecbc2e839df71562b55c9e8dd090dacbc0d04f7790a2ca9d1a",
-      "observedAt": "2026-11-14T11:23:51.963Z",
+      "hash": "55e2794db3a948cb4c8518e6ae665b144ecd557ecdbe0ea7648ad0bf7d311bf3",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 199
+        "endLine": 198
       }
     },
     {
@@ -1810,15 +1810,15 @@
     {
       "id": "3627078a-b447-432c-9b65-37a1521deadb",
       "kind": "source-code",
-      "claim": "The legacy browser fallback offers tasks, normal conversations and archived conversations using the shared React views. Task polling pauses on conversation views; connection status remains visible. This retired WebSocket gateway is not the formal native iroh/browser deployment.",
+      "claim": "The legacy browser fallback offers tasks, normal conversations and archived conversations using the shared React views. Task polling pauses on conversation views; connection status remains visible. This retired WebSocket gateway is not the formal native iroh/browser deployment. The remote task input uses the same Enter shortcut and send availability as its button.",
       "location": {
         "path": "src/renderer/RemoteJoiApp.tsx"
       },
-      "hash": "c777d249e752d61d23624044218720fea64d8812c68cd30f785c362fb298de1e",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "78c7254f891072f7ebe263cab40973cf740563cc2d741185dc61f5923177140e",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 134
+        "endLine": 136
       }
     },
     {
@@ -1838,15 +1838,15 @@
     {
       "id": "c56ffabe-fe5f-41d2-8e22-c0ed8e10d06f",
       "kind": "source-code",
-      "claim": "Generated localization keeps the three English conversation messages compatible with Flutter ICU escaping.",
+      "claim": "Generated desktop catalogs include automatic-compaction configuration explanations and the independent cache-warming usage purpose; generated types remain safe shared contracts.",
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "31107c52c89531a64dd6ccaac34631d67e6e45150af903711d490e9efa3f7818",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "75d95703f8e70c3ea94174737f64702e548a9f8e2f5ca2b6078b05872bc5c6ea",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 8646
+        "endLine": 8661
       }
     },
     {
@@ -1866,43 +1866,43 @@
     {
       "id": "2e1b561f-9d1a-4a52-984b-ffd491ce229c",
       "kind": "source-code",
-      "claim": "The browser fallback renders shared normal and archived conversation history, continues a selected conversation and exposes no desktop workspace or unsupported attachment controls.",
+      "claim": "The browser fallback renders shared normal and archived conversation history, continues a selected conversation and exposes no desktop workspace or unsupported attachment controls. The browser task composer has keyboard submission and guards against offline sends.",
       "location": {
         "path": "tests/renderer/remote-joi-app.test.tsx"
       },
-      "hash": "6235b70aa3a5604094662b393ba3e1aa65f2ebf77606a8cc9884eab8c2a8f3cd",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "89ab509cd7dec1e000d9cf126e651c62bc18867fa48f761c55899a0dbd9c890d",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 153
+        "endLine": 158
       }
     },
     {
       "id": "5b5e2d23-0e65-499d-999d-976a1fbe3691",
       "kind": "source-code",
-      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images.",
+      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions.",
       "location": {
         "path": "apps/joi_mobile/lib/conversation_screen.dart"
       },
-      "hash": "91a046bdea40202417ff0302aeb6bf64646682fd52a95672775c4c0f6d069283",
-      "observedAt": "2026-11-16T03:40:54.003Z",
+      "hash": "dffa197a0690d9462c2bc7fa489ae6793dff9062e2c1219b660add482de5c12b",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 965
+        "endLine": 963
       }
     },
     {
       "id": "00eddc89-bcf1-43bd-ab95-2532ceb7d32a",
       "kind": "source-code",
-      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots.",
+      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit.",
       "location": {
         "path": "apps/joi_mobile/test/conversation_screen_test.dart"
       },
-      "hash": "160806e78f4318d6ae7c286485fcdebf710481c8d6057e2f6cee57a7b4cf04ae",
-      "observedAt": "2026-11-16T03:40:54.003Z",
+      "hash": "1d28ff74bae0ebe569f16413babb24b5946c34c46475196a45cf7ab1cb9c45c8",
+      "observedAt": "2026-11-18T01:06:44.931Z",
       "range": {
         "startLine": 1,
-        "endLine": 270
+        "endLine": 282
       }
     },
     {
@@ -1978,12 +1978,12 @@
     {
       "id": "d163a01d-2706-4679-8bea-de546e1ead3a",
       "kind": "source-code",
-      "claim": "The foreman prefers reads and dependencies and preserves automatically resumed resource waits.",
+      "claim": "The foreman preserves resource waits and declares producer-to-review dependencies explicitly. Only independent Work is parallel; reviewers wait for all successful producers, and array order or waiting instructions do not substitute for the DAG.",
       "location": {
         "path": "src/main/application/joi/joi-system-prompt.ts"
       },
-      "hash": "56e0713cb2929684399be33c331a4584f510af6dceca6bb28e359b654b12bfa0",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "299124437289d79e6b8f7bd7a61b3122b772bc97071cb2f7e271dc9ddc47d58d",
+      "observedAt": "2026-11-17T07:38:02.782Z",
       "range": {
         "startLine": 1,
         "endLine": 65
@@ -2006,15 +2006,15 @@
     {
       "id": "3e39b216-1a95-41a5-a236-1dfece37d9f8",
       "kind": "source-code",
-      "claim": "Pure policies classify dedicated Git reads separately from unrestricted shell writes and require explicit resource-wait cancellation intent.",
+      "claim": "Pure admission rules honor earlier incompatible requests; dedicated Git reads and explicit cancellation intent remain separate from unrestricted shell writes.",
       "location": {
         "path": "src/main/domain/work/workspace-write-scheduling.ts"
       },
-      "hash": "cf47902dc5de10a822cde30074eeb5fbfcf428ba6992c56c509fdc7a4f56e193",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "00c3c89f757fbff3c18e179904ea79f02c59f4291e033346b0600c463f9b6586",
+      "observedAt": "2026-11-18T03:39:04.299Z",
       "range": {
         "startLine": 1,
-        "endLine": 22
+        "endLine": 23
       }
     },
     {
@@ -2062,29 +2062,29 @@
     {
       "id": "4491a2e3-577b-4501-8471-6f2d31fb48ce",
       "kind": "source-code",
-      "claim": "The tool catalog exposes the bounded Git reader with a filtered child environment.",
+      "claim": "The tool catalog preserves official tool promptSnippet and promptGuidelines through AgentTool conversion while keeping existing execution functions, write boundaries, Git reader and filtered Shell environment.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-tool-factory.ts"
       },
-      "hash": "0070d06204f40709d4ffdcc49444f1e745a0b730c11e11bbd39715d99352ab59",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "de0dc2accf2c8afc333aca091a18bd6ccbaa43bb7e660e928353ca60946df3cf",
+      "observedAt": "2026-11-17T16:07:18.110585Z",
       "range": {
         "startLine": 1,
-        "endLine": 114
+        "endLine": 130
       }
     },
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Available dispatch candidates include only ACTIVE partners without ACTION_REQUIRED configuration; the management catalog retains all records. Synthesis completion prevalidates evidence, returns safe bounded correction hints, and reports validated status before the final outcome transaction.",
+      "claim": "Primary business tools preserve application dispatch/DAG validation and bounded correction while describing upfront Pi WRITE admission and native demand-driven upgrade accurately.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "82983ccc3e647301d6815439461e720a16a50ed79fdf533340c743ede8fa4e73",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "5ac63f553b3d87bdb05e8b6bf7cd9351c9d615e5b466d8749fdd067d43ac8b36",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
-        "endLine": 1099
+        "endLine": 1108
       }
     },
     {
@@ -2118,29 +2118,29 @@
     {
       "id": "54924ed6-1441-4f5d-a175-47b16eae6fbc",
       "kind": "source-code",
-      "claim": "Synthetic tool regression excludes disabled and source-not-ready partners from available candidates while preserving the usable partner.",
+      "claim": "Synthetic tool regressions retain usable partner candidates and pass both valid and invalid dependency edges intact to the application. Plan errors permit one ordering-preserving correction and never request a partner selection.",
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "324ecb590722f28736b32b516ef170cb078136e8600d20b028459ef6f4e69312",
-      "observedAt": "2026-11-16T04:46:15.887Z",
+      "hash": "9858730516bf3d5fe2a536a48a67064de791ade42d9164663c5433738060db7f",
+      "observedAt": "2026-11-17T07:38:02.782Z",
       "range": {
         "startLine": 1,
-        "endLine": 1099
+        "endLine": 1119
       }
     },
     {
       "id": "55d157d7-c373-46ea-a1c5-27bcacf3421c",
       "kind": "source-code",
-      "claim": "Disposable SQLite exercises wait visibility, continuation identity, resumed completion and canceled agent cards.",
+      "claim": "Disposable dispatch regressions cover prestart admission, immediate durable wake on release, cancellation or pause, projection-failure cleanup and stale-generation completion.",
       "location": {
         "path": "tests/integration/sqlite-partner-dispatch-instances.test.ts"
       },
-      "hash": "c085fea6da1a79dd8591de6a3f2c68a2982230b560d504f571081f4bff2683a7",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "9e4704d947a1729506cf200fbc97f595953f1fd580a185b60f9df66e13409a5e",
+      "observedAt": "2026-11-18T03:39:04.300Z",
       "range": {
         "startLine": 1,
-        "endLine": 1239
+        "endLine": 1377
       }
     },
     {
@@ -2664,12 +2664,12 @@
     {
       "id": "f1be38d3-6986-4482-842c-385096d1c6e2",
       "kind": "source-code",
-      "claim": "Source access failures allow configured fallback; authentication, configuration and policy failures require correction after eligible alternatives are exhausted.",
+      "claim": "Pure model revisions preserve validated optional occupancy percentages and model limits; SDK mapping belongs to infrastructure rather than domain execution.",
       "location": {
         "path": "src/main/domain/model-sources/model-source.ts"
       },
-      "hash": "db3f6038864f17a15b6347976f0b6263b23d2b6b9fbc1d6da5b92ca214930e8b",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "d923463192b99d5083755c11c5eb34e1714a31436967a4ccb9c8cb089d156d65",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
       "range": {
         "startLine": 1,
         "endLine": 235
@@ -2869,6 +2869,818 @@
       "range": {
         "startLine": 1,
         "endLine": 488
+      }
+    },
+    {
+      "id": "7c9cf77f-e85f-499b-b696-3ea0feb3e744",
+      "kind": "source-code",
+      "claim": "Goal title full-text previews share a fixed title-bottom anchor for hover, focus and click. Pointer movement does not reposition the preview; viewport clamping, text selection, dismissal and trigger-position context menus remain available.",
+      "location": {
+        "path": "src/renderer/GoalDetailPresentation.tsx"
+      },
+      "hash": "cc2049b599e7a37893aaa0d3f6a8308aadab7d4faa7d7272fdaa058a26cdaaf7",
+      "observedAt": "2026-11-17T07:10:53.821Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 193
+      }
+    },
+    {
+      "id": "515cd0c5-32bb-48ab-a20c-7980095c1387",
+      "kind": "source-code",
+      "claim": "Synthetic component regressions assert a stable title anchor across pointer movement, focus, click and reopening, together with menu clamping, scrolling, resizing and selection behavior.",
+      "location": {
+        "path": "tests/renderer/goal-detail-ux.test.tsx"
+      },
+      "hash": "2332c721669ba63c502c7c04d0319462369fb51eaeccedd1b6062b172f790581",
+      "observedAt": "2026-11-17T07:10:53.821Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 189
+      }
+    },
+    {
+      "id": "250b18ae-151c-4f63-89a2-c782e29fcd65",
+      "kind": "source-code",
+      "claim": "Isolated Electron fixtures verify unchanged preview bounds while moving over the title, scrollable and selectable full text, context menus and responsive goal layouts.",
+      "location": {
+        "path": "tests/e2e/electron-smoke.spec.ts"
+      },
+      "hash": "a181e2911323307daa9c32f785ee8ae52bbbe90bdae1fda770a66b6715613eeb",
+      "observedAt": "2026-11-17T07:10:53.821Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 505
+      }
+    },
+    {
+      "id": "9771fb1a-d3da-408f-b0ad-e65befa20813",
+      "kind": "document",
+      "claim": "Goal full-text previews use a fixed title-bottom anchor across hover, click and keyboard focus; scrolling, selection, viewport clamping and context-menu copying remain specified. The Joi message inputs share Enter submission and Shift+Enter line breaks while IME confirmation stays in the editor.",
+      "location": {
+        "path": "docs/02-ux-specification.md"
+      },
+      "hash": "4b968f390e1dbed6793b01d6177148645390e36fa7d1f4ca94bc559a754d4390",
+      "observedAt": "2026-11-18T01:06:44.931Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 310
+      }
+    },
+    {
+      "id": "7ec7db0b-af8f-4977-864c-3c7a8a598f96",
+      "kind": "document",
+      "claim": "AC-37/44/48 goal-detail interaction specifies a stable title preview, retained text selection and scrolling, trigger-position menus and progressive route-map disclosure.",
+      "location": {
+        "path": "docs/design/goal-detail-ux-review.md"
+      },
+      "hash": "dc41ac5abed0c9041f8833a046700d59d92d238dd84b8fab7b849ca73da3ab30",
+      "observedAt": "2026-11-17T07:10:53.821Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 68
+      }
+    },
+    {
+      "id": "3fae164b-6d25-46cc-b322-eb68160aeeed",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/joi-system-prompt.test.ts"
+      },
+      "claim": "The foreman prompt contract requires explicit implementation-before-review edges, all-predecessor success and parallel execution only for independent Work.",
+      "hash": "24f8906b0c967e4732317741e90c5da9bdf43a1081a66cc41ecd134f07f1b9be",
+      "observedAt": "2026-11-17T07:38:02.782Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 137
+      }
+    },
+    {
+      "id": "6672eee3-54eb-4cc2-a30d-73ac1065a1c5",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/sqlite-work-dependency-gate.test.ts"
+      },
+      "claim": "Disposable SQLite regressions exercise real work planning, durable dependencies and claim gates: independent producers remain claimable, review waits for all completed producers, and failure or cancellation cascades downstream.",
+      "hash": "c16009d422d8c182b7332d98d1e07c8908680216d0e0247375759c1c52fa49c1",
+      "observedAt": "2026-11-17T07:38:02.782Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 270
+      }
+    },
+    {
+      "id": "788a6816-19cd-4a87-a4c5-ab17149e9b48",
+      "kind": "document",
+      "claim": "Pinned Pi 1.5.2 integration audit separates built-in agent/tool/session capabilities from host-owned compaction and callback replacement; an isolated runtime probe and sixteen contract tests do not establish full SDK equivalence or live-model convergence.",
+      "location": {
+        "path": "docs/pi-sdk-integration-audit.md"
+      },
+      "hash": "ca657e8d3807edaaf24c88d744a0f2fd3a9023b1cf112629c4bbc8d819e5826d",
+      "observedAt": "2026-11-17T10:17:25.111Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 63
+      }
+    },
+    {
+      "id": "622ca1b3-0ea1-46d5-859e-974fefa196d7",
+      "kind": "document",
+      "claim": "Pinned research compares four public Pi desktop projects using source, release and test evidence; it selects official SDK ownership patterns without importing third-party execution policies or claiming live performance.",
+      "location": {
+        "path": "docs/pi-desktop-session-research.md"
+      },
+      "hash": "f67bbac547f0976ae13402e280fb7557db124c643203a74412b4a15e29666787",
+      "observedAt": "2026-11-17T10:17:25.109Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 67
+      }
+    },
+    {
+      "id": "901170eb-ce8b-4885-b8ff-c0251181f29e",
+      "kind": "document",
+      "claim": "PI-SESSION requirements specify private native authority, safe settled result recovery, flattened successor handoffs, FIFO write admission and accurate legacy checkpoint recognition.",
+      "location": {
+        "path": "docs/pi-session-ownership-spec.md"
+      },
+      "hash": "861e003a8c81f1047680a60b3ffb5ab1be93f6ca5e0cce624dd4fcefaa8efb83",
+      "observedAt": "2026-11-18T03:39:04.301Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 228
+      }
+    },
+    {
+      "id": "eee85f7d-4bce-4a90-acb0-abe25cb56acc",
+      "kind": "document",
+      "claim": "Accepted responsibility transfer assigns execution and compaction to SDK sessions, keeps workflow/result policy in Joi and separates conversations into successor segments.",
+      "location": {
+        "path": "docs/adr/0035-sdk-owned-pi-sessions.md"
+      },
+      "hash": "81cb97c2de324b56ae182b6770dea6f4f644c2cbf98982e24c77d7f66ed8d4dc",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 29
+      }
+    },
+    {
+      "id": "fd4fc7ec-9efc-4172-a017-97f7e1d3149f",
+      "kind": "document",
+      "location": {
+        "path": "docs/pi-session-ownership-impact-review.md"
+      },
+      "claim": "Compatibility review records defects and implemented resolutions without claiming an unanswered direct-downgrade preference was confirmed; real providers and user data remain unverified.",
+      "hash": "f53cd051b490635ffa903b1c6dc5801dc6e7d1a1f6de102735427a0e5fe8b264",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 51
+      }
+    },
+    {
+      "id": "29e3189a-98ca-4c5f-b287-0d54ef815d40",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/configured-pi-reasoning-runtime.ts"
+      },
+      "claim": "The primary facade pins model/source revisions and SDK settings, refreshes selected skill tools each turn, and supplies selected skill metadata through a separate context field.",
+      "hash": "79dc293f43a89d6ed24f6ff45659516b41e2724e12b87a44a32a3c25af5a6b6a",
+      "observedAt": "2026-11-17T16:33:24.059362Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 89
+      }
+    },
+    {
+      "id": "f73996f8-951b-4f7c-81c6-d7dcad8c0578",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-native-session-store.ts"
+      },
+      "claim": "Identity-scoped canonical SDK history and migration backups remain authoritative. Atomic numeric cursor sidecars resume acknowledged progress, verify its final ledger receipt, skip unchanged completed files, and rebuild after corrupt cursors or independent ledger rollback; deletion policy awaits the user.",
+      "hash": "de8d87dd31df707f5b68aa5703cbe92495f242809090c7b4f29aa917d80a6aa6",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 208
+      }
+    },
+    {
+      "id": "f3b7434f-3642-427a-b366-0cac0dccad6e",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-observation-queue.ts"
+      },
+      "claim": "Bounded asynchronous queues isolate SDK event production from failed or hung display/statistics consumers.",
+      "hash": "95e7f89caff759343057c065d973d63e097f4e89b28a36684efec9ece85c832c",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 30
+      }
+    },
+    {
+      "id": "f0e7c98a-c982-4e9f-b4ea-340bd4203ef7",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-session-usage.ts"
+      },
+      "claim": "Canonical numeric identities and timestamps retain cross-Work, import, summary and warming attribution. An identity/entry-validated contiguous cursor advances only through acknowledged facts and preserves ownership, last durable invocation and summary mode across restart.",
+      "hash": "df82f308051196fa6bf83ef4fc597f82fca4560de5ace9f36052d1b23eadddb1",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 73
+      }
+    },
+    {
+      "id": "937c2d6a-483c-4295-a6ca-a17e8aca0272",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-summary-usage.ts"
+      },
+      "claim": "A Models stream observer records actual failed/successful summary usage without controlling SDK requests or double counting aggregate compaction facts.",
+      "hash": "bda1a70c93b0ec9aae023706922139d0f27bc176d40907aa27ace714853859f2",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 31
+      }
+    },
+    {
+      "id": "a0716920-6118-49e9-94e7-b392a0d5bf22",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/conversation-handoff.ts"
+      },
+      "claim": "A recognized seed contributes only its effective context to the next handoff. Official serialization adds current facts and one fresh business appendix, with private source references retained.",
+      "hash": "642aed3321332efd1359cfd7b4a01605aded26c52c40c32d70ea446ddee00c9b",
+      "observedAt": "2026-11-18T01:03:46.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 41
+      }
+    },
+    {
+      "id": "a9d13166-0f67-431a-b09a-349b39d31b2c",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-history-tools.ts"
+      },
+      "claim": "A closure-scoped history tool pages stable raw canonical facts independently of SDK compacted requests; asynchronous source readers cannot select another conversation.",
+      "hash": "7ba8f6ca3c42231930c1d9ef12914c0ab258ad8ce225e5e93e1fe94f799e5c7a",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 51
+      }
+    },
+    {
+      "id": "d9162e86-f91d-4ddd-a4f4-f63f81dd2e2d",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/joi-subagent-tools.ts"
+      },
+      "claim": "Bundled external-job tools use durable child intents and capability ceilings. The subagent tool awaits admitted child settlement and returns its result through the normal SDK loop.",
+      "hash": "aacafd4d89d46de178ef7050244b6ca8e938524ba831d9c6bb94fcd15d836715",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 64
+      }
+    },
+    {
+      "id": "a417be0f-3af1-4139-a6fb-d1db010ac491",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/ports/conversations.ts"
+      },
+      "claim": "Application ports cover segment activation, scoped handoff/source reads and enumeration of running Pi turns for recovery without SDK types.",
+      "hash": "d578f91fa46ffbb913a6837ced58b361981b629e2318e6d273b4d5aec34c8a73",
+      "observedAt": "2026-11-18T01:03:46.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 42
+      }
+    },
+    {
+      "id": "d8fca3e5-6a60-48c7-af28-70c8ddec5a46",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-configured-model-resolver.ts"
+      },
+      "claim": "Frozen configured model resolution retains editable compaction percentage, effective limits and immutable source label for runtime settings and usage attribution.",
+      "hash": "3681caf3809898e10fdf2831b140053fbb20a0b1ebdb97d0d15ea2a22a2f39ed",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 69
+      }
+    },
+    {
+      "id": "d3dd9f2d-2af5-4055-87b2-351646746121",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.ts"
+      },
+      "claim": "Work joins fair directory admission before engine startup, abandons capacity-only waits and releases generation-fenced resources after verification and durable result storage, before conversation projection. Native continuation and A2A contracts remain intact.",
+      "hash": "4fafb74ceba42b213728e7a2396aa9bdabe2a233cf143a787f0cc5f376bb3918",
+      "observedAt": "2026-11-18T03:39:04.299Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1216
+      }
+    },
+    {
+      "id": "b143b368-e187-4723-8cda-68f02f7dd35c",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/partners/partner-instance-manager.ts"
+      },
+      "claim": "Instance dispatch propagates selected official skill paths, scoped private history and stable source pins. Recovery reads immutable engine results without claiming or executing another instance.",
+      "hash": "03422077b7dbb986f67d074e20546de1ad006de6957185f1ba4cebb613615915",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 474
+      }
+    },
+    {
+      "id": "8e3d9c41-bed5-49a9-be4b-03939b791c46",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/statistics/statistics-service.ts"
+      },
+      "claim": "Stable numeric replay retains original timestamps and recorder acknowledgement. Durable receipt lookup detects ledger rollback; read/write faults expose degradation without failing execution.",
+      "hash": "cd89856cc2fd0b9f445e10422dba9d222d9153bc150feed0c570e10d6a665d8c",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 41
+      }
+    },
+    {
+      "id": "185acf8d-5189-470c-b815-1356e2e6bb9d",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-usage-store.ts"
+      },
+      "claim": "The numeric ledger inserts stable identities idempotently, repairs interrupted observations and preserves frozen source labels. Indexed read-only terminal receipt lookup validates external reconciliation progress without historical writes.",
+      "hash": "d8a65794239820a4d44008e90b1c1a8e50c6f5578a6fac6f323fc8bfd42f6e3c",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 88
+      }
+    },
+    {
+      "id": "ede12cff-e276-4394-b302-ae9908473949",
+      "kind": "document",
+      "location": {
+        "path": "docs/pi-session-ownership-validation.md"
+      },
+      "claim": "Synthetic SDK, temporary storage and direct consumer tests cover Pi ownership, recovery, private thinking, repeated handoff, legacy markers and writer admission. Live-provider and deployment limits remain separate.",
+      "hash": "9e9bcd60cae9338d80f29f9da2626d7ee4313e1f468a5ffea53aec5a18197422",
+      "observedAt": "2026-11-18T03:39:04.302Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 88
+      }
+    },
+    {
+      "id": "c3d7e5f4-f78d-4208-89f0-de20e811c91f",
+      "kind": "source-code",
+      "location": {
+        "path": "resources/migrations/100_pi_session_projections.sql"
+      },
+      "claim": "Migration preserves shared session data under projection names and prevents legacy readers from resuming new history as execution state.",
+      "hash": "7ee530c8597e352456aee828b459c841ec30a23aedc48aa4c276bd6b274fd63b",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 5
+      }
+    },
+    {
+      "id": "9080ee60-48a4-4e8f-a9ce-246c128136cf",
+      "kind": "source-code",
+      "location": {
+        "path": "resources/migrations/101_conversation_execution_segments.sql"
+      },
+      "claim": "Migration adds ordered engine segments and stable per-turn bindings without replaying old executions.",
+      "hash": "9f65fcd3dc47cbc3a960e1624f349b1281608f47963141d20f228ef7cede1380",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 19
+      }
+    },
+    {
+      "id": "65129485-424f-40c3-833e-2bc362ae8ad0",
+      "kind": "document",
+      "location": {
+        "path": "resources/migrations/README.md"
+      },
+      "claim": "Migration guide documents preserved legacy facts, successor identities and the requirement for a pre-upgrade backup rather than direct same-database downgrade.",
+      "hash": "d3c41bd0ee26763b1b526b11aef4c23e6ca4889e6e28177252c8ad8b75a43623",
+      "observedAt": "2026-11-18T03:39:04.302Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 99
+      }
+    },
+    {
+      "id": "b0f0d268-07ea-4545-becf-c3290ead2d92",
+      "kind": "document",
+      "location": {
+        "path": "docs/adr/0022-pi-native-context-compaction.md"
+      },
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
+      "hash": "fbb3587a24a0add23f8c6e196987d5a7af4c21f5721a519a313732a972d1e921",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 87
+      }
+    },
+    {
+      "id": "cd6afb6b-9376-43d4-ba62-3b88a0553052",
+      "kind": "document",
+      "location": {
+        "path": "docs/adr/0023-long-run-error-compatibility.md"
+      },
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
+      "hash": "18455e5f994495ed8ef7468db88558319a6414823990774b1fceb1b34569278f",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 82
+      }
+    },
+    {
+      "id": "9f1b3d7d-8c52-477e-b8ba-378fab15e607",
+      "kind": "document",
+      "location": {
+        "path": "docs/adr/0025-goal-continuation-context-budget.md"
+      },
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
+      "hash": "f5758aedd12d06bcfaac9098497a9d3b436b21d4100a98a0558c87f129c26145",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 33
+      }
+    },
+    {
+      "id": "d1e6036c-cb6a-4efd-9a1d-f8afa92c10d4",
+      "kind": "document",
+      "location": {
+        "path": "docs/adr/0028-demand-driven-workspace-writing.md"
+      },
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
+      "hash": "676c1c49fe8b35ce99e0e17bd04ba8bd1d9d4b252d082ab7a0993171fff88d88",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 25
+      }
+    },
+    {
+      "id": "99887009-3091-4a0e-ae82-5a1bcdd04941",
+      "kind": "document",
+      "location": {
+        "path": "docs/adr/0031-complex-task-context.md"
+      },
+      "claim": "Historical policy and verification are retained with an explicit ADR 0035 supersession boundary; current Pi behavior uses SDK ownership while applicable native, business and privacy invariants remain.",
+      "hash": "65d62cec91a65bb72020dfed41ab1f5b1a1143105a0b62250e4d1fe040f62bbc",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 59
+      }
+    },
+    {
+      "id": "1fbd5c7f-b90f-457f-a5b7-b06bdd9c349f",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/contract/pi-session-ownership.test.ts"
+      },
+      "claim": "Official SDK contract tests cover prompt metadata, resources/dates, compaction, settlement and cross-engine handoff, including preservation of one business appendix across switches.",
+      "hash": "ad8d03762267aedc9d1f63b54fb6d925ccfac7d609cf74b4eea2c451e5ce7031",
+      "observedAt": "2026-11-18T01:03:46.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 648
+      }
+    },
+    {
+      "id": "e1ca99c3-c87f-4f8b-be6a-5704c282e37b",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/pi-native-session-store.test.ts"
+      },
+      "claim": "Temporary native sessions verify canonical isolation and imports, durable numeric reconciliation, complete legacy checkpoint framing, and safe handling of ordinary marker references.",
+      "hash": "bc88fe05e1ec1cff8982b47f708154047475992007fbd6fa9e96bbcef55d8675",
+      "observedAt": "2026-11-18T01:03:46.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 145
+      }
+    },
+    {
+      "id": "a7e10dcd-d534-4c65-be58-e815dacba404",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/pi-session-usage.test.ts"
+      },
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
+      "hash": "24e46e8e3d5f809bc5c28d5ac1063e60b335a14e6fa7dc40aea48b836f4bce52",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 37
+      }
+    },
+    {
+      "id": "db88e6fc-c5fc-4dda-a0b9-2a2ce3b786e8",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/contract/pi-partner-handoff.test.ts"
+      },
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
+      "hash": "99d7b881b4169875b706d050bf4abbf78762ea5ef619a8a69c130662822f7b04",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 54
+      }
+    },
+    {
+      "id": "3575145d-bff1-44d0-8586-ee6400b7c38f",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/pi-evidence-tools.test.ts"
+      },
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
+      "hash": "39fe25f7e78bcaa53a5b2e655149192cf7c46116260a207dbe9f0030bb04eff4",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 85
+      }
+    },
+    {
+      "id": "73c776f6-90f6-444c-921a-7d5e1b859c19",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/statistics-ledger.test.ts"
+      },
+      "claim": "Disposable SQLite verifies stable numeric replay, acknowledgement retries and independent ledger restoration: a newer native cursor automatically rebuilds missing original identities, timestamps and token values while unchanged histories avoid observation writes.",
+      "hash": "ec6290d61649da58a17db3f403833e9607a9d4268c85657a338259d9050faf26",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 145
+      }
+    },
+    {
+      "id": "392883a9-d4ae-4250-b5b5-06ac2082feab",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/agent-dispatch-crash.test.ts"
+      },
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
+      "hash": "99d09a249fe66a3d2aa78619d5c49e803e7a00ba23d371df5ec374bdd1b19ae5",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 179
+      }
+    },
+    {
+      "id": "7eb18127-2b3d-4664-b427-3edb8d6b1e71",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/joi-dispatch-acceptance.test.ts"
+      },
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
+      "hash": "61c37f2ae41439afe2c29abd7411012e7e1ee9ce749f74b79742b4ac5d842f7b",
+      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 110
+      }
+    },
+    {
+      "id": "c9ce1bb9-aaae-401e-a985-df567fcd7d68",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/conversation-session.ts"
+      },
+      "claim": "The parser identifies generated timestamp-zero handoff seeds and separates their effective context from business facts. Business facts omit tool display and UI activity; ordinary messages and malformed imports remain unchanged.",
+      "hash": "d8edfc518fea799edcc076318fc5a9be5b4f3d56c0e8085d25abf15ef77e93e3",
+      "observedAt": "2026-11-18T01:03:46.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 105
+      }
+    },
+    {
+      "id": "c3e52a0c-1863-4047-bbe1-7f301d53d301",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/conversation-session.test.ts"
+      },
+      "claim": "Message conversion and handoff import guards retain ordinary user text and malformed imports unchanged, alongside existing tool-pairing and legacy activity boundaries.",
+      "hash": "0cd23e4cfe2ae1bfe4c48f788b4922e1d902e4504ffe9e18401625bbc20237cd",
+      "observedAt": "2026-11-17T13:57:47.133404Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 40
+      }
+    },
+    {
+      "id": "c0c72b32-20e8-43a7-83c1-c66142ed079b",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/pi-coding-tool-factory.test.ts"
+      },
+      "claim": "Seven tool cases compare retained prompt metadata with locked official definitions; existing execution, workspace write boundaries, external reads and filtered Shell environment remain covered.",
+      "hash": "7fba062ced5cc1760a66503c53cbb86e9ee340cd017dfe343e09d025cffc6902",
+      "observedAt": "2026-11-17T16:07:18.111583Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 196
+      }
+    },
+    {
+      "id": "21229091-a27c-4a31-b947-2f5f5156d2d2",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/pi/joi-pi-system-prompt.ts"
+      },
+      "claim": "Shared public SDK startup prompt configuration adds active public tool summaries, deduplicated official and Joi rules, separate workbench and main-skill context, and a fresh host-local date/time zone without controlling execution.",
+      "hash": "fb51cd396a7f4afdc7b80e4d815eb14cbf06deb776549f7cac96ee5889402b4f",
+      "observedAt": "2026-11-17T16:33:24.058342Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 39
+      }
+    },
+    {
+      "id": "a4d690cc-b3fe-4dbe-abff-251450f6d7e7",
+      "kind": "source-code",
+      "claim": "Numeric telemetry ports support stable invocation identities, persistence acknowledgement and optional durable receipt lookup, allowing external reconciliation progress to be checked against the current ledger without execution control.",
+      "location": {
+        "path": "src/main/application/ports/usage.ts"
+      },
+      "hash": "413be359ba2c13820b01e5fecb13c2ed444e860904cab2915cb9a18846e19970",
+      "observedAt": "2026-11-17T17:20:21.203953Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 33
+      }
+    },
+    {
+      "id": "18211c85-8a28-4f54-95f6-1c0590170f91",
+      "kind": "source-code",
+      "claim": "Web message editors share Enter submission and leave Shift+Enter and IME confirmation to the editor. Holding Enter submits once.",
+      "location": {
+        "path": "src/renderer/composer-keyboard.ts"
+      },
+      "hash": "9a50f08042e1df047b916ad95d76d2b48d5df65207dd764b092f3a6ecce955c9",
+      "observedAt": "2026-11-18T01:06:44.931Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 13
+      }
+    },
+    {
+      "id": "9e0456ed-9c75-4153-962d-c8d52b36a7b0",
+      "kind": "source-code",
+      "claim": "Android ordinary conversations, the home task input and goal follow-ups use a shared multiline editor with hardware Enter and soft keyboard Send, guarded during IME composition.",
+      "location": {
+        "path": "apps/joi_mobile/lib/composer_text_field.dart"
+      },
+      "hash": "ef3df868c461c81aa7f159b9ad15049363e07eebc3179c5d47667c5996f89e6b",
+      "observedAt": "2026-11-18T01:06:44.931Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 60
+      }
+    },
+    {
+      "id": "359b803e-e4a7-4ff6-9650-f45797e9ed43",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-workspace-lease-manager.ts"
+      },
+      "claim": "Canonical overlapping directory admission uses a shared fair reader/writer order, read generation reuse, directory-free NONE requests and generation-fenced release.",
+      "hash": "3de53ffef6e727e68e46ddb850197b9b4b655a26f909b3e660bfa2e85409c040",
+      "observedAt": "2026-11-18T03:39:04.292Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 209
+      }
+    },
+    {
+      "id": "27776754-b9ce-4f88-a876-8e4f93a4c79d",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/actors/components/agent-dispatch-component.ts"
+      },
+      "claim": "Cancellation retains workspace ownership until engine settlement, preserving lease renewal while abort cleanup runs.",
+      "hash": "5c77506c607955960decfb2076eeb29640af527a831a057ca7ad1524ae17a2d7",
+      "observedAt": "2026-11-18T03:39:04.294Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 455
+      }
+    },
+    {
+      "id": "7aa23d9d-405b-4861-801c-97ff1a8d3e2d",
+      "kind": "source-code",
+      "location": {
+        "path": "resources/migrations/102_workspace_admission_queue.sql"
+      },
+      "claim": "Migration 102 preserves writer queue identities, adds reader modes and atomically wakes overlapping durable dispatch on release or queue removal. Paused and terminal Work leave the queue.",
+      "hash": "47048fa9f821189be160c704af419fc343390f1c2ff10d551d95ab8015829d2c",
+      "observedAt": "2026-11-18T03:39:04.294Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 50
+      }
+    },
+    {
+      "id": "aac839d9-1db1-427d-87a2-b7486d53af99",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/sqlite-demand-driven-write.test.ts"
+      },
+      "claim": "Disposable queue regressions cover upgrade ordering, obsolete releases, NONE requests, batched readers and resumed goal fairness.",
+      "hash": "9f1fc2bd9e5da9c1f0b770a96fa6ac9a6660ff58a3bca756ea04c95387460b3f",
+      "observedAt": "2026-11-18T03:39:04.296Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 96
+      }
+    },
+    {
+      "id": "65471114-095f-48bd-9ce0-e5fca27cd693",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/sqlite-workspace-lease.test.ts"
+      },
+      "claim": "Disposable directory regressions cover physical roots, parent/child overlap, independent existing siblings, repeated read ownership, expiry and renewal.",
+      "hash": "c358b514edea4006d1fe52c4d51e0354e115165246de952240e6feb78ab1506d",
+      "observedAt": "2026-11-18T03:39:04.297Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 180
+      }
+    },
+    {
+      "id": "4a3894d3-e2b3-4f1e-b87d-4063b3a99dc4",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/agent-dispatch-component.test.ts"
+      },
+      "claim": "Actor regressions cover dispatch convergence and defer cancellation completion until a leased engine has stopped.",
+      "hash": "4598821b89ac7b50dc48697f14708b2b96196d69d2a19151a27621640ecb5547",
+      "observedAt": "2026-11-18T03:39:04.297Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 619
+      }
+    },
+    {
+      "id": "f098c9d0-a6f7-49bd-a284-d7924445bcd7",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/unit/workspace-write-scheduling.test.ts"
+      },
+      "claim": "Pure policy regressions cover reader/writer admission, explicit cancellation intent and local tool effects.",
+      "hash": "3328ebf9723f09aa4182625fb9148a95552b449cc55154f800f35981544356c2",
+      "observedAt": "2026-11-18T03:39:04.298Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 49
+      }
+    },
+    {
+      "id": "9c932a6b-6c00-4f43-9567-41db65ba6a36",
+      "kind": "source-code",
+      "location": {
+        "path": "tests/integration/joi-orchestration-migration.test.ts"
+      },
+      "claim": "Temporary database migration regressions include upgrade 101 to 102 preserving queued writer identities, generations, FIFO and foreign-key integrity.",
+      "hash": "c53bfc01ab7e8aef72181ed6b4823c51b275b081b96d6ac7689771132f0873c9",
+      "observedAt": "2026-11-18T03:39:04.298Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 923
       }
     }
   ]

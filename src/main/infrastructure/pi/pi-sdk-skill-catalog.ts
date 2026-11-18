@@ -171,6 +171,7 @@ export class PiSdkSkillCatalog implements PartnerSkillCatalog {
     return {
       environmentKeys: [...new Set(selected.flatMap((candidate) => candidate.environmentKeys ?? []))],
       promptSection: formatSkillsForPrompt(loaded.skills),
+      skillPaths: loaded.skills.map(skill => skill.filePath),
       skillCount: loaded.skills.length,
     };
   }

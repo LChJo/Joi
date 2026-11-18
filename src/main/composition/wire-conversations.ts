@@ -16,6 +16,7 @@ import { GitWorkspaceAdapter } from "../infrastructure/workspace/git-workspace-a
 import { OutboxDispatcher } from "../application/operations/outbox-dispatcher.js";
 import { DomainError } from "../domain/errors.js";
 import { createPartnerRevision } from "../domain/partners/partner.js";
+import { ConversationHandoff } from "../infrastructure/pi/conversation-handoff.js";
 
 export function wireConversations(input: {
   clock: Clock; ids: IdGenerator; database: RuntimeDatabase; persistence: PersistenceBundle; partnerStack: PartnerBundle;
@@ -26,21 +27,15 @@ export function wireConversations(input: {
   const childDispatcherRef: { current?: OutboxDispatcher } = {};
   const subagents = new ConversationSubagentService({ clock,ids,store: persistence.conversationSubagents,kick: () => childDispatcherRef.current?.startOnce(4),
     execute: async (child,signal) => {
-      let state = child.request.workspaceExecution;
-      const run = (phase: "READ_RUNNING" | "WRITE_RUNNING",restoredMessages: unknown[] | null) => partnerStack.piRuntime.runResidentTurn({
-        instanceId: child.childId,knowledgeSection: "",skillSection: partnerStack.partnerSkillCatalog.resolveForPi(child.revision.skills).promptSection,
-        skillEnvironmentKeys: partnerStack.partnerSkillCatalog.resolveForPi(child.revision.skills).environmentKeys,
-        revision: child.revision,sourcePin: child.sourcePin,restoredMessages,signal,
+      const skills = partnerStack.partnerSkillCatalog.resolveForPi(child.revision.skills);
+      const run = () => partnerStack.piRuntime.runResidentTurn({
+        instanceId: child.childId,knowledgeSection: "",skillSection: skills.promptSection,...(skills.skillPaths === undefined ? {} : { skillPaths: skills.skillPaths }),
+        skillEnvironmentKeys: skills.environmentKeys,
+        revision: child.revision,sourcePin: child.sourcePin,restoredMessages: null,signal,
         saveSession: state => persistence.conversationSubagents.checkpoint(child.childId,state),
-        request: { ...child.request,actionId: child.childId,taskProjection: child.task,subagentChild: true,
-          ...(state === undefined ? {} : { workspaceExecution: { ...state,phase } }) } });
+        request: { ...child.request,actionId: child.childId,taskProjection: child.task,subagentChild: true } });
       try {
-        let result = await run("READ_RUNNING",null);
-        if (result.status === "SUSPENDED") {
-          if (state?.phase !== "WRITE_RUNNING") throw new DomainError("subagent_write_phase_required","The parent must enter its write phase before delegating writes.");
-          state = { ...state,generation: state.generation + 1 };
-          result = await run("WRITE_RUNNING",result.messages ?? null);
-        }
+        const result = await run();
         if (result.status !== "COMPLETED") throw new DomainError("subagent_execution_failed","Child execution did not complete.");
         return result.output.body;
       } finally { partnerStack.piRuntime.evictFromMemory(child.childId); }
@@ -59,6 +54,7 @@ export function wireConversations(input: {
   } });
   let defaultPartner: Promise<Awaited<ReturnType<typeof persistence.partnerRegistryRepository.getActive>>> | undefined;
   const conversations = new ConversationService({ clock,ids,store: persistence.conversations,workbenches: persistence.workbenches,subagents,
+    handoffs: new ConversationHandoff(partnerStack.nativeSessions),
     workspaces: persistence.workbenchWorkspaceRepository,contexts: persistence.workbenchContextRepository,
     revisions: { getActive: async id => {
       if (id !== "joi-chat") return persistence.partnerRegistryRepository.getActive(id);
@@ -98,7 +94,7 @@ export function wireConversations(input: {
   const gitDispatcher = new OutboxDispatcher({ clock,store: database.store,owner: `conversation_git_${String(process.pid)}`,
     includeKinds: ["conversation.git"],handlers: { "conversation.git": record => git.deliver(String(record.payload.commandId)) } });
   return { conversations,git,workspace,dispatcher,gitDispatcher,childDispatcher,subagents,
-    recover: async () => { await persistence.conversations.recoverInterrupted(clock.now().toISOString()); await persistence.gitCommands.recoverInterrupted();await persistence.conversationSubagents.recover(); },
+    recover: async () => { await conversations.recoverInterrupted(); await persistence.gitCommands.recoverInterrupted();await persistence.conversationSubagents.recover(); },
     emergencyStop: async () => { await conversations.emergencyStop();await subagents.close();await git.emergencyStop(); },
     close: async () => {
       const drain = Promise.all([dispatcher.close(),gitDispatcher.close()]);

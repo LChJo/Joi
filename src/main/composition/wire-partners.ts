@@ -12,6 +12,7 @@ import { PartnerWorkMemoryService } from "../application/partners/partner-work-m
 import { LocalSkillScanner } from "../infrastructure/skills/local-skill-scanner.js";
 import { BuiltinPiCodingToolFactory } from "../infrastructure/pi/pi-coding-tool-factory.js";
 import { PiPartnerEngineRuntime } from "../infrastructure/pi/pi-partner-engine-runtime.js";
+import { PiNativeSessionStore } from "../infrastructure/pi/pi-native-session-store.js";
 import { PiPartnerMemorySummarizer } from "../infrastructure/pi/pi-partner-memory-summarizer.js";
 import { ClaudeAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/claude-agent-sdk-partner-engine-runtime.js";
 import { CodexAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
@@ -29,6 +30,8 @@ export function wirePartners(input: {
 }) {
   const { clock, diagnostics, ids, modelSourceStack, persistence } = input;
   const partnerSkillCatalog = new LocalSkillScanner();
+  const nativeSessions = new PiNativeSessionStore(path.join(input.userDataDirectory, "pi-sessions"));
+  const stopPiUsageReconciliation = nativeSessions.startUsageReconciliation(modelSourceStack.statistics, () => diagnostics.emit("joi.pi.projection_degraded", { workId: "pi_session_reconciliation" }));
   const partnerKnowledge = new PartnerKnowledgeService({ clock, ids, store: persistence.partnerKnowledgeStore });
   const partners = new PartnerRegistryService({
     clock,
@@ -40,6 +43,7 @@ export function wirePartners(input: {
     skills: partnerSkillCatalog,
   });
   const piRuntime = new PiPartnerEngineRuntime({
+      nativeSessions,
       usage: modelSourceStack.statistics,
       diagnostics,
       contexts: persistence.workbenchContextRepository,
@@ -70,6 +74,8 @@ export function wirePartners(input: {
   const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository, skills: partnerSkillCatalog });
   const engineCatalog = new PartnerEngineCatalog(partnerEngines);
   return {
+    nativeSessions,
+    stopPiUsageReconciliation,
     piRuntime,
     engineCatalog,
     partnerInstances: new PartnerInstanceManager({

@@ -2,7 +2,7 @@ import { DomainError } from "../errors.js";
 import type { StatisticsSnapshot, UsageRecord } from "./usage-types.js";
 import type { StatisticsDto, StatisticsQuery, StatisticsWorkbenchRow, TokenUsage, UsagePurpose, UsageTotals } from "../../../shared/statistics.js";
 
-export const USAGE_PURPOSES: readonly UsagePurpose[] = ["orchestration", "routing", "partner", "evolution", "summary", "probe"];
+export const USAGE_PURPOSES: readonly UsagePurpose[] = ["orchestration", "routing", "partner", "evolution", "summary", "probe", "cache_warming"];
 const DAY = 86_400_000;
 const validDay = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 export function validateStatisticsQuery(value: Record<string, unknown>): StatisticsQuery {

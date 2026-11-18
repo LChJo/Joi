@@ -9,9 +9,9 @@ export function requiresResourceWaitCancellationIntent(work: { executionPhase?: 
   return waiting && !["USER_REQUEST", "REQUIREMENTS_CHANGED", "SUPERSEDED"].includes(reason ?? "");
 }
 
-/** Admission counts exclude the requesting Work; queued writers take precedence over new readers. */
-export function decideWorkspaceAdmission(input: { access: "READ" | "WRITE"; otherReaders: number; writerHeld: boolean; earlierWriter: boolean }): boolean {
-  return !input.writerHeld && !input.earlierWriter && (input.access === "READ" || input.otherReaders === 0);
+/** Admission counts exclude the requesting Work; earlier incompatible requests retain their admission order. */
+export function decideWorkspaceAdmission(input: { access: "READ" | "WRITE"; otherReaders: number; writerHeld: boolean; earlierConflict: boolean }): boolean {
+  return !input.writerHeld && !input.earlierConflict && (input.access === "READ" || input.otherReaders === 0);
 }
 
 export function classifyLocalToolEffect(name: string): LocalToolEffect {

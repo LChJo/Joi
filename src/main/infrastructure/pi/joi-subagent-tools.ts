@@ -34,7 +34,9 @@ export function createJoiSubagentTools(port: ConversationSubagentPort,input: Omi
       parameters: Type.Object({ task: Type.String({ minLength: 1,maxLength: 64000 }) }),execute: async (id,raw) => {
         const task = (raw as { task: string }).task;
         const child = await provider.start({ prompt: task,promptDigest: summaryCandidateKey(task),cwd: ".",runId: id,stepIndex: 0,agent: "joi-worker",options: {} });
-        return { content: [{ type: "text",text: JSON.stringify(child) }],details: {} };
+        if (child.state === "queued" || child.state === "running") await port.settle(parent);
+        const completed = await provider.result(child.providerJobId);
+        return { content: [{ type: "text",text: JSON.stringify(completed) }],details: {} };
       } },
     { name: "subagent_status",label: "Child status",description: "Read child status and full completed results for this parent turn.",parameters: Type.Object({ childId: Type.Optional(Type.String()) }),
       execute: async (_id,raw) => {

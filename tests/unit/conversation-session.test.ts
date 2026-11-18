@@ -1,6 +1,17 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { conversationSeedMessages,pairSessionTools,sessionAssistant } from "../../src/main/infrastructure/pi/conversation-session.js";
+import { conversationSeedMessages,HANDOFF_INTRO,normalizeImportedHandoff,pairSessionTools,sessionAssistant } from "../../src/main/infrastructure/pi/conversation-session.js";
 import { withRequestPrompt } from "../../src/main/infrastructure/pi/pi-request-prompt.js";
+
+it("PI-SESSION-16/21 preserves ordinary user text and malformed handoff imports", () => {
+  const prefix = `${HANDOFF_INTRO}\n\nSource: conversation=chat; segment=A1; partner=a; engine=pi-core.\n\nBusiness turn facts, statuses, attachment and artifact references:\n\n`;
+  const generated = `${prefix}${JSON.stringify([{ entries: [{ kind: "ACTIVITY" }] }])}`;
+  for (const message of [
+    { role: "user" as const, content: generated, timestamp: 1 },
+    { role: "user" as const, content: `Quoted content:\n${generated}`, timestamp: 0 },
+    { role: "user" as const, content: `${prefix}invalid JSON`, timestamp: 0 },
+    { role: "user" as const, content: `${prefix}${JSON.stringify([{ entries: null }])}`, timestamp: 0 },
+  ]) expect(normalizeImportedHandoff(message)).toBe(message);
+});
 
 it("CHAT-29 excludes UI activity from legacy model history",() => {
   const history = conversationSeedMessages({ actionId: "a",contextSnapshotId: "s",workbenchId: "wb",workId: "w",taskProjection: "Next",

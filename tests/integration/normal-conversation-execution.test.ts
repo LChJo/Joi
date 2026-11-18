@@ -11,21 +11,23 @@ import type { PartnerInstanceManager } from "../../src/main/application/partners
 import type { PartnerRunResult } from "../../src/main/application/ports/partner-execution";
 import { DomainError } from "../../src/main/domain/errors";
 import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure";
+import { ConversationHandoff } from "../../src/main/infrastructure/pi/conversation-handoff";
 
-async function setup(run: PartnerInstanceManager["dispatch"]) {
+async function setup(run: PartnerInstanceManager["dispatch"], native = false) {
   const f = await createRuntimeFixture();
   const wb = await f.workbenchRegistry.create({ name: "Chat",personaSummary: "Help",projectLabel: "Chat",scopeSummary: "Help" });
   await f.workbenchWorkspaces.bindExisting(wb.workbenchId,f.root);
-  const partner = await f.partners.add({ capabilities: [],displayName: "Helper",kind: "local-pi",skills: [],tools: [] });
+  const partner = await f.partners.add({ capabilities: [],displayName: "Helper",kind: "local-pi",...(native ? { engine: "codex" as const } : {}),skills: [],tools: [] });
   const store = new SqliteConversationStore(f.database);
   const leases = new SqliteWorkspaceLeaseManager({ clock: f.clock,database: f.database });
   const dependencies: ConstructorParameters<typeof ConversationService>[0] = { clock: f.clock,ids: f.ids,store,workbenches: f.workbenches,
+    handoffs: new ConversationHandoff(),
     workspaces: { getWorkspace: async () => ({ workspaceRef: `workbench_workspace:${wb.workbenchId}`,kind: "BOUND",status: "READY",displayName: "fixture" }) },
     contexts: new SqliteWorkbenchContextRepository(f.database),revisions: new SqlitePartnerRegistryRepository(f.database),instances: { dispatch: run },
     networks: { list: async () => [{ sourceId: "network",displayName: "Network",activeModel: { id: "model" },status: "READY" }] },
     skills: { validateRefs: () => undefined },inheritance: { read: async () => ({ memoryCount: 0,evolutionRevisionId: null,instructions: "" }) } };
   const service = new ConversationService(dependencies);
-  const input = { conversationId: "chat",workbenchId: wb.workbenchId,partnerId: partner.partnerId,networkId: "network",skills: [],attachmentIds: [],requestId: "request",text: "Hello" };
+  const input = { conversationId: "chat",workbenchId: wb.workbenchId,partnerId: partner.partnerId,networkId: native ? "native" : "network",skills: [],attachmentIds: [],requestId: "request",text: "Hello" };
   const accept = async () => {
     const result = await service.send(input);const turn = result.turns[0];if (turn === undefined) throw new Error("Missing turn");return turn;
   };
@@ -33,6 +35,102 @@ async function setup(run: PartnerInstanceManager["dispatch"]) {
 }
 
 describe("normal conversation execution", () => {
+  it.each(["COMPLETED","FAILED","INTERRUPTED"] as const)("PI-SESSION-12 restores a crashed Pi conversation as %s without dispatching", async status => {
+    const dispatch = vi.fn<PartnerInstanceManager["dispatch"]>();
+    const { f,service,input,store,dependencies,accept } = await setup(dispatch);
+    const readSettledResult = vi.fn<PartnerInstanceManager["readSettledResult"]>().mockResolvedValue(status === "INTERRUPTED" ? null : {
+      status: status === "FAILED" ? "UNKNOWN" : status,externalRunId: "run",
+      output: { body: "Recovered delivery token=synthetic-secret",artifacts: [{ name: "report.txt",size: 10 }] },
+    });
+    try {
+      const accepted = await accept();
+      expect(await store.begin(accepted.turnId)).toBe(true);
+      await store.activateSegment(input.conversationId,accepted.turnId,{ segmentId: "segment-A",partnerId: input.partnerId,engine: "pi-core",capabilityKey: "a" });
+      const restarted = new ConversationService({ ...dependencies,store: new SqliteConversationStore(f.database),instances: { dispatch,readSettledResult } });
+      await restarted.recoverInterrupted();
+      await restarted.recoverInterrupted();
+      const turn = (await restarted.get(input.conversationId)).turns[0];
+      expect(turn?.status).toBe(status);
+      expect(readSettledResult).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        request: expect.objectContaining({ actionId: accepted.turnId,conversationId: input.conversationId,conversationSegmentId: "segment-A" }) as unknown,
+      }));
+      expect(dispatch).not.toHaveBeenCalled();
+      if (status !== "INTERRUPTED") {
+        expect(turn?.entries).toEqual([expect.objectContaining({ text: "Recovered delivery token=[redacted]" })]);
+        expect(turn?.artifacts).toEqual([{ name: "report.txt",size: 10 }]);
+      }
+    } finally { service.close();await f.close(); }
+  });
+
+  it("PI-SESSION-21 preserves the source segment when handoff fails and never starts the successor", async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async call => {
+      await call.session?.save({ engine: "pi-core",messages: [{ role: "user",content: "SOURCE_FACT",timestamp: 1 }] });
+      return { actionId: call.request.actionId,workId: call.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Source answer",artifacts: [] };
+    });
+    const { f,service,input,store,dependencies } = await setup(run);
+    try {
+      const first = await service.send(input);await service.deliver(first.turns[0]?.turnId ?? "missing");
+      const before = await store.segment("chat");
+      vi.spyOn(dependencies.handoffs,"build").mockRejectedValue(new Error("PRIVATE_HANDOFF_FAILURE"));
+      const b = await f.partners.add({ capabilities: [],displayName: "B",kind: "local-pi",skills: [],tools: [] });
+      const next = await service.send({ ...input,partnerId: b.partnerId,requestId: "switch",text: "Continue" });
+      const turnId = next.turns.at(-1)?.turnId ?? "missing";await service.deliver(turnId);
+      expect(run).toHaveBeenCalledOnce();expect(await store.segment("chat")).toEqual(before);
+      expect(await store.segment("chat",turnId)).toBeUndefined();
+      expect((await service.get("chat")).turns.at(-1)?.status).toBe("FAILED");
+      expect(JSON.stringify(await service.get("chat"))).not.toContain("PRIVATE_HANDOFF_FAILURE");
+    } finally { service.close();await f.close(); }
+  });
+  it.each(["codex","claude-code"] as const)("PI-SESSION-21 keeps consecutive turns together across %s and creates A1 B1 A2 after restart", async engine => {
+    const calls: Parameters<PartnerInstanceManager["dispatch"]>[0][] = [];
+    const { f,service,input,store,dependencies } = await setup(async call => {
+      calls.push(call);
+      const messages = [...(call.session?.state?.messages ?? []), { role: "user", content: call.request.taskProjection, timestamp: 1 },
+        { role: "assistant", content: [{ type: "text", text: `FACT_${call.request.taskProjection}` }], timestamp: 2 }];
+      await call.session?.save({ engine: call.revision.engine, messages });
+      return { actionId: call.request.actionId,workId: call.request.workId,externalRunId: "fixture",status: "COMPLETED",body: `FACT_${call.request.taskProjection}`,artifacts: [] };
+    });
+    let restarted: ConversationService | undefined;
+    try {
+      const b = await f.partners.add({ capabilities: [], displayName: "B", kind: "local-pi", engine, skills: [], tools: [] });
+      for (const [index,partnerId] of [input.partnerId,input.partnerId,b.partnerId,input.partnerId].entries()) {
+        if (index === 3) restarted = new ConversationService({ ...dependencies,store: new SqliteConversationStore(f.database) });
+        const active = restarted ?? service;
+        const accepted = await active.send({ ...input, partnerId, networkId: partnerId === b.partnerId ? "native" : input.networkId, requestId: `segment-${String(index)}`,text: `turn-${String(index)}` });
+        const turnId = accepted.turns.at(-1)?.turnId ?? "missing";
+        await active.deliver(turnId);await active.deliver(turnId);
+      }
+      const identities = calls.map(call => call.request.conversationSegmentId);
+      expect(identities[0]).toBeTruthy(); expect(identities[1]).toBe(identities[0]);
+      expect(new Set(identities).size).toBe(3);
+      expect(calls[2]?.session?.state?.externalSessionRef).toBeUndefined();
+      expect(JSON.stringify(calls[3]?.session?.state?.messages)).toContain("FACT_turn-2");
+      expect(JSON.stringify(calls[3]?.session?.state?.messages)).toContain("FACT_turn-0");
+      const segment = await store.segment("chat");
+      expect(segment?.segmentId).toBe(identities[3]);
+      expect(segment?.predecessorId).toBe(identities[2]);
+      expect((await new SqliteConversationStore(f.database).segment("chat"))?.segmentId).toBe(identities[3]);
+      expect(await store.segments("chat")).toHaveLength(3);
+    } finally { restarted?.close();service.close(); await f.close(); }
+  });
+  it("CHAT-04/20 starts a new request each turn and supplies earlier turns as reference context",async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Done",artifacts: [] }));
+    const { f,service,input } = await setup(run);
+    try {
+      const prior = await service.send({ ...input,text: "Investigate BUG-4242 without changing files." });
+      await service.deliver(prior.turns[0]?.turnId ?? "missing");
+      const text = "Implement the fix for BUG-4242.";
+      const next = await service.send({ ...input,requestId: "repair",text });
+      await service.deliver(next.turns.at(-1)?.turnId ?? "missing");
+      expect(run).toHaveBeenCalledTimes(2);
+      const request = run.mock.calls[1]?.[0].request;
+      expect(request?.taskProjection).toBe(text);
+      expect(request?.conversationHistory?.[0]?.text).toBe("Investigate BUG-4242 without changing files.");
+      expect(request?.requiredContext?.includes("execute the current user's request using prior turns and workbench records as reference")).toBe(true);
+      expect(request?.requiredContext?.includes("Do not resume earlier tasks without the user's instruction")).toBe(true);
+      expect((await service.get("chat")).turns.map(turn => turn.status)).toEqual(["COMPLETED","COMPLETED"]);
+    } finally { service.close();await f.close(); }
+  });
   it("CHAT-04/45 publishes safe committed prefixes and completion without coupling execution to observers",async () => {
     const paused = Promise.withResolvers<undefined>(),finish = Promise.withResolvers<PartnerRunResult>();
     const { f,service,accept } = await setup(async input => {
@@ -165,7 +263,7 @@ describe("normal conversation execution", () => {
       expect((await service.send({ ...input,networkId: "native",piExtensions: [] })).turns[0]?.config.piExtensions).toEqual([]);
     } finally { await f.close(); }
   });
-  it("CHAT-30/31 persists the selected Pi extensions, forwards them across write admission and rejects changed request identities",async () => {
+  it("CHAT-30/31/PI-SESSION-08 starts Pi once with its selected extensions and full admitted capabilities",async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",body: "Done",artifacts: [],instanceId: "checkpoint",checkpointRef: "durable" }));
     const { f,service,input,dependencies } = await setup(run);
     const selected = { ...input,piExtensions: ["cc-safety-net","agent-browser"] as const };
@@ -175,7 +273,8 @@ describe("normal conversation execution", () => {
       await expect(service.send({ ...input,piExtensions: ["agent-browser","cc-safety-net"] })).resolves.toMatchObject({ conversationId: "chat" });
       await expect(service.send({ ...input,piExtensions: [] })).rejects.toMatchObject({ code: "conversation_request_conflict" });
       await service.deliver(accepted.turns[0]?.turnId ?? "missing");
-      expect(run).toHaveBeenCalledTimes(2);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]?.[0].request.workspaceExecution?.phase).toBe("WRITE_RUNNING");
       for (const [call] of run.mock.calls) expect(call.request.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
       const restored = new ConversationService(dependencies);
       expect((await restored.get("chat")).turns[0]?.config.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
@@ -202,7 +301,7 @@ describe("normal conversation execution", () => {
     const { f,service,accept } = await setup(async p => {
       await p.onThinking?.({ phaseId: "same-engine-phase",state: "COMPLETED",summary: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "Read observation" : "Write observation" });
       return { actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",body: "Done",artifacts: [],instanceId: "checkpoint",checkpointRef: "durable" };
-    });
+    },true);
     try {
       await service.deliver((await accept()).turnId);
       const thoughts = (await service.get("chat")).turns[0]?.entries.flatMap(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING" ? [entry.activity.thinking] : []) ?? [];
@@ -218,7 +317,7 @@ describe("normal conversation execution", () => {
       await p.onThinking?.({ phaseId: "phase",state: "COMPLETED",durationMs: 42,summary: `token=synthetic-secret ${"公".repeat(2400)}` });
       return { actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Final",artifacts: [],conversation: [{ kind: "MARKDOWN",role: "AGENT",text: "Final" }] };
     });
-    const { f,service,accept,dependencies } = await setup(run);
+    const { f,service,accept,dependencies } = await setup(run,true);
     try {
       await service.deliver((await accept()).turnId);
       const chat = await new ConversationService(dependencies).get("chat"),entries = chat.turns[0]?.entries ?? [];
@@ -348,7 +447,7 @@ describe("normal conversation execution", () => {
       await service.emergencyStop();expect((await service.get("chat")).turns[0]?.status).toBe("STOPPED");
     } finally { await f.close(); }
   });
-  it("CHAT-15 starts and resumes a conversation while another task owns the workbench WRITE lease", async () => {
+  it("CHAT-15/PI-SESSION-08 starts Pi without autonomous admission while another task owns the WRITE lease", async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",artifacts: [],body: "Done",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",instanceId: "checkpoint",checkpointRef: "durable" }));
     const { f,service,store,leases,accept,input } = await setup(run);
     try {
@@ -356,7 +455,7 @@ describe("normal conversation execution", () => {
       await store.submit({ conversationId: "holder",workbenchId: input.workbenchId,turnId: "holder-work",requestId: "holder-request",text: "Fixture",at: f.clock.now().toISOString(),config: turn.config });
       const held = await leases.acquire({ accessMode: "WRITE",workId: "holder-work",workspaceRef: `workbench_workspace:${input.workbenchId}` });expect(held).not.toBeNull();
       await service.deliver(turn.turnId);
-      expect((await service.get("chat")).turns[0]?.status).toBe("COMPLETED");expect(run.mock.calls.map(call => call[0].request.workspaceExecution?.phase)).toEqual(["READ_RUNNING","WRITE_RUNNING"]);
+      expect((await service.get("chat")).turns[0]?.status).toBe("COMPLETED");expect(run.mock.calls.map(call => call[0].request.workspaceExecution?.phase)).toEqual(["WRITE_RUNNING"]);
       expect(await leases.renew({ workId: "holder-work",workspaceRef: `workbench_workspace:${input.workbenchId}` })).not.toBeNull();
     } finally { await f.close(); }
   });
@@ -392,7 +491,7 @@ describe("normal conversation execution", () => {
   });
   it("CHAT-15 stops before a checkpoint resumes and abandons it without a write call", async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>();
-    const { f,service,accept,dependencies,input } = await setup(run);
+    const { f,service,accept,dependencies,input } = await setup(run,true);
     const abandonStarted = Promise.withResolvers<undefined>(),abandoned = Promise.withResolvers<undefined>();
     let delivery: Promise<void> | undefined;
     let stopping: Promise<void> | undefined;
@@ -475,14 +574,14 @@ describe("normal conversation execution", () => {
       await expect(service.send({ ...input,requestId: "followup",text: "Continue" })).resolves.toMatchObject({ conversationId: "chat" });
     } finally { service.close();await f.close(); }
   });
-  it("CHAT-15 resumes a checkpoint without workspace admission and never reruns the read phase", async () => {
+  it("CHAT-15 preserves native checkpoint resume without workspace admission", async () => {
     const phases: string[] = [];
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async input => {
       phases.push(input.request.workspaceExecution?.phase ?? "none");
       return { actionId: "action",externalRunId: "run",workId: input.request.workId,body: phases.length === 1 ? "" : "Done",artifacts: [],
         status: phases.length === 1 ? "SUSPENDED" : "COMPLETED",instanceId: "checkpoint-instance",checkpointRef: "durable-checkpoint" };
     });
-    const { f,service,accept } = await setup(run);
+    const { f,service,accept } = await setup(run,true);
     try {
       const turn = await accept();await service.deliver(turn.turnId);
       expect(phases).toEqual(["READ_RUNNING","WRITE_RUNNING"]);
@@ -513,6 +612,7 @@ describe("normal conversation execution", () => {
         return { actionId: "a", artifacts: [], body: "## Answer\n\nHello", externalRunId: "r", status: "COMPLETED" as const, workId: "w" };
       });
       const service = new ConversationService({ clock: f.clock, ids: f.ids, store, workbenches: f.workbenches,
+        handoffs: new ConversationHandoff(),
         workspaces: { getWorkspace: async () => ({ workspaceRef: `workbench_workspace:${wb.workbenchId}`, kind: "BOUND", status: "READY", displayName: "fixture" }) },
         contexts: new SqliteWorkbenchContextRepository(f.database),
         revisions: new SqlitePartnerRegistryRepository(f.database), instances: { dispatch: run },

@@ -2,7 +2,7 @@ import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { ConversationThinkingDto } from "../../../shared/conversations.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 
-/** The observer accepts lifecycle signals and explicitly public summaries, never raw thinking. */
+/** Projects thinking lifecycle and explicitly public summaries. */
 export class ConversationThinking {
   readonly #phases = new Map<string,{ value: ConversationThinkingDto;start?: number }>();
   #message = 0;
@@ -17,7 +17,7 @@ export class ConversationThinking {
     if (this.publish === undefined) return;
     const phase = this.#phases.get(key);
     if (phase !== undefined && phase.value.state !== "STARTED") return;
-    const summary = publicSummary === undefined ? undefined : sanitizeAgentConversationText(publicSummary);
+    const summary = publicSummary === undefined ? undefined : sanitizeAgentConversationText(publicSummary).trim();
     const value: ConversationThinkingDto = { ...(phase?.value ?? { phaseId: `${this.prefix}:thinking:${String(this.#phases.size + 1)}` }),state: "COMPLETED",
       ...(phase?.start === undefined ? {} : { durationMs: Math.max(0,this.now() - phase.start) }),
       ...(summary === undefined || summary === "" ? {} : { summary: summary.slice(0,2048),summaryTruncated: summary.length > 2048 }) };

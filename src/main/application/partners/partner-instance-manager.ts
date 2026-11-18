@@ -66,6 +66,15 @@ export class PartnerInstanceManager {
     } catch { return false; }
   }
 
+  /** Recovery reads an immutable engine result; it never starts a model or claims an instance. */
+  async readSettledResult(input: { instanceId?: string; request: PartnerRunRequest; revision: PartnerRevision }) {
+    if (input.instanceId !== undefined) {
+      const record = await this.dependencies.repository.get(input.instanceId);
+      if (record?.workbenchId !== input.request.workbenchId || record.partnerId !== input.revision.partnerId || record.engine !== input.revision.engine) return null;
+    }
+    return await this.#engine(input.revision.engine).readSettledResult?.(input) ?? null;
+  }
+
   /** Creates a fresh instance for the partner's active revision; resident creation enforces hard caps. */
   async ensure(input: { workbenchId: string; partnerId: string; sessionPolicy?: SessionPolicy }): Promise<PartnerInstanceRecord> {
     const policy: SessionPolicy = input.sessionPolicy ?? "RESIDENT";
@@ -95,7 +104,7 @@ export class PartnerInstanceManager {
    * (joi sees live instances through partner_list_instances and passes the id explicitly).
    */
   async dispatch(input: {
-    session?: { state?: PartnerSessionState; save: (state: PartnerSessionState) => Promise<void> };
+    session?: { state?: PartnerSessionState; save: (state: PartnerSessionState) => Promise<void>;readHistory?: () => Promise<unknown[]> };
     onContext?: PartnerExecutionContext["onContext"];
     onThinking?: PartnerExecutionContext["onThinking"];
     expectedSource?: Pick<ModelSourceTurnPin,"sourceId" | "sourceRevisionId" | "modelRevisionId">;
@@ -162,6 +171,7 @@ export class PartnerInstanceManager {
 
     let skillSection = "";
     let skillEnvironmentKeys: readonly string[] = [];
+    let skillPaths: readonly string[] | undefined;
     try {
       if (input.revision.kind === "local-pi") {
         this.dependencies.skills.validateRefs(input.revision.engine, input.revision.skills);
@@ -173,6 +183,7 @@ export class PartnerInstanceManager {
           const dispatch = this.dependencies.skills.resolveForPi(input.revision.skills);
           skillEnvironmentKeys = dispatch.environmentKeys;
           skillSection = dispatch.promptSection;
+          skillPaths = dispatch.skillPaths;
         } else {
           skillSection = this.dependencies.skills.readInstructions(input.revision.skills);
         }
@@ -267,6 +278,7 @@ export class PartnerInstanceManager {
           ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
           ...(onToolTrace === undefined ? {} : { onToolTrace }),
           skillEnvironmentKeys,
+          ...(skillPaths === undefined ? {} : { skillPaths }),
           skillSection,
         }, input.signal === undefined ? undefined : { signal: input.signal });
         if (result.status === "SUSPENDED") throw new DomainError("workspace_checkpoint_missing", "Legacy execution cannot suspend for writing.");
@@ -295,13 +307,13 @@ export class PartnerInstanceManager {
           workId: input.request.workId,
         };
       }
-      const restored = input.session?.state?.messages ?? await this.dependencies.messages.load(record.instanceId, input.request.workspaceExecution?.phase === "WRITE_RUNNING");
+      const restored = input.session?.state?.messages ?? await this.dependencies.messages.load(record.instanceId, record.engine !== "pi-core" && input.request.workspaceExecution?.phase === "WRITE_RUNNING");
       const externalSessionRef = input.session?.state?.engine === record.engine ? input.session.state.externalSessionRef : record.externalSessionRef;
-      if (input.request.workspaceExecution?.phase === "WRITE_RUNNING"
-        && (record.engine === "pi-core" ? restored === null || restored.length === 0 : externalSessionRef === undefined)) {
+      if (record.engine !== "pi-core" && input.request.workspaceExecution?.phase === "WRITE_RUNNING" && externalSessionRef === undefined) {
         throw new DomainError("workspace_checkpoint_missing", "The suspended execution checkpoint is unavailable.");
       }
       const turn = await engine.runResidentTurn({
+        ...(input.session?.readHistory === undefined ? {} : { readHistory: input.session.readHistory }),
         ...(externalSessionRef === undefined ? {} : { externalSessionRef }),
         ...(input.session?.state === undefined ? {} : { sessionState: input.session.state }),
         ...(input.session === undefined ? {} : { saveSession: input.session.save }),
@@ -317,10 +329,14 @@ export class PartnerInstanceManager {
         revision: input.revision,
         ...(input.signal === undefined ? {} : { signal: input.signal }),
         skillEnvironmentKeys,
+        ...(skillPaths === undefined ? {} : { skillPaths }),
         skillSection,
         ...(preflightPin === undefined ? {} : { sourcePin: preflightPin }),
       });
-      if (turn.messages !== undefined) await this.dependencies.messages.save(record.instanceId, turn.messages);
+      if (turn.messages !== undefined) {
+        if (record.engine === "pi-core") await this.dependencies.messages.save(record.instanceId, turn.messages).catch(() => undefined);
+        else await this.dependencies.messages.save(record.instanceId, turn.messages);
+      }
       const checkpointRef = record.engine === "pi-core" ? `partner_instance_messages:${record.instanceId}` : turn.externalSessionRef;
       if (turn.status === "SUSPENDED") {
         if (checkpointRef === undefined || (record.engine === "pi-core" && (turn.messages?.length ?? 0) === 0)

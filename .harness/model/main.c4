@@ -27,11 +27,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing. LAN browsers share conversation UI through authenticated HTTP without local workspace controls. Responsive history closes on narrow transitions. The legacy paired fallback reuses conversation and archive views through a restricted command adapter. Routine continuation editing retains its controlled goal id while pending, running or blocked runs lock target selection. Evolution settings display independent source groups, reproduction and comparison counts, pause causes and retry times, and distinguish sample waits from explicit pauses. Goal cards distinguish queued synthesis and scheduled retry from active summarization, showing persisted attempts and retry time; paired browser badges consume the same optional projection."
+ brief "React views use shared DTOs and HTTP. Goal title full-text previews stay anchored to the title across hover, focus and click, preserving selectable scrolling and viewport clamping. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing. LAN browsers share conversation UI through authenticated HTTP without local workspace controls. Responsive history closes on narrow transitions. The legacy paired fallback reuses conversation and archive views through a restricted command adapter. Routine continuation editing retains its controlled goal id while pending, running or blocked runs lock target selection. Evolution settings display independent source groups, reproduction and comparison counts, pause causes and retry times, and distinguish sample waits from explicit pauses. Goal cards distinguish queued synthesis and scheduled retry from active summarization, showing persisted attempts and retry time; paired browser badges consume the same optional projection. Message composers share Enter submission, Shift+Enter line breaks and IME confirmation. Active tool, turn and stop states animate with a static reduced-motion treatment. Completed turns show one footer status with copy and only disclose context inside existing activity details."
  source "fact"
  status "verified"
- evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210 3627078a-b447-432c-9b65-37a1521deadb 19825361-c0da-4b03-b1bb-abfe0bef46ed 0d39bd91-cffc-4674-a1da-a6e3c7d8393e a2186992-b051-47e8-bdce-a4e4d8878e40 c08040c4-15d6-410b-b52d-ca49f3aca31f bf81ead4-46f4-40a9-9739-6f928dc67c99"
- version "28"
+ evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210 3627078a-b447-432c-9b65-37a1521deadb 19825361-c0da-4b03-b1bb-abfe0bef46ed 0d39bd91-cffc-4674-a1da-a6e3c7d8393e a2186992-b051-47e8-bdce-a4e4d8878e40 c08040c4-15d6-410b-b52d-ca49f3aca31f bf81ead4-46f4-40a9-9739-6f928dc67c99 7c9cf77f-e85f-499b-b696-3ea0feb3e744 515cd0c5-32bb-48ab-a20c-7980095c1387 250b18ae-151c-4f63-89a2-c782e29fcd65 9771fb1a-d3da-408f-b0ad-e65befa20813 7ec7db0b-af8f-4977-864c-3c7a8a598f96 18211c85-8a28-4f54-95f6-1c0590170f91"
+ version "30"
 }
 }
 preload = component "Desktop bridge" {
@@ -67,11 +67,11 @@ metadata {
 application = component "Application services" {
 metadata {
  harness_id "3c08dc1c-527b-456b-999b-8982b0ada159"
- brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts. Conversation observations publish only committed safe projections and keep transport concerns outside the application. Paired remote commands reuse conversation services and existing connection-scoped paging rather than introducing another execution chain. Work planning exposes resource-wait phases to the foreman and preserves queued work unless cancellation has an explicit intent. Explicitly pinned Pi partners require a current READY source before a new plan is persisted; source failures project actionable configuration without hiding the partner catalog or gating native engines. Foreman candidate lists exclude disabled and action-required partners while management keeps their records. Method learning persists 60/120-second retry backoff, three-failure stops and explicit pause facts. Sample waiting releases execution while preserving scope/profile reservations, five-group readiness, development cost gates and conditional comparison feedback. Real-provider benefit and extended replay remain unverified. Protocol preflight accepts valid evidence ordering independently of answer quality. Two invalid responses reject only their experiment while preserving defect evidence and daily automatic retry limits. Synthesis validates private evidence before declaring completion and before the outcome transaction. Invalid references receive bounded same-turn correction; synthesis completion declarations carry no external execution effect. Durable scheduling stops deterministic failures and preserves transient retry budgets. Safe uncommitted synthesis drafts permit configured fallback replacement."
+ brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts. Conversation observations publish only committed safe projections and keep transport concerns outside the application. Paired remote commands reuse conversation services and existing connection-scoped paging rather than introducing another execution chain. Work planning exposes resource-wait phases to the foreman and preserves queued work unless cancellation has an explicit intent. Explicitly pinned Pi partners require a current READY source before a new plan is persisted; source failures project actionable configuration without hiding the partner catalog or gating native engines. Foreman candidate lists exclude disabled and action-required partners while management keeps their records. Method learning persists 60/120-second retry backoff, three-failure stops and explicit pause facts. Sample waiting releases execution while preserving scope/profile reservations, five-group readiness, development cost gates and conditional comparison feedback. Real-provider benefit and extended replay remain unverified. Protocol preflight accepts valid evidence ordering independently of answer quality. Two invalid responses reject only their experiment while preserving defect evidence and daily automatic retry limits. Synthesis validates private evidence before declaring completion and before the outcome transaction. Invalid references receive bounded same-turn correction; synthesis completion declarations carry no external execution effect. Durable scheduling stops deterministic failures and preserves transient retry budgets. Safe uncommitted synthesis drafts permit configured fallback replacement. Foreman planning uses explicit producer-before-review dependencies; independent Work remains parallel and dependent reviews wait for every successful producer. Leased engine cancellation waits for actual execution settlement before resource completion."
  source "fact"
  status "verified"
- evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 44b4de62-537a-42f1-8a5c-40d72900430b a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2 d163a01d-2706-4679-8bea-de546e1ead3a d350b327-9a09-447e-9b5e-005388a94107 dd14b77b-3e78-4d08-8012-39d32d8e2aef 0a318b41-99e0-4705-bcf0-b2157afc5f8c 0139295d-c933-4f90-8dbe-e817016f1e65 0423a1b2-bacf-4268-aacc-a5b27b920a66 54924ed6-1441-4f5d-a175-47b16eae6fbc d64591f6-724e-4892-b3bb-602f4a1be477 251779e1-a5cc-4fda-a221-f895d44d0c88 9cddc3d6-d91f-44e5-b7dc-541889c8d24e 972b280a-98e7-48be-b81e-9086e58d83a3 e8632c11-c82b-419b-8d13-3011c3a11f74"
- version "16"
+ evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 44b4de62-537a-42f1-8a5c-40d72900430b a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2 d163a01d-2706-4679-8bea-de546e1ead3a d350b327-9a09-447e-9b5e-005388a94107 dd14b77b-3e78-4d08-8012-39d32d8e2aef 0a318b41-99e0-4705-bcf0-b2157afc5f8c 0139295d-c933-4f90-8dbe-e817016f1e65 0423a1b2-bacf-4268-aacc-a5b27b920a66 54924ed6-1441-4f5d-a175-47b16eae6fbc d64591f6-724e-4892-b3bb-602f4a1be477 251779e1-a5cc-4fda-a221-f895d44d0c88 9cddc3d6-d91f-44e5-b7dc-541889c8d24e 972b280a-98e7-48be-b81e-9086e58d83a3 e8632c11-c82b-419b-8d13-3011c3a11f74 3fae164b-6d25-46cc-b322-eb68160aeeed 6672eee3-54eb-4cc2-a30d-73ac1065a1c5 27776754-b9ce-4f88-a876-8e4f93a4c79d 4a3894d3-e2b3-4f1e-b87d-4063b3a99dc4"
+ version "18"
 }
 remote = component "Paired remote commands" {
 metadata {
@@ -86,50 +86,90 @@ metadata {
 conversations = component "Conversation execution" {
 metadata {
  harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
- brief "User-driven turn/session orchestration preserves workbench ownership, private history, safe activity and durable children. Independent conversation outbox deliveries overlap across claim batches without a workbench, partner or global active-turn cap; each claim renews until completion and close drains all batches. Same-conversation turn exclusion remains authoritative. Explicit Git operations use a separate serial dispatcher and repository leases. Static extension selections are validated and forwarded across READ/WRITE admission; native partners reject Pi extensions. Title renaming validates bounded single-line text, sanitizes the public projection and uses a metadata-only store port even during generation. Per-conversation observers receive committed safe turn and terminal snapshots; the 100 ms trailing timer drains paused output and is canceled on settlement. Whitelisted failure phase/reason/effect facts and partial artifacts remain readable after failure or cleanup deadline."
+ brief "User-driven turns preserve workbench ownership and immutable configuration. Same partner capabilities reuse a segment; switching creates an idempotent successor with a complete handoff, including A1-B1-A2. Conversation deliveries overlap across conversations, with one running owner per conversation. Current intent defines the task; prior turns are reference facts. Pi receives full authorized tools initially, native permission continuation remains. Committed safe activity, metadata-only titles, remote contracts, Git leases and durable child ownership remain separate."
  source "fact"
  status "verified"
- evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef 44b4de62-537a-42f1-8a5c-40d72900430b ee49fdc6-1c1c-48a7-a1ee-afa121d0b174"
- version "9"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef 44b4de62-537a-42f1-8a5c-40d72900430b ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 a417be0f-3af1-4139-a6fb-d1db010ac491"
+ version "11"
 }
 }
 }
 domain = component "Domain policies" {
 metadata {
  harness_id "b48eb196-1e32-4244-9cb1-070336a79f17"
- brief "Pure TypeScript admission and validation. Local browser tools that launch processes or execute page scripts require WRITE. Unknown names stay denied and custom partner minimum access reflects these effects. Local Git inspection is READ; unrestricted shell and mutations retain exclusive WRITE admission. Resource-wait cancellation requires an explicit intent. Method experience extraction uses validated numeric development comparisons and registered policies; identical or incomplete comparisons create no lesson. Shared turn recovery policy classifies exhausted synthesis correction, non-repeating source failures, failure budgets and replay permission."
+ brief "Pure TypeScript admission and validation. Local browser tools that launch processes or execute page scripts require WRITE. Unknown names stay denied and custom partner minimum access reflects these effects. Local Git inspection is READ; unrestricted shell and mutations retain exclusive WRITE admission. Resource-wait cancellation requires an explicit intent. Method experience extraction uses validated numeric development comparisons and registered policies; identical or incomplete comparisons create no lesson. Shared turn recovery policy classifies exhausted synthesis correction, non-repeating source failures, failure budgets and replay permission. Directory admission honors earlier incompatible read/write requests and allows consecutive readers."
  source "fact"
  status "verified"
- evidence "246218d7-0c42-468a-b979-615c8ca1525d 2bee49b0-f04c-4ce2-8f64-79516009c1e9 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 d6797abc-d945-4aa6-bc1a-49d0558529bc 3e39b216-1a95-41a5-a236-1dfece37d9f8 61e0cd00-7284-40f2-9e5d-0a7d4bb0c7de f28b28ea-c8d1-4aca-a65d-383bebe86300 f1be38d3-6986-4482-842c-385096d1c6e2"
- version "9"
+ evidence "246218d7-0c42-468a-b979-615c8ca1525d 2bee49b0-f04c-4ce2-8f64-79516009c1e9 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 d6797abc-d945-4aa6-bc1a-49d0558529bc 3e39b216-1a95-41a5-a236-1dfece37d9f8 61e0cd00-7284-40f2-9e5d-0a7d4bb0c7de f28b28ea-c8d1-4aca-a65d-383bebe86300 f1be38d3-6986-4482-842c-385096d1c6e2 f098c9d0-a6f7-49bd-a284-d7924445bcd7"
+ version "10"
 }
 }
 infrastructure = component "Infrastructure adapters" {
 metadata {
  harness_id "05a7cbd5-4101-4522-a77a-16d3914b08c8"
- brief "Implements persistence, engine, A2A, security and artifact ports. Conversation state is transactional; startup clears backoff only for unstarted queued turns, preserving interrupted-execution protection and stable identities. Explicit Git uses root-confined file adapters and repository coordination. Pinned SDK sessions, native journals and incremental conversation/child stores implement the new ports. The encrypted paired host validates conversation command shapes and advertises conversations.v1 without opening local file or Git operations. Goal Work lists expose safe resource-wait phases and canceled Work remains canceled in goal-scoped agent cards. Native CLI resolution reads Windows environment keys case-insensitively inside Workers. Work path adapters reuse linked identities, reopen recovered unresolved paths, and apply shared canonical visibility before detail paging while preserving historical rows. Method learning migration 099 preserves sample-waiting checkpoints outside the unique running/fault-paused slot without resuming historical learning. SQLite synthesis preflight is read-only; the final outcome transaction remains authoritative. Orphan scan and redrive both honor effect proof, current execution ownership and durable retry deadlines, with no fixed orphan cooldown. Home feed projects durable queued/retry facts and blocked unsafe synthesis as failure."
+ brief "Implements persistence, engine, A2A, security and artifact ports. Conversation state is transactional. Startup restores durable Pi results without replaying execution and clears queue backoff for unstarted turns. Explicit Git uses root-confined file adapters and repository coordination. Pinned SDK sessions, native journals and incremental conversation/child stores implement the new ports. The encrypted paired host validates conversation command shapes and advertises conversations.v1 without opening local file or Git operations. Goal Work lists expose safe resource-wait phases and canceled Work remains canceled in goal-scoped agent cards. Native CLI resolution reads Windows environment keys case-insensitively inside Workers. Work path adapters reuse linked identities, reopen recovered unresolved paths, and apply shared canonical visibility before detail paging while preserving historical rows. Method learning migration 099 preserves sample-waiting checkpoints outside the unique running/fault-paused slot without resuming historical learning. SQLite synthesis preflight is read-only; the final outcome transaction remains authoritative. Orphan scan and redrive honor effect proof, current execution ownership and durable retry deadlines. Pi prestart requests share directory admission with native continuations. Home feed projects durable queued/retry facts and blocked unsafe synthesis as failure. Existing physical directory overlap governs a fair read/write queue. NONE creates no lease; repeat READ reuses its generation. Transactional release and queue removal wake persisted dispatch; result storage precedes release and display failures do not retain ownership. Stale generations cannot delete newer leases."
  source "fact"
  status "verified"
- evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 529363b4-ba83-4f8c-946f-579a736f0406 db8263f3-5e65-499b-b358-e54b40a000cd 1cb47532-3623-40ae-88b1-bd52b81947e5 b19e6407-d990-45b3-b75e-b5ba562fd399 54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d 1519c446-98f9-4b5a-b873-26ea5d8e7d89 7248e4e7-328d-4d19-9d07-c7552695b8a5 5c497ce2-7941-4294-b79d-d9cb08f9adf1 19c76272-7569-42d8-b53e-756b6d33cf7e 3426be5b-ee08-43a4-8954-a94cdb103ade 71d0db16-d0b0-49d2-81a9-deb9c6fc107f 3fe19ae5-307a-42df-a06c-51a4f22df5f0 3e8617b6-ca31-4aad-a756-86b80351c515 321ffa43-c02f-4ddb-aa43-6bd5a3b0546a 74291112-c1a7-4ac7-b9af-105899a135e8 30ec7a07-af3f-4075-bbde-ed1c454b08d4 bb2f305f-a3a8-48f8-8374-aa0117dcad93 15cb1f9c-3615-409d-aafe-698cb987748b"
- version "11"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 529363b4-ba83-4f8c-946f-579a736f0406 db8263f3-5e65-499b-b358-e54b40a000cd 1cb47532-3623-40ae-88b1-bd52b81947e5 b19e6407-d990-45b3-b75e-b5ba562fd399 54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d 1519c446-98f9-4b5a-b873-26ea5d8e7d89 7248e4e7-328d-4d19-9d07-c7552695b8a5 5c497ce2-7941-4294-b79d-d9cb08f9adf1 19c76272-7569-42d8-b53e-756b6d33cf7e 3426be5b-ee08-43a4-8954-a94cdb103ade 71d0db16-d0b0-49d2-81a9-deb9c6fc107f 3fe19ae5-307a-42df-a06c-51a4f22df5f0 3e8617b6-ca31-4aad-a756-86b80351c515 321ffa43-c02f-4ddb-aa43-6bd5a3b0546a 74291112-c1a7-4ac7-b9af-105899a135e8 30ec7a07-af3f-4075-bbde-ed1c454b08d4 bb2f305f-a3a8-48f8-8374-aa0117dcad93 15cb1f9c-3615-409d-aafe-698cb987748b 359b803e-e4a7-4ff6-9650-f45797e9ed43 7aa23d9d-405b-4861-801c-97ff1a8d3e2d aac839d9-1db1-427d-87a2-b7486d53af99 65471114-095f-48bd-9ce0-e5fca27cd693 9c932a6b-6c00-4f43-9567-41db65ba6a36"
+ version "13"
 }
 conversationStorage = component "Conversation persistence" {
 metadata {
  harness_id "882f7b90-4074-4541-bcad-2c7a7ea4b7cb"
- brief "Private source messages and versioned canonical SDK entries append incrementally behind active-turn ownership. Immutable entry identities, parent chains and selected leaf retain failures and context edits. Private checkpoints, child intents, safe failures and public cursor history stay separate. Idempotent title edits preserve turns, configuration, lifecycle and outbox state; tombstones remain hidden and later submissions retain saved titles. Active projections expose durable change cursors."
+ brief "SQLite owns business conversations, ordered engine execution segments, stable turn bindings and safe projections. RUNNING ownership and predecessor CAS protect handoffs. Legacy private rows remain audit sources; Pi files own canonical history. Shared histories expose Pi thinking lifecycle and timing. Metadata-only rename, tombstones, child intents and public cursors retain their boundaries."
  source "fact"
  status "verified"
- evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 ac69fa43-cea7-401a-a580-5f894151a348 12189162-690a-45b7-9b0a-4d57e8601c4f"
- version "5"
+ evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 ac69fa43-cea7-401a-a580-5f894151a348 12189162-690a-45b7-9b0a-4d57e8601c4f 9080ee60-48a4-4e8f-a9ce-246c128136cf"
+ version "7"
 }
 piSessions = component "Pi context and execution" {
 metadata {
  harness_id "c12f9eba-5f56-4fa1-b864-025e3193a7c3"
- brief "Pinned Pi 1.5.2 sessions reuse Joi context, journals and permission gates. Host adapters expose Agent Browser 0.42.0 local tools and Safety Net 2.7.11. Browser operations require an explicit partner tool selection even under ALL and an enabled conversation extension. Owned daemon handles and isolated profiles replace Kernel cloud execution; schema/argument limits, bounded images/text and awaited failure/cancellation cleanup remain inside this component. Ambient SDK resource discovery and nested extension execution stay disabled. Codemode/MCP remain research candidates. Shared session-owned background summaries use complete-response validation, model-derived output allowances, frozen incremental coverage and persisted route-scoped cooldown. Primary Joi and Partner retain their persistence and permission ownership; final cleanup drains cancellation. Live-provider performance is unverified. Primary synthesis prevalidates private evidence and bounds correction; provider error text remains private while safe recovery categories survive SDK stream errors. SDK-added thinking shares the request-local total output ceiling, and context status settles after summary cancellation or completion. Monotonic latency diagnostics separate model request/consumption, SDK tool execution, context preparation, session saves and awaited callbacks. Fast stream callbacks aggregate; slow callbacks are individually observable. Pinned research and synthetic baselines do not establish a production bottleneck. Unix browser IPC names resolve relative to the daemon and command processes' shared private cwd, so long UTF-8 temporary roots retain bounded socket addresses and owned cleanup. Pinned SDK synthetic-provider tests observe answer prefixes before completion; this establishes the local event boundary rather than production gateway timing. Normal conversations use SDK-owned continuation with one persisted three-retry budget and zero provider retries. Canonical entries restore through public SDK APIs; unknown effects remain reference data. Tool and provider boundaries flush necessary writes. Retry backoff is distinct from stream idle time; abort is bounded, final cleanup drains persistence, and retired listeners reject late events. Async provider isolation is verified synthetically; synchronous blocking remains unverified. Fixed local Git reads avoid workspace writes and resource-wait cancellation requires an explicit intent while automatic continuations retain ownership. Evolution, routing, naming and connectivity probes request effective configured output maxima. Fixture preflight offers evidence and finish only; evolution failure-triggered source fallback remains absent. Provider-reported hard limits and remaining context capacity still constrain requests."
+ brief "Pinned official Pi sessions own execution, resources, retry and compaction. Joi keeps business admission, result settlement and scoped conversation lineage. Native facts and numeric observations are separate responsibilities. Pi thinking phases project lifecycle and timing. Only explicitly public provider summaries populate the shared summary DTO. SDK 1.5.2 stays locked; synthetic verification and package checks do not claim live-model convergence."
  source "fact"
  status "verified"
- evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1 5841bbad-682d-467a-95f9-8acd70e76c32 e06f4768-44ed-4bb9-8347-bba17ca19cbd 217abdfa-12d5-417d-8e0b-7e55f72917f6 d6797abc-d945-4aa6-bc1a-49d0558529bc 2554deb1-dde9-4858-bb55-e867f1d4d116 8c586b5a-6dfe-43c0-9e0f-8cd885e73a12 5bc37929-aa0f-458c-98ae-57aa0ea8090e 96e31e28-7dec-40fc-be38-c2bae54a9468 5a86001a-4742-4d7a-abf0-5983142f9cb6 4ceef8ae-0316-4837-943b-ab9e9599acc3 2a3aff22-8581-424c-af0a-c4182b77742f ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 38b09d5f-50f2-43a2-b6f7-2a4e31675e77 60fe6b4d-06e2-46f5-8e7f-e680ff854cf9 16802d66-5c1a-4e9f-8db6-af5647932e94 b3dad04a-df5c-45cd-a2da-86f7e73d273e 040ebe4f-d281-4996-8db8-54d727c6e716 c0fbdf81-21b8-46b1-9b34-73d31b228a96 a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6 f81d9008-9635-480d-b5bd-d88dcf7fd971 2f34eed3-5d77-426a-b98b-b96e7eb41ebc 64c24ebe-09b2-47ab-9204-f66893cf8d48 92db4a86-9834-4071-bf2c-9fd0724b43c3 096dc7d1-eb93-4975-8fea-5f99776e5150 cd436d72-ed57-4452-880d-27cbabeb27fa dd47d686-75af-4f9e-a3be-93a47f07280c 9b7ef723-ee6b-4710-b18a-84c606f6a1a0 29fe20fc-d1a8-4b43-ac2a-ea1bad8e11fa 0b163e7c-4f25-4d8c-81dc-5a583b1d3959 2b73ef5d-3fce-408e-92e7-ffb22945406f d3ce4801-6708-4041-a84e-7a5fa383272a 825e4057-6213-455e-8530-d1efa5bfd42e 1e9f0795-e80d-4799-8df1-4bf42e2be753 c05ed56d-9d11-427e-8a4a-ea69f25d0fb6 70712ab8-9239-417e-ae73-bc61ce09c371 d6750325-b5ac-4ba2-9f0b-b4aa31532e73 d3e5a5bf-cf8a-4b5f-8b48-5f680226b435 e8d71829-fe79-4f80-972e-fbfa312dce20 3d43debc-4cd6-4517-b729-fa6a549d0937 4530c2e6-62fc-4aba-9fa2-554b0e23a136 16e763de-7d1e-4378-bd91-b3d8bc924d05 0de54a1c-29ec-47aa-b79b-17f9b4842974 5d1b8b6b-3f17-4d34-ba8c-ec22deab32c6 4491a2e3-577b-4501-8471-6f2d31fb48ce 0423a1b2-bacf-4268-aacc-a5b27b920a66 e972cca1-c44b-4131-9605-12f6ecc99a06 0c15f81a-c17b-4ea6-8e7f-ee2b438993df 948c3b24-2539-45f2-b359-57d6de7077a5 ce15aadc-3f49-421e-abf4-9c1465c28048 b42a3410-e5a0-4996-89b9-73b05fa8facb"
- version "16"
+ evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1 5841bbad-682d-467a-95f9-8acd70e76c32 e06f4768-44ed-4bb9-8347-bba17ca19cbd 217abdfa-12d5-417d-8e0b-7e55f72917f6 d6797abc-d945-4aa6-bc1a-49d0558529bc 2554deb1-dde9-4858-bb55-e867f1d4d116 8c586b5a-6dfe-43c0-9e0f-8cd885e73a12 5bc37929-aa0f-458c-98ae-57aa0ea8090e 96e31e28-7dec-40fc-be38-c2bae54a9468 5a86001a-4742-4d7a-abf0-5983142f9cb6 4ceef8ae-0316-4837-943b-ab9e9599acc3 2a3aff22-8581-424c-af0a-c4182b77742f ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 38b09d5f-50f2-43a2-b6f7-2a4e31675e77 60fe6b4d-06e2-46f5-8e7f-e680ff854cf9 16802d66-5c1a-4e9f-8db6-af5647932e94 b3dad04a-df5c-45cd-a2da-86f7e73d273e 040ebe4f-d281-4996-8db8-54d727c6e716 c0fbdf81-21b8-46b1-9b34-73d31b228a96 a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6 f81d9008-9635-480d-b5bd-d88dcf7fd971 2f34eed3-5d77-426a-b98b-b96e7eb41ebc 64c24ebe-09b2-47ab-9204-f66893cf8d48 92db4a86-9834-4071-bf2c-9fd0724b43c3 096dc7d1-eb93-4975-8fea-5f99776e5150 cd436d72-ed57-4452-880d-27cbabeb27fa dd47d686-75af-4f9e-a3be-93a47f07280c 9b7ef723-ee6b-4710-b18a-84c606f6a1a0 29fe20fc-d1a8-4b43-ac2a-ea1bad8e11fa 0b163e7c-4f25-4d8c-81dc-5a583b1d3959 2b73ef5d-3fce-408e-92e7-ffb22945406f d3ce4801-6708-4041-a84e-7a5fa383272a 825e4057-6213-455e-8530-d1efa5bfd42e 1e9f0795-e80d-4799-8df1-4bf42e2be753 c05ed56d-9d11-427e-8a4a-ea69f25d0fb6 70712ab8-9239-417e-ae73-bc61ce09c371 d6750325-b5ac-4ba2-9f0b-b4aa31532e73 d3e5a5bf-cf8a-4b5f-8b48-5f680226b435 e8d71829-fe79-4f80-972e-fbfa312dce20 3d43debc-4cd6-4517-b729-fa6a549d0937 4530c2e6-62fc-4aba-9fa2-554b0e23a136 16e763de-7d1e-4378-bd91-b3d8bc924d05 0de54a1c-29ec-47aa-b79b-17f9b4842974 5d1b8b6b-3f17-4d34-ba8c-ec22deab32c6 4491a2e3-577b-4501-8471-6f2d31fb48ce 0423a1b2-bacf-4268-aacc-a5b27b920a66 e972cca1-c44b-4131-9605-12f6ecc99a06 0c15f81a-c17b-4ea6-8e7f-ee2b438993df 948c3b24-2539-45f2-b359-57d6de7077a5 ce15aadc-3f49-421e-abf4-9c1465c28048 b42a3410-e5a0-4996-89b9-73b05fa8facb 54924ed6-1441-4f5d-a175-47b16eae6fbc 788a6816-19cd-4a87-a4c5-ab17149e9b48 622ca1b3-0ea1-46d5-859e-974fefa196d7 901170eb-ce8b-4885-b8ff-c0251181f29e eee85f7d-4bce-4a90-acb0-abe25cb56acc fd4fc7ec-9efc-4172-a017-97f7e1d3149f ede12cff-e276-4394-b302-ae9908473949"
+ version "25"
+}
+officialRuntime = component "Official session execution" {
+metadata {
+ harness_id "90adf9e2-af9d-42c8-b744-7fe690236e78"
+ brief "The public factory and thin partner/primary adapters assemble pinned models, explicit tools, skills and extensions. Tool adapters preserve official prompt metadata. Shared public startup prompt configuration retains custom role policy, renders active tool/rule sections, separates workbench/main-skill context, reuses official project/skill/cwd resources and refreshes local system dates without execution intervention. SDK owns requests, retries, parallel execution and compaction. Local primary question/completion declarations preserve business barriers. Settled native result markers support recovery without model replay."
+ source "fact"
+ status "verified"
+ evidence "629887d6-ca08-4e3b-9116-9def218c167e c0fbdf81-21b8-46b1-9b34-73d31b228a96 a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6 29e3189a-98ca-4c5f-b287-0d54ef815d40 4491a2e3-577b-4501-8471-6f2d31fb48ce 901170eb-ce8b-4885-b8ff-c0251181f29e ede12cff-e276-4394-b302-ae9908473949 1fbd5c7f-b90f-457f-a5b7-b06bdd9c349f c0c72b32-20e8-43a7-83c1-c66142ed079b 21229091-a27c-4a31-b947-2f5f5156d2d2 70712ab8-9239-417e-ae73-bc61ce09c371 793588d4-9226-45ea-bcb5-58e60334355c 60fe6b4d-06e2-46f5-8e7f-e680ff854cf9 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 64c24ebe-09b2-47ab-9204-f66893cf8d48 44b4de62-537a-42f1-8a5c-40d72900430b"
+ version "3"
+}
+}
+nativeHistory = component "Native history and migration" {
+metadata {
+ harness_id "eddb5187-fe0d-460d-8c42-e4dc85e9b3f6"
+ brief "Identity-derived private SDK files retain canonical entries, parent sessions and active branches. Atomic import preserves source backups and fingerprints. Source/result readers reject invalid or missing identities; SQLite projections cannot overwrite native authority. Atomic numeric cursor sidecars retain acknowledged reconciliation progress; completed unchanged histories skip full reads after a durable ledger receipt check, and independent ledger rollback invalidates newer progress."
+ source "fact"
+ status "verified"
+ evidence "f73996f8-951b-4f7c-81c6-d7dcad8c0578 e1ca99c3-c87f-4f8b-be6a-5704c282e37b"
+ version "2"
+}
+}
+observations = component "Observation and numeric reconciliation" {
+metadata {
+ harness_id "90961091-4697-4436-872b-5ef0020ec29a"
+ brief "Bounded queues isolate display and ordinary statistics failures. Canonical usage collectors attribute stable numeric facts and original timestamps; summary attempts and optional warming are observed without changing SDK control flow. Background sweeps retain identity-bound attribution and a contiguous acknowledged cursor across restart, skip unchanged completed histories only with a current ledger receipt, and retry unacknowledged or rolled-back facts without controlling SDK execution."
+ source "fact"
+ status "verified"
+ evidence "a4d690cc-b3fe-4dbe-abff-251450f6d7e7 8e3d9c41-bed5-49a9-be4b-03939b791c46 185acf8d-5189-470c-b815-1356e2e6bb9d 73c776f6-90f6-444c-921a-7d5e1b859c19 f3b7434f-3642-427a-b366-0cac0dccad6e f0e7c98a-c982-4e9f-b4ea-340bd4203ef7 937c2d6a-483c-4295-a6ca-a17e8aca0272 a7e10dcd-d534-4c65-be58-e815dacba404"
+ version "2"
+}
+}
+handoff = component "Conversation handoff and source reads" {
+metadata {
+ harness_id "524fe9e6-d7d6-4df5-a4b7-df4e8ed02d01"
+ brief "Official serialization hands effective source context and business facts to a fresh successor without an extra model request. Successors extend the effective context from a recognized seed and attach one current business appendix. Tool display records and UI activity are omitted from that appendix. Recognized imported handoff seeds are repaired with official context edits while originals remain auditable. Scoped history tools read original conversation segments; Work readers remain task-scoped. Native journals retain separate engine identities."
+ source "fact"
+ status "verified"
+ evidence "a0716920-6118-49e9-94e7-b392a0d5bf22 a9d13166-0f67-431a-b09a-349b39d31b2c 90a83f7c-9a38-475a-a9ec-49d540abde2d 44b4de62-537a-42f1-8a5c-40d72900430b c9ce1bb9-aaae-401e-a985-df567fcd7d68 c3e52a0c-1863-4047-bbe1-7f301d53d301"
+ version "2"
+}
 }
 }
 }
@@ -157,11 +197,11 @@ metadata {
 mobile = component "Android client" {
 metadata {
  harness_id "9bdcf527-c117-4762-86ce-c7d2e01c6321"
- brief "Flutter remote controller views with pairing and home. Internal remote transport not audited. Normal conversation views and the native controller are reviewed for conversations.v1 negotiation, shared history, stable sends, incremental reads, stop and metadata actions. Background polling pauses and stale results are ignored. Real-device direct/relay behavior remains manual."
+ brief "Flutter remote controller views with pairing and home. Internal remote transport not audited. Normal conversation views and the native controller are reviewed for conversations.v1 negotiation, shared history, stable sends, incremental reads, stop and metadata actions. Background polling pauses and stale results are ignored. Real-device direct/relay behavior remains manual. Ordinary conversations, task messages and goal follow-ups share hardware Enter and soft keyboard Send with composition protection."
  source "fact"
  status "verified"
- evidence "9eb5b925-3b08-4116-94d5-c22547df6564 4b0b84e3-24d0-44f7-aac1-2c450c507e80 5b5e2d23-0e65-499d-999d-976a1fbe3691 f8b6f0fa-14fe-4833-9554-150cfe6a6c38 4bf896c9-b798-4616-a9db-8da8c7e8980d 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659"
- version "3"
+ evidence "9eb5b925-3b08-4116-94d5-c22547df6564 4b0b84e3-24d0-44f7-aac1-2c450c507e80 5b5e2d23-0e65-499d-999d-976a1fbe3691 f8b6f0fa-14fe-4833-9554-150cfe6a6c38 4bf896c9-b798-4616-a9db-8da8c7e8980d 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659 9e0456ed-9c75-4153-962d-c8d52b36a7b0"
+ version "4"
 }
 }
 native = component "Native remote core" {
@@ -465,6 +505,56 @@ metadata {
  version "1"
 }
 }
+app.application.conversations -[calls]-> app.infrastructure.conversationStorage.piSessions.handoff "Builds and reads scoped successor context" {
+metadata {
+ harness_id "a468966c-1d96-4b32-8984-60bf3952876f"
+ brief "Builds and reads scoped successor context"
+ source "fact"
+ status "verified"
+ evidence "ede12cff-e276-4394-b302-ae9908473949"
+ version "1"
+}
+}
+app.infrastructure.conversationStorage.piSessions.officialRuntime -[calls]-> app.infrastructure.conversationStorage.piSessions.nativeHistory "Opens and persists authoritative SDK history" {
+metadata {
+ harness_id "0b04c104-d540-4a97-8110-0f11f1886a2b"
+ brief "Opens and persists authoritative SDK history"
+ source "fact"
+ status "verified"
+ evidence "ede12cff-e276-4394-b302-ae9908473949"
+ version "1"
+}
+}
+app.infrastructure.conversationStorage.piSessions.officialRuntime -[publishes]-> app.infrastructure.conversationStorage.piSessions.observations "Emits execution facts without awaiting projections" {
+metadata {
+ harness_id "06c5e343-f4e4-41fb-ad1c-1eae7a41a330"
+ brief "Emits execution facts without awaiting projections"
+ source "fact"
+ status "verified"
+ evidence "ede12cff-e276-4394-b302-ae9908473949"
+ version "1"
+}
+}
+app.infrastructure.conversationStorage.piSessions.handoff -[calls]-> app.infrastructure.conversationStorage.piSessions.nativeHistory "Reads canonical source history and stable references" {
+metadata {
+ harness_id "7fc29e03-41d1-4b7f-9ae6-5406552fdf89"
+ brief "Reads canonical source history and stable references"
+ source "fact"
+ status "verified"
+ evidence "ede12cff-e276-4394-b302-ae9908473949"
+ version "1"
+}
+}
+app.infrastructure.conversationStorage.piSessions.nativeHistory -[calls]-> app.infrastructure.conversationStorage.piSessions.observations "Reconciles missed numeric facts without execution" {
+metadata {
+ harness_id "d9753cd1-e5c6-4827-845c-d950fdddec69"
+ brief "Reconciles missed numeric facts without execution"
+ source "fact"
+ status "verified"
+ evidence "ede12cff-e276-4394-b302-ae9908473949"
+ version "1"
+}
+}
 }
 views {
  view overview { include * }
@@ -487,5 +577,13 @@ views {
   include app.application.remote
   include app.application.conversations
   include app.shared
+ }
+ view pi_session_ownership {
+  include app.application.conversations
+  include app.infrastructure.conversationStorage
+  include app.infrastructure.conversationStorage.piSessions.officialRuntime
+  include app.infrastructure.conversationStorage.piSessions.nativeHistory
+  include app.infrastructure.conversationStorage.piSessions.observations
+  include app.infrastructure.conversationStorage.piSessions.handoff
  }
 }

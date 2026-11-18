@@ -2,6 +2,11 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
+  createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
+  createWriteToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 
@@ -10,6 +15,22 @@ import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-
 vi.setConfig({ testTimeout: 30_000 });
 
 describe("Pi coding tool workspace scope", () => {
+  it.each([
+    ["bash", (cwd: string) => createBashToolDefinition(cwd, { exposeSessionEnvironment: false })],
+    ["edit", createEditToolDefinition], ["find", createFindToolDefinition],
+    ["grep", createGrepToolDefinition], ["ls", createLsToolDefinition],
+    ["read", createReadToolDefinition], ["write", createWriteToolDefinition],
+  ] as const)("preserves official %s prompt metadata through the execution adapter", (name, definition) => {
+    const root = mkdtempSync(join(tmpdir(), "joi-pi-tool-metadata-"));
+    try {
+      const [tool] = new BuiltinPiCodingToolFactory().create(root, [name]);
+      const expected = definition(root);
+      expect(tool).toHaveProperty("promptSnippet", expected.promptSnippet);
+      if (expected.promptGuidelines !== undefined) expect(tool).toHaveProperty("promptGuidelines", expected.promptGuidelines);
+      else expect(tool).not.toHaveProperty("promptGuidelines", expect.any(Array));
+    } finally { rmSync(root, { force: true, recursive: true }); }
+  });
+
   it.skipIf(process.platform !== "win32")("allows writes through a Windows short workspace alias", async () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-short-workspace-"));
     const workspace = join(root, "workspace-with-long-name");

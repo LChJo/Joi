@@ -612,7 +612,7 @@ describe("joi home single entry", () => {
       // Left blank in the advanced section, which is the explicit "back to the provider default":
       // sending nothing at all would leave the current value in place, since the service carries
       // unchanged limits into the new revision.
-      compactionThresholdPercent: null, contextWindow: null, maxOutputTokens: null,
+      contextWindow: null, maxOutputTokens: null, compactionThresholdPercent: null,
       thinkingEffort: null,
     }));
     expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
@@ -686,10 +686,10 @@ describe("joi home single entry", () => {
     expect(within(output).getByRole("option", { name: outputLabel })).toHaveValue(outputValue);
     fireEvent.change(context, { target: { value: contextValue } });
     fireEvent.change(output, { target: { value: outputValue } });
-    fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "70" } });
+    fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "80" } });
     fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
     await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
-      compactionThresholdPercent: 70, contextWindow: Number(contextValue), maxOutputTokens: Number(outputValue),
+      contextWindow: Number(contextValue), maxOutputTokens: Number(outputValue), compactionThresholdPercent: 80,
     })));
   });
 
@@ -708,9 +708,10 @@ describe("joi home single entry", () => {
     // An explicit tier selection must reach the service with that tier's exact token count.
     fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "200000" } });
     fireEvent.change(screen.getByLabelText("最大输出（tokens）"), { target: { value: "32768" } });
+    fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "80" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      contextWindow: 200_000, maxOutputTokens: 32_768,
+      contextWindow: 200_000, maxOutputTokens: 32_768, compactionThresholdPercent: 80,
     })));
   });
 
@@ -718,7 +719,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     const generic = {
       ...readySource, accessMode: "custom" as const,
-      activeModel: { ...readySource.activeModel, contextWindow: 999_424, id: "old-model", maxOutputTokens: 119_040 },
+      activeModel: { ...readySource.activeModel, contextWindow: 999_424, id: "old-model", maxOutputTokens: 119_040, compactionThresholdPercent: 79 },
       baseUrl: "https://old.example/v1", displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
     };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
@@ -735,7 +736,7 @@ describe("joi home single entry", () => {
     fireEvent.change(windowTier, { target: { value: "500000" } });
     fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
     await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
-      contextWindow: 500_000, maxOutputTokens: 119_040,
+      contextWindow: 500_000, maxOutputTokens: 119_040, compactionThresholdPercent: 79,
     })));
   });
 
@@ -2307,6 +2308,7 @@ describe("tool trace reveal", () => {
     ["READ_RUNNING", undefined, "分析中"],
     ["READ_QUEUED", "WORKSPACE_READ", "等待工作区可读"],
     ["WRITE_QUEUED", "WORKSPACE_WRITE", "等待写入"],
+    ["READ_QUEUED", "WORKSPACE_WRITE", "等待写入"],
     ["WRITE_RUNNING", undefined, "写入执行中"],
     ["READ_QUEUED", "CAPACITY", "等待执行容量"],
   ] as const)("AC-WR-06 shows %s from the API projection", async (executionPhase, waitReason, label) => {

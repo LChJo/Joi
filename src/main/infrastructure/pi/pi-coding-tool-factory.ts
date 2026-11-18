@@ -2,11 +2,18 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   createBashTool,
   createEditTool,
+  createEditToolDefinition,
   createFindTool,
+  createFindToolDefinition,
   createGrepTool,
+  createGrepToolDefinition,
   createLsTool,
+  createLsToolDefinition,
   createReadTool,
+  createReadToolDefinition,
   createWriteTool,
+  createWriteToolDefinition,
+  type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
 import { guardedEditOperations, guardedWriteOperations } from "./pi-filesystem-boundary.js";
@@ -14,8 +21,10 @@ import { PI_WEB_ACCESS_TOOL_NAMES, PiWebAccessToolFactory } from "./pi-web-acces
 import { PI_FINANCIAL_RESEARCH_TOOL_NAMES, PiFinancialResearchToolFactory } from "./pi-financial-research-tools.js";
 import { createGitReadTool } from "./pi-git-read-tool.js";
 
+export type PiCodingTool = AgentTool & Pick<ToolDefinition, "promptSnippet" | "promptGuidelines">;
+
 export interface PiCodingToolFactory {
-  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[];
+  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): PiCodingTool[];
   readonly names: readonly string[];
 }
 
@@ -53,14 +62,21 @@ export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "git_read", "grep",
 export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES, ...PI_FINANCIAL_RESEARCH_TOOL_NAMES] as const;
 
 // The heterogeneous list retains each concrete schema for Pi's runtime argument validation.
-const factories: Record<string, (cwd: string) => AgentTool> = {
-  edit: cwd => createEditTool(cwd) as AgentTool,
-  find: cwd => createFindTool(cwd) as AgentTool,
-  grep: cwd => createGrepTool(cwd) as AgentTool,
-  ls: cwd => createLsTool(cwd) as AgentTool,
-  read: cwd => createReadTool(cwd) as AgentTool,
-  write: cwd => createWriteTool(cwd) as AgentTool,
+const factories: Record<string, (cwd: string) => PiCodingTool> = {
+  edit: cwd => withPromptMetadata(createEditTool(cwd) as AgentTool, createEditToolDefinition(cwd)),
+  find: cwd => withPromptMetadata(createFindTool(cwd) as AgentTool, createFindToolDefinition(cwd)),
+  grep: cwd => withPromptMetadata(createGrepTool(cwd) as AgentTool, createGrepToolDefinition(cwd)),
+  ls: cwd => withPromptMetadata(createLsTool(cwd) as AgentTool, createLsToolDefinition(cwd)),
+  read: cwd => withPromptMetadata(createReadTool(cwd) as AgentTool, createReadToolDefinition(cwd)),
+  write: cwd => withPromptMetadata(createWriteTool(cwd) as AgentTool, createWriteToolDefinition(cwd)),
 };
+
+function withPromptMetadata(tool: AgentTool, definition: Pick<ToolDefinition, "promptSnippet" | "promptGuidelines">): PiCodingTool {
+  return { ...tool,
+    ...(definition.promptSnippet === undefined ? {} : { promptSnippet: definition.promptSnippet }),
+    ...(definition.promptGuidelines === undefined ? {} : { promptGuidelines: definition.promptGuidelines }),
+  };
+}
 
 /**
  * The two tools that write are given operations that refuse a path outside the workspace; the rest
@@ -80,12 +96,12 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
     private readonly financialResearch = new PiFinancialResearchToolFactory(),
   ) {}
 
-  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[] {
+  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): PiCodingTool[] {
     const needsWorkspace = names.some((name) => !(PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name));
     // Native resolution expands Windows short names to match asynchronous filesystem checks.
     const canonical = needsWorkspace ? realpathSync.native(cwd) : cwd;
     if (needsWorkspace && !statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
-    return [...new Set(names)].map((name): AgentTool => {
+    return [...new Set(names)].map((name): PiCodingTool => {
       if (name === "git_read") return createGitReadTool(canonical, safeEnvironment(process.env, [])) as AgentTool;
       if (name === "bash") return createBashTool(canonical, {
         exposeSessionEnvironment: false,
@@ -94,8 +110,8 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
           env: safeEnvironment(context.env, options?.environmentKeys ?? []),
         }),
       }) as AgentTool;
-      if (name === "write") return createWriteTool(canonical, { operations: guardedWriteOperations(canonical) }) as AgentTool;
-      if (name === "edit") return createEditTool(canonical, { operations: guardedEditOperations(canonical) }) as AgentTool;
+      if (name === "write") return withPromptMetadata(createWriteTool(canonical, { operations: guardedWriteOperations(canonical) }) as AgentTool, createWriteToolDefinition(canonical));
+      if (name === "edit") return withPromptMetadata(createEditTool(canonical, { operations: guardedEditOperations(canonical) }) as AgentTool, createEditToolDefinition(canonical));
       if ((PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)) {
         const [tool] = this.webAccess.create([name]);
         if (tool === undefined) throw new Error("partner_tool_not_allowed");

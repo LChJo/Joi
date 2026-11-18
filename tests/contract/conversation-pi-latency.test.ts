@@ -5,7 +5,7 @@ import { createPartnerRevision } from "../../src/main/domain/partners/partner.js
 import { JsonLineRuntimeDiagnostics } from "../../src/main/infrastructure/runtime/json-line-runtime-diagnostics.js";
 import { TestClock } from "../support/runtime-fixture.js";
 
-it("CHAT-40 separates model, tool and awaited callback latency without recording private data", async () => {
+it("CHAT-40/PI-SESSION-06 observes model, tool and queued projection latency without recording private data", async () => {
   let elapsed = 0;
   const clock = vi.spyOn(performance,"now").mockImplementation(() => elapsed);
   const lines: string[] = [];
@@ -40,7 +40,6 @@ it("CHAT-40 separates model, tool and awaited callback latency without recording
     expect(completed).toContainEqual(expect.objectContaining({ stage: "session_save",durationMs: 25 }));
     expect(completed).toContainEqual(expect.objectContaining({ stage: "context_prepare" }));
     expect(events).toContainEqual(expect.objectContaining({ stage: "live_event",state: "slow",durationMs: 120 }));
-    expect(events).toContainEqual(expect.objectContaining({ stage: "live_event",state: "summary",count: expect.any(Number) as unknown,maxMs: 120 }));
     expect(completed).toContainEqual(expect.objectContaining({ stage: "turn" }));
     expect(events.every(event => event.durationMs === undefined || typeof event.durationMs === "number" && event.durationMs >= 0)).toBe(true);
     expect(JSON.stringify(events)).not.toMatch(/PRIVATE_|C:\\|C:\//u);

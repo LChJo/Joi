@@ -2,6 +2,25 @@ import { createRuntimeFixture } from "../support/runtime-fixture";
 import { SqliteConversationStore } from "../../src/main/infrastructure/persistence/sqlite-conversation-store";
 
 describe("normal conversation persistence", () => {
+  it.each(["network","native"] as const)("CHAT-09 protects stored thinking when reading %s conversation history", async networkId => {
+    const f = await createRuntimeFixture();
+    try {
+      const wb = await f.workbenchRegistry.create({ name: "Chat",personaSummary: "Help",projectLabel: "Chat",scopeSummary: "Help" });
+      const store = new SqliteConversationStore(f.database),at = f.clock.now().toISOString();
+      await store.submit({ conversationId: "chat",turnId: "turn",requestId: "request",workbenchId: wb.workbenchId,text: "Question",at,
+        config: { partnerId: "p",partnerName: "P",networkId,networkName: "Network",modelName: "Model",skills: [],attachmentIds: [] } });
+      await store.begin("turn");
+      await store.update("turn",{ status: "COMPLETED",artifacts: [],entries: [{ kind: "ACTIVITY",role: "SYSTEM",entryId: "thinking",sequence: 1,createdAt: at,
+        activity: { type: "THINKING",thinking: { phaseId: "thinking",state: "COMPLETED",durationMs: 42,summary: "STORED_THINKING",summaryTruncated: true } } }] });
+      const cold = new SqliteConversationStore(f.database);
+      for (const snapshot of [(await cold.get("chat"))?.turns,(await cold.page("chat")).items]) {
+        expect(snapshot?.[0]?.entries).toEqual([{ kind: "ACTIVITY",role: "SYSTEM",entryId: "thinking",sequence: 1,createdAt: at,
+          activity: { type: "THINKING",thinking: { phaseId: "thinking",state: "COMPLETED",durationMs: 42,
+            ...(networkId === "native" ? { summary: "STORED_THINKING",summaryTruncated: true } : {}) } } }]);
+      }
+    } finally { await f.close(); }
+  });
+
   it("CHAT-04/24 exposes successive partial answers through update cursors before the turn finishes",async () => {
     const f = await createRuntimeFixture();
     try {

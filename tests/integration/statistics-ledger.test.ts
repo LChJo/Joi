@@ -1,6 +1,11 @@
 import { SqliteUsageStore } from "../../src/main/infrastructure/persistence/sqlite-usage-store";
 import { StatisticsService } from "../../src/main/application/statistics/statistics-service";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { PiSessionUsage } from "../../src/main/infrastructure/pi/pi-session-usage.js";
+import { PiNativeSessionStore } from "../../src/main/infrastructure/pi/pi-native-session-store.js";
+import path from "node:path";
 
 describe("numeric usage ledger", () => {
   let fixture: RuntimeFixture;
@@ -10,6 +15,49 @@ describe("numeric usage ledger", () => {
   const query = { from: "2026-09-22", to: "2026-09-22", timeZone: "UTC" };
   beforeEach(async () => { fixture = await createRuntimeFixture(); store = new SqliteUsageStore(fixture.database, () => now); service = new StatisticsService({ store, now: () => now, id: () => fixture.ids.next("usage") }); });
   afterEach(async () => { await fixture.close(); });
+  it("PI-SESSION-13/15 replays a canonical usage identity without charging twice", () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const usage = service.begin({ engine: "pi", purpose: "partner", workId: "work" }, { id: "pi:session:entry" });
+      usage.record({ key: "usage", tokens: { input: 12, output: 3, cacheRead: 2, cacheWrite: 0, reasoning: null } });
+      usage.finish("completed");
+    }
+    expect(service.query(query).overview).toMatchObject({ total: 15, records: 1 });
+  });
+  it("PI-SESSION-13/15 repairs an interrupted canonical fact without moving its original date", () => {
+    const original = "2026-09-20T00:00:00.000Z";
+    const usage = service.begin({ engine: "pi", purpose: "partner" }, { id: "pi:durable", at: original });
+    service.recover();
+    const replay = service.begin({ engine: "pi", purpose: "partner" }, { id: usage.id, at: original });
+    replay.record({ key: "usage", tokens: { input: 12, output: 3, cacheRead: 2, cacheWrite: 0, reasoning: null } }); replay.finish("completed");
+    expect(service.query({ ...query, from: "2026-09-20", to: "2026-09-20" }).overview).toMatchObject({ total: 15, records: 1 });
+    expect(service.query(query).overview.records).toBe(0);
+    expect(store.snapshot(original, now).records[0]?.status).toBe("completed");
+  });
+  it("PI-SESSION-15 retries a failed numeric observation from canonical history", () => {
+    const manager = SessionManager.inMemory();
+    manager.appendCustomEntry("joi.usage_context", { engine: "pi", purpose: "partner" });
+    manager.appendMessage({ ...fauxAssistantMessage("Answer"), usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 12, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } });
+    const collector = new PiSessionUsage(service), fault = vi.spyOn(store, "observe").mockImplementationOnce(() => { throw new Error("temporary failure"); });
+    collector.reconcile(manager); fault.mockRestore(); collector.reconcile(manager); collector.reconcile(manager);
+    const records = store.snapshot("2000-01-01", "2100-01-01").records;
+    expect(records).toHaveLength(1); expect(records[0]).toMatchObject({ status: "completed", tokens: { input: 10, output: 2 } });
+    expect(service.query(query).collectionDegraded).toBe(true);
+  });
+  it("PI-SESSION-15 rebuilds acknowledged native usage after the statistics ledger is restored independently",async () => {
+    const directory = path.join(fixture.root,"pi-sessions");
+    const native = await new PiNativeSessionStore(directory).open({ identity: ["partner","wb","p","i"],cwd: fixture.root });
+    native.manager.appendCustomEntry("joi.usage_context",{ engine: "pi",purpose: "partner" });
+    native.manager.appendMessage({ ...fauxAssistantMessage("Answer"),usage: { input: 10,output: 2,cacheRead: 0,cacheWrite: 0,totalTokens: 12,cost: { input: 0,output: 0,cacheRead: 0,cacheWrite: 0,total: 0 } } });
+    const observe = vi.spyOn(store,"observe");
+    await new PiNativeSessionStore(directory).reconcileUsage(service);
+    const records = store.snapshot("2000-01-01","2100-01-01").records;
+    expect(records).toHaveLength(1);expect(records[0]?.tokens).toMatchObject({ input: 10,output: 2 });
+    await new PiNativeSessionStore(directory).reconcileUsage(service);expect(observe).toHaveBeenCalledTimes(1);
+    fixture.database.transaction(db => { db.exec("DELETE FROM usage_observations");db.exec("DELETE FROM usage_invocations"); });
+    await new PiNativeSessionStore(directory).reconcileUsage(service);
+    expect(store.snapshot("2000-01-01","2100-01-01").records).toEqual(records);
+    expect(observe).toHaveBeenCalledTimes(2);
+  });
   it("persists cumulative per-model snapshots without duplicate totals, and recovers unknown interruptions", () => {
     const session = service.begin({ engine: "claude-code", purpose: "partner", modelId: "first" });
     expect(service.query(query).overview).toMatchObject({ records: 1, unknownRecords: 1 });
