@@ -15,6 +15,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/conversations",
   "GET /api/v1/conversations/:id",
   "GET /api/v1/conversations/:id/stream",
+  "POST /api/v1/conversations/:id/turns/:turnId/fork",
   "PUT /api/v1/conversations/:id/title",
   "GET /api/v1/conversations/:id/history",
   "GET /api/v1/conversations/:id/events",

@@ -2,8 +2,8 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
-import type { ConversationStore, ConversationSubmission, ConversationSegment } from "../../application/ports/conversations.js";
-import type { ConversationDto, ConversationSummaryDto, ConversationTurnDto } from "../../../shared/conversations.js";
+import type { ConversationStore, ConversationSubmission, ConversationSegment, ConversationForkIdentity, ConversationForkSource } from "../../application/ports/conversations.js";
+import type { ConversationConfigDto, ConversationDto, ConversationSummaryDto, ConversationTurnDto } from "../../../shared/conversations.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerSessionState } from "../../application/ports/partner-instances.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
@@ -40,8 +40,10 @@ function read(db: DatabaseSync, id: string): ConversationDto | null {
   if (row === undefined) return null;
   const page = historyPage(db,id,undefined,50);
   const latest = db.prepare("SELECT MAX(sequence) AS sequence FROM conversation_changes WHERE conversation_id=?").get(id);
+  const config = page.items.length === 0 ? db.prepare("SELECT config_json FROM conversation_forks WHERE conversation_id=?").get(id)?.config_json : undefined;
   return { ...summary(row),turns: page.items,...(page.nextCursor === null ? {} : { historyCursor: page.nextCursor }),
     eventCursor: eventCursor(id,Number(latest?.sequence ?? 0)),
+    ...(typeof config === "string" ? { initialConfig: JSON.parse(config) as ConversationConfigDto } : {}),
     ...(typeof row.context_json === "string" ? { context: JSON.parse(row.context_json) as NonNullable<ConversationDto["context"]> } : {}),
     children: db.prepare(`SELECT child_id,status FROM conversation_subagents WHERE parent_turn_id=(SELECT turn_id FROM conversation_turns
       WHERE conversation_id=? ORDER BY rowid DESC LIMIT 1) ORDER BY rowid LIMIT 100`).all(id)
@@ -70,10 +72,66 @@ function requireConversation(db: DatabaseSync,id: string): ConversationDto {
   return value;
 }
 
+function existingFork(db: DatabaseSync,input: ConversationForkIdentity): ConversationDto | null {
+  const target = db.prepare(`SELECT f.source_conversation_id,f.source_turn_id FROM conversations c
+    LEFT JOIN conversation_forks f ON f.conversation_id=c.conversation_id WHERE c.conversation_id=?`).get(input.targetId);
+  if (target === undefined) return null;
+  if (target.source_conversation_id !== input.sourceId || target.source_turn_id !== input.turnId) {
+    throw new DomainError("conversation_request_conflict","Conversation identity is already in use.");
+  }
+  return requireConversation(db,input.targetId);
+}
+
+function forkTurn(db: DatabaseSync,sourceId: string,turnId: string) {
+  const source = db.prepare("SELECT workbench_id,title FROM conversations WHERE conversation_id=? AND deleted_at IS NULL").get(sourceId);
+  if (source === undefined) throw new DomainError("conversation_not_found","Conversation was not found.");
+  const selected = db.prepare("SELECT rowid AS position,* FROM conversation_turns WHERE conversation_id=? AND turn_id=?").get(sourceId,turnId);
+  if (selected?.status !== "COMPLETED") throw new DomainError("conversation_fork_unavailable","Select a completed reply in this conversation.");
+  return { source,selected };
+}
+
+function forkSeed(db: DatabaseSync,id: string): PartnerSessionState | undefined {
+  const value = db.prepare("SELECT handoff_json FROM conversation_forks WHERE conversation_id=?").get(id)?.handoff_json;
+  return typeof value === "string" ? JSON.parse(value) as PartnerSessionState : undefined;
+}
+
 export class SqliteConversationStore implements ConversationStore {
   readonly #sessionMessages = new Map<string,string[]>();
   readonly #sessionEntries = new Map<string,string[]>();
   constructor(private readonly database: Database) {}
+  async existingFork(input: ConversationForkIdentity) { return this.database.transaction(db => existingFork(db,input)); }
+  async forkSeed(id: string) { return this.database.transaction(db => forkSeed(db,id)); }
+  async forkSource(sourceId: string,turnId: string): Promise<ConversationForkSource> {
+    return this.database.transaction(db => {
+      const { source,selected } = forkTurn(db,sourceId,turnId);
+      const config = turn(selected).config;
+      const binding = db.prepare(`SELECT s.*,b.message_count,NOT EXISTS (SELECT 1 FROM conversation_turn_segments next
+        JOIN conversation_turns t ON t.turn_id=next.turn_id WHERE next.conversation_id=b.conversation_id
+        AND next.segment_id=b.segment_id AND t.rowid>?) AS latest
+        FROM conversation_turn_segments b JOIN conversation_execution_segments s
+        ON s.conversation_id=b.conversation_id AND s.segment_id=b.segment_id WHERE b.turn_id=?`).get(Number(selected.position),turnId);
+      const revision = typeof selected.revision_json === "string" ? JSON.parse(selected.revision_json) as PartnerRevision : undefined;
+      const segment = binding === undefined ? { segmentId: "legacy",partnerId: config.partnerId,engine: revision?.engine ?? "pi-core" as const,capabilityKey: "legacy" } : segmentFromRow(binding);
+      const messageCount = typeof binding?.message_count === "number" ? binding.message_count : binding?.latest === 1 ? segment.state?.messages.length : undefined;
+      const inherited = forkSeed(db,sourceId);
+      const history = db.prepare("SELECT * FROM conversation_turns WHERE conversation_id=? AND rowid<=? ORDER BY rowid")
+        .all(sourceId,Number(selected.position)).map(row => ({ ...turn(row),text: String(row.body) }));
+      return { workbenchId: String(source.workbench_id),title: String(source.title),segment,history,
+        ...(messageCount === undefined ? {} : { messageCount }),...(inherited === undefined ? {} : { inherited }) };
+    });
+  }
+  async createFork(input: Parameters<ConversationStore["createFork"]>[0]) {
+    return this.database.transaction(db => {
+      const previous = existingFork(db,input);
+      if (previous !== null) return previous;
+      const { source,selected } = forkTurn(db,input.sourceId,input.turnId);
+      db.prepare("INSERT INTO conversations(conversation_id,workbench_id,title,updated_at) VALUES (?,?,?,?)")
+        .run(input.targetId,String(source.workbench_id),input.title,input.at);
+      db.prepare("INSERT INTO conversation_forks VALUES (?,?,?,?,?)")
+        .run(input.targetId,input.sourceId,input.turnId,String(selected.config_json),JSON.stringify(input.state));
+      return requireConversation(db,input.targetId);
+    });
+  }
   async page(id: string,cursor?: string,limit = 50) { return this.database.transaction(db => { requireConversation(db,id);return historyPage(db,id,cursor,limit); }); }
   async events(id: string,cursor?: string) { return this.database.transaction(db => {
     requireConversation(db,id);
@@ -131,6 +189,7 @@ export class SqliteConversationStore implements ConversationStore {
       if (segment !== undefined) {
         db.prepare("UPDATE conversation_execution_segments SET state_json=? WHERE conversation_id=? AND segment_id=?")
           .run(JSON.stringify(state),id,String(segment.segment_id));
+        db.prepare("UPDATE conversation_turn_segments SET message_count=? WHERE turn_id=?").run(state.messages.length,turnId);
         return;
       }
       const entries = state.piSession?.entries.map(entry => JSON.stringify(entry));

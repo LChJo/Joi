@@ -31,6 +31,34 @@ function setup() {
 }
 async function ready() { await waitFor(() => expect(screen.getByRole("button",{ name: "大模型网络" })).toHaveTextContent("Network")); }
 
+it("CHAT-48 opens the fork with a blank composer and reuses the identity after failure",async () => {
+  const { api,send } = setup();
+  const initialConfig = conversation("first").turns[0]?.config;
+  if (initialConfig === undefined) throw new Error("Missing source configuration");
+  const request = vi.spyOn(api,"request").mockImplementation((path,options) => {
+    if (path === "/api/v1/conversations/first/turns/first-turn/fork") {
+      const id = options?.body?.conversationId;
+      return Promise.resolve({ conversationId: id,workbenchId: "wb",title: "分支对话",updatedAt: "2026-11-12",turns: [],initialConfig } as never);
+    }
+    return Promise.resolve({ items: [{ id: "user/design",displayName: "Design Skill" }] } as never);
+  });
+  render(<ConversationPage api={api} />);await ready();
+  fireEvent.click(screen.getByRole("button",{ name: "项目说明" }));
+  const fork = await screen.findByRole("button",{ name: "分支对话" });
+  expect(fork.nextElementSibling).toBe(screen.getByRole("button",{ name: "复制回答" }));
+  request.mockRejectedValueOnce(new ApiError("conversation_handoff_failed","Unable to fork",400));
+  fireEvent.click(fork);
+  await waitFor(() => expect(fork).toBeEnabled());
+  expect(screen.getByText("Formatted answer")).toBeInTheDocument();
+  fireEvent.click(fork);
+  await waitFor(() => expect(screen.queryByText("Formatted answer")).not.toBeInTheDocument());
+  const calls = request.mock.calls.filter(([path]) => path.endsWith("/fork"));
+  expect(calls).toHaveLength(2);
+  expect(calls[0]).toEqual(calls[1]);
+  expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("");
+  expect(send).not.toHaveBeenCalled();
+});
+
 it("CHAT-45 immediately displays pushed prefixes and ignores an older in-flight refresh",async () => {
   vi.useFakeTimers();
   try {

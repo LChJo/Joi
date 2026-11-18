@@ -105,6 +105,19 @@ export class ConversationService {
     if (item === null) throw new DomainError("conversation_not_found", "Conversation was not found.");
     return item;
   }
+  async fork(sourceId: string,turnId: string,targetId: string): Promise<ConversationDto> {
+    identity(sourceId);identity(turnId);identity(targetId);
+    const { store,handoffs,clock } = this.dependencies;
+    const request = { sourceId,turnId,targetId };
+    const existing = await store.existingFork(request);
+    if (existing !== null) return existing;
+    const source = await store.forkSource(sourceId,turnId);
+    const state = await handoffs.build({ conversationId: sourceId,workbenchId: source.workbenchId,source: source.segment,history: source.history,
+      fork: { turnId,...(source.messageCount === undefined ? {} : { messageCount: source.messageCount }),
+        ...(source.inherited === undefined ? {} : { inherited: source.inherited }) } });
+    const title = `Fork · ${source.title}`.slice(0,CONVERSATION_TITLE_MAX_LENGTH);
+    return store.createFork({ ...request,state,title,at: clock.now().toISOString() });
+  }
   async inheritance(workbenchId: string, partnerId: string, networkId: string): Promise<ConversationInheritanceDto> {
     const value = await this.dependencies.inheritance.read(workbenchId,partnerId,networkId);
     return { memoryCount: value.memoryCount,evolutionRevisionId: value.evolutionRevisionId };
@@ -273,8 +286,9 @@ export class ConversationService {
         } else {
           const legacy = previous === undefined ? await this.dependencies.store.session(conversationId) : undefined;
           const source: ConversationSegment | undefined = previous ?? (legacy === undefined ? undefined : { segmentId: "legacy",partnerId: "legacy",engine: legacy.engine,capabilityKey: "legacy",state: legacy });
-          const handoff = source === undefined ? undefined : await this.dependencies.handoffs.build({ conversationId,workbenchId: wb.workbenchId,source,
-            history: await this.dependencies.store.history(conversationId,turnId) });
+          const handoff = source === undefined ? await this.dependencies.store.forkSeed(conversationId)
+            : await this.dependencies.handoffs.build({ conversationId,workbenchId: wb.workbenchId,source,
+              history: await this.dependencies.store.history(conversationId,turnId) });
           controller.signal.throwIfAborted();
           segment = await this.dependencies.store.activateSegment(conversationId,turnId,{ segmentId: `execution:${turnId}`,partnerId: revision.partnerId,engine: revision.engine,capabilityKey,
             ...(previous === undefined ? {} : { predecessorId: previous.segmentId }),...(handoff === undefined ? {} : { state: { ...handoff,engine: revision.engine } }) },previous?.segmentId);

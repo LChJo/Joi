@@ -36,6 +36,13 @@ export const CONVERSATION_ROUTES: RouteDefinition[] = [
   } },
   { auth: "read",id: "GET /api/v1/conversations/:id",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)$/),handle: async (ctx,match) => sendJson(ctx.response,200,await service(ctx).get(decodeURIComponent(((match as RegExpExecArray)[1] ?? "")))) },
   { auth: "read",id: "GET /api/v1/conversations/:id/stream",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)\/stream$/),handle: (ctx,match) => streamConversation(ctx,decodeURIComponent(((match as RegExpExecArray)[1] ?? ""))) },
+  { auth: "write",id: "POST /api/v1/conversations/:id/turns/:turnId/fork",match: pattern("POST",/^\/api\/v1\/conversations\/([^/]+)\/turns\/([^/]+)\/fork$/),handle: async (ctx,match) => {
+    const conversations = service(ctx);
+    if (conversations.fork === undefined) throw new HttpError("conversation_unavailable","Conversation forks are unavailable.",503);
+    const [,id,turnId] = match as RegExpExecArray;
+    const body = await readJson(ctx.request);
+    sendJson(ctx.response,201,await conversations.fork(decodeURIComponent(id ?? ""),decodeURIComponent(turnId ?? ""),stringField(body,"conversationId")));
+  } },
   { auth: "write",id: "PUT /api/v1/conversations/:id/title",match: pattern("PUT",/^\/api\/v1\/conversations\/([^/]+)\/title$/),handle: async (ctx,match) => {
     const body = await readJson(ctx.request);
     sendJson(ctx.response,200,await service(ctx).rename(decodeURIComponent(((match as RegExpExecArray)[1] ?? "")),stringField(body,"title")));

@@ -292,6 +292,7 @@
   "chatError": "操作未完成，请稍后重试。",
   "chatCopied": "已复制",
   "chatCopy": "复制回答",
+  "chatForkConversation": "分支对话",
   "chatHelp": "对话规则",
   "chatHelpText": "对话固定属于一个工作台。大模型网络、搭档、Skills、附件均可独立选择。每次发送保留当时的配置快照；停止会保留已输出内容，中断的操作不会自动重放。",
   "chatEmptyHistory": "新对话会按工作台保存在这里",

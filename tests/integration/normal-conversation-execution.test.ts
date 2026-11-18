@@ -35,6 +35,54 @@ async function setup(run: PartnerInstanceManager["dispatch"], native = false) {
 }
 
 describe("normal conversation execution", () => {
+  it("CHAT-48 forks a completed turn into a durable independent conversation without replaying later turns", async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async call => {
+      await call.session?.save({ engine: call.revision.engine, messages: [...(call.session.state?.messages ?? []),
+        { role: "user",content: `Private journal for ${call.request.taskProjection}`,timestamp: 1 }] });
+      return { actionId: call.request.actionId,workId: call.request.workId,externalRunId: "fixture",status: "COMPLETED",
+        body: `Answer to ${call.request.taskProjection}`,artifacts: [{ name: "retained.txt",size: 10 }] };
+    });
+    const { f,service,input,store,dependencies } = await setup(run);
+    try {
+      const selected = (await service.send({ ...input,text: "Selected-source fact" })).turns[0];
+      if (selected === undefined) throw new Error("Missing source turn");
+      await expect(service.fork("chat",selected.turnId,"branch")).rejects.toMatchObject({ code: "conversation_fork_unavailable" });
+      await service.deliver(selected.turnId);
+      const later = (await service.send({ ...input,requestId: "later",text: "Excluded-later fact" })).turns.at(-1);
+      if (later === undefined) throw new Error("Missing later turn");
+      await service.deliver(later.turnId);
+      const original = await service.get("chat");
+      const outboxCount = f.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox").get()?.n);
+      const [branch,duplicate] = await Promise.all([service.fork("chat",selected.turnId,"branch"),service.fork("chat",selected.turnId,"branch")]);
+      expect(branch).toEqual(duplicate);
+      expect(branch).toMatchObject({ conversationId: "branch",workbenchId: input.workbenchId,turns: [],initialConfig: selected.config });
+      expect(JSON.stringify(branch)).not.toContain("Answer to Selected-source fact");
+      await expect(service.fork("chat",later.turnId,"branch")).rejects.toMatchObject({ code: "conversation_request_conflict" });
+      await expect(service.fork("chat",selected.turnId,"chat")).rejects.toMatchObject({ code: "conversation_request_conflict" });
+      expect(await store.get("chat")).toEqual(original);
+      expect((await store.list()).items.map(item => item.conversationId)).toEqual(["branch","chat"]);
+      expect(f.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox").get()?.n)).toBe(outboxCount);
+      expect(run).toHaveBeenCalledTimes(2);
+
+      const restarted = new ConversationService({ ...dependencies,store: new SqliteConversationStore(f.database) });
+      try {
+        const followup = await restarted.send({ ...input,conversationId: "branch",requestId: "continue",text: "New instruction" });
+        const firstTurn = followup.turns[0];
+        if (firstTurn === undefined) throw new Error("Missing fork turn");
+        await restarted.deliver(firstTurn.turnId);
+        const execution = run.mock.calls[2]?.[0];
+        const seed = JSON.stringify(execution?.session?.state);
+        expect(execution?.request).toMatchObject({ taskProjection: "New instruction",conversationId: "branch" });
+        expect(execution?.request.conversationSegmentId).not.toBe(run.mock.calls[0]?.[0].request.conversationSegmentId);
+        expect(seed).toContain("Answer to Selected-source fact");
+        expect(seed).toContain("Private journal for Selected-source fact");
+        expect(seed).toContain("retained.txt");
+        expect(seed).not.toContain("Excluded-later fact");
+        expect(await restarted.get("chat")).toEqual(original);
+      } finally { restarted.close(); }
+    } finally { service.close();await f.close(); }
+  });
+
   it.each(["COMPLETED","FAILED","INTERRUPTED"] as const)("PI-SESSION-12 restores a crashed Pi conversation as %s without dispatching", async status => {
     const dispatch = vi.fn<PartnerInstanceManager["dispatch"]>();
     const { f,service,input,store,dependencies,accept } = await setup(dispatch);

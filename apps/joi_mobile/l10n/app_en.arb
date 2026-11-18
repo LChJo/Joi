@@ -1483,6 +1483,11 @@
     "description": "chat.copy",
     "placeholders": {}
   },
+  "chatForkConversation": "Fork conversation",
+  "@chatForkConversation": {
+    "description": "chat.forkConversation",
+    "placeholders": {}
+  },
   "chatHelp": "Conversation rules",
   "@chatHelp": {
     "description": "chat.help",

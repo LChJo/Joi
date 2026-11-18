@@ -41,7 +41,7 @@ import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddre
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
-  conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "rename" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild" | "subscribe">>;
+  conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "rename" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild" | "subscribe" | "fork">>;
   conversationWorkspace?: ConversationWorkspacePort;
   conversationGit?: Pick<ConversationWorkspaceService, "submit" | "get">;
   quickWorkbench?: (rootPath: string) => Promise<WorkbenchDto>;

@@ -27,14 +27,32 @@ export class ConversationHandoff implements ConversationHandoffPort {
     const identity = ["conversation",input.workbenchId,input.conversationId,...(source.segmentId === "legacy" ? [] : [source.segmentId])];
     const native = source.engine === "pi-core" ? await this.sessions?.readContext(identity,source.state?.piNativeSession) : undefined;
     const snapshot = source.state?.piSession;
-    const messages = native?.manager.buildSessionContext().messages
-      ?? (snapshot === undefined ? source.state?.messages ?? [] : restorePiSnapshot(".",snapshot).buildSessionContext().messages);
-    const context = (messages as AgentMessage[]).map(message => importedHandoffContext(message)
+    const manager = native?.manager ?? (snapshot === undefined ? undefined : restorePiSnapshot(".",snapshot));
+    const fork = input.fork;
+    let messages: unknown[];
+    if (fork !== undefined) {
+      const cutoff = manager?.getEntries().findLast(entry => entry.type === "custom" && entry.customType === "joi.work_result"
+        && (entry.data as { actionId?: unknown } | undefined)?.actionId === fork.turnId);
+      if (cutoff !== undefined && manager !== undefined) {
+        manager.branch(cutoff.id);
+        messages = manager.buildSessionContext().messages;
+      } else if (manager === undefined && fork.messageCount !== undefined && source.state !== undefined) {
+        messages = source.state.messages.slice(0,fork.messageCount);
+      } else {
+        messages = fork.inherited?.messages ?? [];
+      }
+    } else {
+      messages = manager?.buildSessionContext().messages ?? source.state?.messages ?? [];
+    }
+    const serialized = (messages as AgentMessage[]).map(message => importedHandoffContext(message)
       ?? serializeConversation(convertToLlm([message]))).filter(Boolean).join("\n\n");
+    const facts = JSON.stringify(handoffBusinessFacts(input.history));
+    // A fork's business turns exist only on the source, so later segment handoffs must keep those facts in the inherited context.
+    const context = fork === undefined ? serialized : [serialized,`Forked turn facts: ${facts}`].filter(Boolean).join("\n\n");
     const text = [HANDOFF_INTRO,
-      `Source: conversation=${input.conversationId}; segment=${source.segmentId}; partner=${source.partnerId}; engine=${source.engine}. Original source history remains available in this conversation's private execution records.`,
-      HANDOFF_CONTEXT_HEADING,context,`${HANDOFF_BUSINESS_BOUNDARY}${JSON.stringify(handoffBusinessFacts(input.history))}`].join("\n\n");
-    const parent = native?.reference ?? source.state?.piNativeSession;
+      `Source: conversation=${input.conversationId}; segment=${source.segmentId}; partner=${source.partnerId}; engine=${source.engine}${fork === undefined ? "" : `; turn=${fork.turnId}`}. Original source history remains available in the source conversation's execution records.`,
+      HANDOFF_CONTEXT_HEADING,context,`${HANDOFF_BUSINESS_BOUNDARY}${fork === undefined ? facts : "[]"}`].join("\n\n");
+    const parent = fork === undefined ? native?.reference ?? source.state?.piNativeSession : undefined;
     return { engine: source.engine,messages: [{ role: "user",content: text,timestamp: 0 }],
       handoff: { sourceSegmentId: source.segmentId,...(parent === undefined ? {} : { sourcePiSession: parent }) } };
   }

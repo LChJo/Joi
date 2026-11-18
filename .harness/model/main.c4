@@ -27,11 +27,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React views use shared DTOs and HTTP. Goal title full-text previews stay anchored to the title across hover, focus and click, preserving selectable scrolling and viewport clamping. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing. LAN browsers share conversation UI through authenticated HTTP without local workspace controls. Responsive history closes on narrow transitions. The legacy paired fallback reuses conversation and archive views through a restricted command adapter. Routine continuation editing retains its controlled goal id while pending, running or blocked runs lock target selection. Evolution settings display independent source groups, reproduction and comparison counts, pause causes and retry times, and distinguish sample waits from explicit pauses. Goal cards distinguish queued synthesis and scheduled retry from active summarization, showing persisted attempts and retry time; paired browser badges consume the same optional projection. Message composers share Enter submission, Shift+Enter line breaks and IME confirmation. Active tool, turn and stop states animate with a static reduced-motion treatment. Completed turns show one footer status with copy and only disclose context inside existing activity details. Read-only partner transcripts share ordinary chat Markdown and compact paired tool groups. Goal and workbench views retain their own history, artifact and authorized local trace actions."
+ brief "React views use shared DTOs and HTTP. Goal title full-text previews stay anchored to the title across hover, focus and click, preserving selectable scrolling and viewport clamping. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors. Scoped reads have timeout, cancellation, backoff and selection epochs. Successful reads and accepted stream snapshots clear only their connection notice; authentication rejection stops automatic reads and closes the stream. Model recovery and safe execution failures remain distinct. Model forms share expanded 2M/3M context and 256K/300K/512K output tiers. New connections select 1M/128K; existing recommended and custom limits survive editing. LAN browsers share conversation UI through authenticated HTTP without local workspace controls. Responsive history closes on narrow transitions. The legacy paired fallback reuses conversation and archive views through a restricted command adapter. Routine continuation editing retains its controlled goal id while pending, running or blocked runs lock target selection. Evolution settings display independent source groups, reproduction and comparison counts, pause causes and retry times, and distinguish sample waits from explicit pauses. Goal cards distinguish queued synthesis and scheduled retry from active summarization, showing persisted attempts and retry time; paired browser badges consume the same optional projection. Message composers share Enter submission, Shift+Enter line breaks and IME confirmation. Active tool, turn and stop states animate with a static reduced-motion treatment. Completed turns show one footer status and only disclose context inside existing activity details. Read-only partner transcripts share ordinary chat Markdown and compact paired tool groups. Goal and workbench views retain their own history, artifact and authorized local trace actions. Completed replies offer compact copy and fork actions on desktop and LAN web. Opening a fork carries the selected configuration into an empty composer."
  source "fact"
  status "verified"
  evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd cea47700-6070-440d-8bb0-71bb202849a8 18da4429-806e-4b16-b3d4-1363a15b85aa 68e4f10a-361b-41e7-b7cd-8e3d97365210 3627078a-b447-432c-9b65-37a1521deadb 19825361-c0da-4b03-b1bb-abfe0bef46ed 0d39bd91-cffc-4674-a1da-a6e3c7d8393e a2186992-b051-47e8-bdce-a4e4d8878e40 c08040c4-15d6-410b-b52d-ca49f3aca31f bf81ead4-46f4-40a9-9739-6f928dc67c99 7c9cf77f-e85f-499b-b696-3ea0feb3e744 515cd0c5-32bb-48ab-a20c-7980095c1387 250b18ae-151c-4f63-89a2-c782e29fcd65 9771fb1a-d3da-408f-b0ad-e65befa20813 7ec7db0b-af8f-4977-864c-3c7a8a598f96 18211c85-8a28-4f54-95f6-1c0590170f91 9181c052-4571-46ae-886a-db3112665f2f"
- version "31"
+ version "32"
 }
 }
 preload = component "Desktop bridge" {
@@ -47,11 +47,11 @@ metadata {
 http = component "HTTP interfaces" {
 metadata {
  harness_id "5619f950-f538-4420-a8e1-8e5dbe296c42"
- brief "Authenticated HTTP route mapping, CSRF/origin write verification and desktop-only conversation filesystem/Git access. Conversation archive listing and lifecycle writes map shared contracts through existing authentication and CSRF/origin guards. History/event cursors are scoped to the conversation; child cancellation uses the existing write guards. PUT conversation title maps authenticated CSRF/origin-protected writes to the application rename operation and shared summary response. Conversation SSE maps application observations to credentialed live reads with latest-only backpressure, heartbeat session checks and connection-scoped cleanup."
+ brief "Authenticated HTTP route mapping, CSRF/origin write verification and desktop-only conversation filesystem/Git access. Conversation archive listing and lifecycle writes map shared contracts through existing authentication and CSRF/origin guards. History/event cursors are scoped to the conversation; child cancellation uses the existing write guards. PUT conversation title maps authenticated CSRF/origin-protected writes to the application rename operation and shared summary response. Conversation SSE maps application observations to credentialed live reads with latest-only backpressure, heartbeat session checks and connection-scoped cleanup. The fork endpoint validates an authenticated write with a stable target conversation identity."
  source "fact"
  status "verified"
  evidence "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96 529363b4-ba83-4f8c-946f-579a736f0406 3a9f444d-04a7-43d1-9a57-0212eeda58ca c3ae40e3-2672-4b92-b011-b2ef3c6044a8 85510374-7cb2-43c6-a869-078374bb0c88 886b35a7-9f5d-47fb-b555-4a774d237d50 2cf215ea-bf39-4ead-a1d5-70c2133ae170 25d2574d-1c15-4d09-85d8-982d6df10500"
- version "7"
+ version "8"
 }
 }
 composition = component "Runtime composition" {
@@ -86,11 +86,11 @@ metadata {
 conversations = component "Conversation execution" {
 metadata {
  harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
- brief "User-driven turns preserve workbench ownership and immutable configuration. Same partner capabilities reuse a segment; switching creates an idempotent successor with a complete handoff, including A1-B1-A2. Conversation deliveries overlap across conversations, with one running owner per conversation. Current intent defines the task; prior turns are reference facts. Pi receives full authorized tools initially, native permission continuation remains. Committed safe activity, metadata-only titles, remote contracts, Git leases and durable child ownership remain separate."
+ brief "User-driven turns preserve workbench ownership and immutable configuration. Same partner capabilities reuse a segment; switching creates an idempotent successor with a complete handoff, including A1-B1-A2. Conversation deliveries overlap across conversations, with one running owner per conversation. Current intent defines the task; prior turns are reference facts. Pi receives full authorized tools initially, native permission continuation remains. Committed safe activity, metadata-only titles, remote contracts, Git leases and durable child ownership remain separate. Forks persist a private selected-turn handoff and start execution only on the first new user message."
  source "fact"
  status "verified"
  evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef 44b4de62-537a-42f1-8a5c-40d72900430b ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 a417be0f-3af1-4139-a6fb-d1db010ac491"
- version "11"
+ version "12"
 }
 }
 }
@@ -116,11 +116,11 @@ metadata {
 conversationStorage = component "Conversation persistence" {
 metadata {
  harness_id "882f7b90-4074-4541-bcad-2c7a7ea4b7cb"
- brief "SQLite owns business conversations, ordered engine execution segments, stable turn bindings and safe projections. RUNNING ownership and predecessor CAS protect handoffs. Legacy private rows remain audit sources; Pi files own canonical history. Shared histories expose Pi thinking lifecycle and timing. Metadata-only rename, tombstones, child intents and public cursors retain their boundaries."
+ brief "SQLite owns business conversations, ordered engine execution segments, stable turn bindings and safe projections. RUNNING ownership and predecessor CAS protect handoffs. Legacy private rows remain audit sources; Pi files own canonical history. Shared histories expose Pi thinking lifecycle and timing. Metadata-only rename, tombstones, child intents and public cursors retain their boundaries. Fork provenance and initial private seeds are durable; turn-to-segment bindings retain message cutoffs."
  source "fact"
  status "verified"
- evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 ac69fa43-cea7-401a-a580-5f894151a348 12189162-690a-45b7-9b0a-4d57e8601c4f 9080ee60-48a4-4e8f-a9ce-246c128136cf"
- version "7"
+ evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 ac69fa43-cea7-401a-a580-5f894151a348 12189162-690a-45b7-9b0a-4d57e8601c4f 9080ee60-48a4-4e8f-a9ce-246c128136cf fc424fcd-e96b-4dde-b4a4-589153a6d74a"
+ version "8"
 }
 piSessions = component "Pi context and execution" {
 metadata {
@@ -164,11 +164,11 @@ metadata {
 handoff = component "Conversation handoff and source reads" {
 metadata {
  harness_id "524fe9e6-d7d6-4df5-a4b7-df4e8ed02d01"
- brief "Official serialization hands effective source context and business facts to a fresh successor without an extra model request. Successors extend the effective context from a recognized seed and attach one current business appendix. Tool display records and UI activity are omitted from that appendix. Recognized imported handoff seeds are repaired with official context edits while originals remain auditable. Scoped history tools read original conversation segments; Work readers remain task-scoped. Native journals retain separate engine identities."
+ brief "Official serialization hands effective source context and business facts to a fresh successor without an extra model request. Successors extend the effective context from a recognized seed and attach one current business appendix. Tool display records and UI activity are omitted from that appendix. Recognized imported handoff seeds are repaired with official context edits while originals remain auditable. Scoped history tools read original conversation segments; Work readers remain task-scoped. Native journals retain separate engine identities. Forks use the selected result marker or a journal cutoff and retain bounded business history for older turns without private boundaries."
  source "fact"
  status "verified"
- evidence "a0716920-6118-49e9-94e7-b392a0d5bf22 a9d13166-0f67-431a-b09a-349b39d31b2c 90a83f7c-9a38-475a-a9ec-49d540abde2d 44b4de62-537a-42f1-8a5c-40d72900430b c9ce1bb9-aaae-401e-a985-df567fcd7d68 c3e52a0c-1863-4047-bbe1-7f301d53d301"
- version "2"
+ evidence "a0716920-6118-49e9-94e7-b392a0d5bf22 a9d13166-0f67-431a-b09a-349b39d31b2c 90a83f7c-9a38-475a-a9ec-49d540abde2d 44b4de62-537a-42f1-8a5c-40d72900430b c9ce1bb9-aaae-401e-a985-df567fcd7d68 c3e52a0c-1863-4047-bbe1-7f301d53d301 e1ca99c3-c87f-4f8b-be6a-5704c282e37b"
+ version "3"
 }
 }
 }
@@ -388,21 +388,21 @@ metadata {
 app.http -[calls]-> app.application.conversations "Maps authenticated conversation and cursor requests" {
 metadata {
  harness_id "72a18122-e614-4b53-b63e-6655b7c4da16"
- brief "Maps authenticated conversation and cursor requests Registers safe live-turn observers for authenticated SSE reads."
+ brief "Maps authenticated conversation and cursor requests Registers safe live-turn observers for authenticated SSE reads. Routes authenticated fork writes to the conversation service."
  source "fact"
  status "verified"
  evidence "3a9f444d-04a7-43d1-9a57-0212eeda58ca 85510374-7cb2-43c6-a869-078374bb0c88"
- version "2"
+ version "3"
 }
 }
 app.application.conversations -[calls]-> app.infrastructure.conversationStorage "Persists through conversation ports" {
 metadata {
  harness_id "d14f8032-c5a3-4432-b127-3f440ebe6840"
- brief "Persists through conversation ports"
+ brief "Persists through conversation ports. Creates an independent conversation and durable handoff in a single transaction."
  source "fact"
  status "verified"
- evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 1519c446-98f9-4b5a-b873-26ea5d8e7d89"
- version "1"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 1519c446-98f9-4b5a-b873-26ea5d8e7d89 fc424fcd-e96b-4dde-b4a4-589153a6d74a"
+ version "2"
 }
 }
 app.application.conversations -[calls]-> app.infrastructure.conversationStorage.piSessions "Dispatches frozen partner requests through instance manager" {
@@ -508,11 +508,11 @@ metadata {
 app.application.conversations -[calls]-> app.infrastructure.conversationStorage.piSessions.handoff "Builds and reads scoped successor context" {
 metadata {
  harness_id "a468966c-1d96-4b32-8984-60bf3952876f"
- brief "Builds and reads scoped successor context"
+ brief "Builds and reads scoped successor context. Serializes selected-turn context for a new conversation."
  source "fact"
  status "verified"
- evidence "ede12cff-e276-4394-b302-ae9908473949"
- version "1"
+ evidence "ede12cff-e276-4394-b302-ae9908473949 a0716920-6118-49e9-94e7-b392a0d5bf22"
+ version "2"
 }
 }
 app.infrastructure.conversationStorage.piSessions.officialRuntime -[calls]-> app.infrastructure.conversationStorage.piSessions.nativeHistory "Opens and persists authoritative SDK history" {

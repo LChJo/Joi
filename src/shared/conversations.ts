@@ -81,6 +81,7 @@ export interface ConversationContextDto {
 }
 export interface ConversationDto extends ConversationSummaryDto {
   turns: ConversationTurnDto[];historyCursor?: string;eventCursor?: string;context?: ConversationContextDto;
+  initialConfig?: ConversationConfigDto;
   children?: { childId: string;status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED" | "INTERRUPTED" }[];
 }
 export interface ConversationUpdateDto {

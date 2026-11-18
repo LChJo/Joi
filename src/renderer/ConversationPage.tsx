@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ArrowUpIcon, FolderIcon, GearSixIcon, ListIcon, NetworkIcon, PaperclipIcon, PlusIcon, PuzzlePieceIcon, RobotIcon, SidebarSimpleIcon, SparkleIcon, StopIcon, XIcon, QuestionIcon, CopyIcon, CheckIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, FolderIcon, GearSixIcon, GitForkIcon, ListIcon, NetworkIcon, PaperclipIcon, PlusIcon, PuzzlePieceIcon, RobotIcon, SidebarSimpleIcon, SparkleIcon, StopIcon, XIcon, QuestionIcon, CopyIcon, CheckIcon } from "@phosphor-icons/react";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { t, useI18n } from "./i18n";
 import { randomUuid } from "./random-uuid";
@@ -112,6 +112,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const [workspaceOpen,setWorkspaceOpen] = useState(false);
   const [historyOpen,setHistoryOpen] = useState(() => window.innerWidth > 720);
   const [copied,setCopied] = useState<string | null>(null);
+  const [forking,setForking] = useState(false);
+  const forkRequests = useRef(new Map<string,string>());
   const fileInput = useRef<HTMLInputElement>(null);
   const layout = useRef<HTMLDivElement>(null);
   const stream = useRef<HTMLDivElement>(null);
@@ -257,6 +259,15 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     return () => { current = false;clearTimeout(timer);controller.abort();dispose?.(); };
   },[api,conversationId,busy,readEpoch,loadHistory,showError]);
   useEffect(() => { if (nearBottom.current && stream.current !== null) stream.current.scrollTop = stream.current.scrollHeight; },[conversation]);
+  const openConversation = (next: ConversationDto) => {
+    const id = next.conversationId;
+    const config = next.turns.at(-1)?.config ?? next.initialConfig;
+    const saved = drafts.get(api)?.get(id);
+    if (activeId.current !== id) pendingRequest.current = null;
+    activeId.current = id;setConversation(next);setPicker(null);setNotice(null);setConnectionNotice(null);nearBottom.current = true;
+    if (window.innerWidth <= 720) setHistoryOpen(false);
+    setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: config?.partnerId ?? "joi-chat",networkId: config?.networkId ?? draft.networkId,skills: config?.skills ?? [],attachments: [],started: true,subagentsEnabled: config?.subagentsEnabled ?? true,piExtensions: currentConversationPiExtensions(config?.piExtensions) });
+  };
   const selectConversation = async (id: string) => {
     const request = ++selection.current;
     setReadEpoch(value => value + 1);
@@ -265,12 +276,26 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     try {
       const next = await api.getConversation(id,{ signal: controller.signal });
       if (request !== selection.current) return;
-      const latest = next.turns.at(-1);
-      const saved = drafts.get(api)?.get(id);
-      activeId.current = id;setConversation(next);setPicker(null);setNotice(null);setConnectionNotice(null);nearBottom.current = true;
-      if (window.innerWidth <= 720) setHistoryOpen(false);
-      setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: currentConversationPiExtensions(latest?.config.piExtensions) });
+      openConversation(next);
     } catch (error) { if (request === selection.current) showError(error); }
+  };
+  const forkConversation = async (sourceId: string,turnId: string) => {
+    if (forking) return;
+    const epoch = selection.current;
+    const targetId = forkRequests.current.get(turnId) ?? randomUuid();
+    forkRequests.current.set(turnId,targetId);
+    setForking(true);setNotice(null);
+    try {
+      const next = await api.forkConversation(sourceId,turnId,targetId);
+      forkRequests.current.delete(turnId);
+      const { conversationId,workbenchId,title,updatedAt } = next;
+      const canArchive = !next.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING");
+      setHistory(items => [{ conversationId,workbenchId,title,updatedAt,canArchive },...items.filter(item => item.conversationId !== conversationId)]);
+      if (selection.current === epoch && activeId.current === sourceId) {
+        selection.current++;selectedRead.current?.abort();setWorkspaceOpen(false);openConversation(next);
+      }
+    } catch (error) { if (selection.current === epoch) showError(error); }
+    finally { setForking(false); }
   };
   const newChat = () => {
     selection.current++;
@@ -380,7 +405,10 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
           })} /></div>
           {turn.failure === undefined ? null : <div className="chat-turn-failure" role="alert"><p>{failureText(turn.failure.reasonCode)}</p>{turn.failure.sideEffectState === "NONE" ? null : <p>{t("chat.verifyEffects")}</p>}</div>}
           <footer className={`chat-turn-footer status-${turn.status.toLowerCase()}`}><span className="chat-turn-status">{turn.status === "RUNNING" || turn.status === "QUEUED" ? <span aria-hidden="true" className="chat-turn-activity" /> : null}{statusText(turn.status)}</span>{turn.status !== "COMPLETED" && turn.config.skills.length > 0 ? <small>Skills · {turn.config.skills.length}</small> : null}
-            <button aria-label={t("chat.copy")} className="icon-button" onClick={() => { void navigator.clipboard.writeText(turn.entries.filter(e => e.role === "AGENT" && e.kind === "MARKDOWN").map(e => e.text ?? "").join("\n\n")).then(() => setCopied(turn.turnId)).catch(showError); }} type="button">{copied === turn.turnId ? <CheckIcon /> : <CopyIcon />}</button></footer>
+            <div className="chat-turn-actions">
+              {api.conversationForks && turn.status === "COMPLETED" ? <button aria-label={t("chat.forkConversation")} className="icon-button" disabled={forking} title={t("chat.forkConversation")} onClick={() => void forkConversation(conversation.conversationId,turn.turnId)} type="button"><GitForkIcon aria-hidden /></button> : null}
+              <button aria-label={t("chat.copy")} className="icon-button" title={t("chat.copy")} onClick={() => { void navigator.clipboard.writeText(turn.entries.filter(e => e.role === "AGENT" && e.kind === "MARKDOWN").map(e => e.text ?? "").join("\n\n")).then(() => setCopied(turn.turnId)).catch(showError); }} type="button">{copied === turn.turnId ? <CheckIcon /> : <CopyIcon />}</button>
+            </div></footer>
         </article>)}</div>}
       </div>
       <div className="chat-compose-area">{notice === null ? null : <div className="chat-notice" role="alert">{notice}<button aria-label={t("chat.remove")} onClick={() => setNotice(null)} type="button"><XIcon /></button></div>}
