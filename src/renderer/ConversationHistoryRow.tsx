@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type HTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { ArchiveIcon, DotsThreeIcon, FolderIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import type { ConversationSummaryDto } from "../shared/conversations";
 import { currentLocale, t } from "./i18n";
 
-export function ConversationHistoryRow({ item,workbench,selected,disabled,onSelect,onRename,onArchive,onDelete }: { item: ConversationSummaryDto;workbench: string;selected: boolean;disabled: boolean;onSelect: () => void;onRename: () => void;onArchive: () => void;onDelete: () => void }) {
+export function ConversationHistoryRow({ item,workbench,selected,disabled,onSelect,onRename,onArchive,onDelete,sortProps }: { item: ConversationSummaryDto;workbench: string;selected: boolean;disabled: boolean;onSelect: () => void;onRename: () => void;onArchive: () => void;onDelete: () => void;sortProps?: HTMLAttributes<HTMLButtonElement> | undefined }) {
   const [tip,setTip] = useState<{ left: number;top: number } | null>(null);
   const [menu,setMenu] = useState<{ left: number;top: number } | null>(null);
   const row = useRef<HTMLDivElement>(null),trigger = useRef<HTMLButtonElement>(null),popup = useRef<HTMLDivElement>(null);
@@ -23,8 +23,8 @@ export function ConversationHistoryRow({ item,workbench,selected,disabled,onSele
   },[menu,tip]);
   useEffect(() => { if (menu !== null) popup.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus(); },[menu]);
   const showTip = () => { if (menu === null) setTip(position(320,160)); };
-  return <div className="chat-history-row" ref={row}>
-    <button aria-current={selected ? "page" : undefined} aria-describedby={tip === null ? undefined : id} className="chat-history-open" onBlur={() => setTip(null)} onClick={onSelect} onFocus={showTip} onMouseEnter={showTip} onMouseLeave={() => setTip(null)} type="button"><span>{item.title}</span></button>
+  return <div className="chat-history-row" onDragStart={() => setTip(null)} ref={row}>
+    <button {...sortProps} aria-current={selected ? "page" : undefined} aria-describedby={tip === null ? undefined : id} className="chat-history-open" onBlur={() => setTip(null)} onClick={onSelect} onFocus={showTip} onMouseEnter={showTip} onMouseLeave={() => setTip(null)} type="button"><span>{item.title}</span></button>
     <button aria-expanded={menu !== null} aria-haspopup="menu" aria-label={t("chat.actions",{ title: item.title })} className="chat-history-actions" disabled={disabled} onClick={() => { setTip(null);setMenu(value => value === null ? position(180,item.canArchive === false ? 180 : 132) : null); }} ref={trigger} type="button"><DotsThreeIcon /></button>
     {tip === null ? null : createPortal(<div className="chat-history-tooltip" id={id} role="tooltip" style={tip}><strong>{item.title}</strong><div><FolderIcon /><span>{workbench}</span><time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString(currentLocale())}</time></div></div>,document.body)}
     {menu === null ? null : createPortal(<div aria-label={t("chat.actions",{ title: item.title })} className="chat-history-menu" ref={popup} role="menu" style={menu} onKeyDown={event => {

@@ -22,6 +22,16 @@
 .chat-history-open { display:flex;align-items:center;text-align:left;min-width:0;width:100%;height:36px;border:0;border-radius:7px;background:transparent;padding:0 36px 0 12px; }
 .chat-history-open span { white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .chat-history-open[aria-current=page]:before { content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--forest); }
+.chat-history-groups details { position:relative; }
+.chat-history-groups summary:focus-visible { outline:2px solid var(--forest);outline-offset:-2px;border-radius:7px; }
+.chat-history-groups summary[draggable=true],.conversation-layout .chat-history-open[draggable=true] { cursor:grab; }
+.chat-history-groups [data-dragging=true] { opacity:.5; }
+.chat-history-groups details:has(> summary[data-dragging=true]) > .chat-history-row { opacity:.5; }
+.chat-history-groups details:has(> summary[data-drop-position=before])::after,
+.chat-history-groups details:has(> summary[data-drop-position=after])::after,
+.chat-history-row:has(> [data-drop-position])::after { content:"";position:absolute;z-index:1;left:0;right:0;height:2px;border-radius:2px;background:var(--forest);pointer-events:none; }
+.chat-history-groups details:has(> summary[data-drop-position=before])::after,.chat-history-row:has(> [data-drop-position=before])::after { top:0; }
+.chat-history-groups details:has(> summary[data-drop-position=after])::after,.chat-history-row:has(> [data-drop-position=after])::after { bottom:0; }
 .chat-history-actions { position:absolute;right:4px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:5px;background:transparent;opacity:0; }
 .chat-history-row:hover .chat-history-actions,.chat-history-row:focus-within .chat-history-actions,.chat-history-actions[aria-expanded=true] { opacity:1; }
 .chat-history-actions:hover { background:var(--line); }

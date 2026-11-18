@@ -10,6 +10,7 @@ import { ConversationHistoryRow } from "./ConversationHistoryRow";
 import { DeleteConversationDialog, RenameConversationDialog } from "./ConversationDialogs";
 import { submitComposerOnEnter } from "./composer-keyboard";
 import { useConversationLists } from "./useConversationLists";
+import { applyHistoryOrder, useConversationHistoryOrder } from "./useConversationHistoryOrder";
 import { CONVERSATION_PI_EXTENSIONS,currentConversationPiExtensions,type ConversationDto,type ConversationInheritanceDto,type ConversationPiExtension,type ConversationSummaryDto,type ConversationTurnStatus,type SendConversationInput } from "../shared/conversations";
 import type { JoiAttachmentDto, ModelSourceDto, PartnerDto } from "../shared/joi";
 import "./conversations.css";
@@ -86,6 +87,7 @@ function WorkspaceResizeHandle({ layout,historyOpen,enabled }: { layout: RefObje
 export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSettings?: () => void }) {
   useI18n();
   const { workbenches,history,listsFailed,retryLists,loadHistory,updateHistory,addWorkbench } = useConversationLists(api);
+  const { order: historyOrder,sortable } = useConversationHistoryOrder();
   const [networks,setNetworks] = useState<ModelSourceDto[]>([]);
   const [partners,setPartners] = useState<PartnerDto[]>([]);
   const [conversation,setConversation] = useState<ConversationDto | null>(null);
@@ -138,17 +140,23 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const showError = useCallback((error: unknown) => setNotice(error instanceof ApiError ? error.displayMessage : t("chat.error")),[]);
   const patchDraft = (patch: Partial<Draft>) => { pendingRequest.current = null; setDraft(value => ({ ...value,...patch })); };
   const toggle = (value: Picker) => setPicker(current => current === value ? null : value);
-  const historyByWorkbench = useMemo(() => {
+  const historyGroups = useMemo(() => {
     const query = search.toLocaleLowerCase();
     const groups = new Map<string, ConversationSummaryDto[]>();
     for (const item of history ?? []) {
-      if (!item.title.toLocaleLowerCase().includes(query)) continue;
       const group = groups.get(item.workbenchId);
       if (group === undefined) groups.set(item.workbenchId, [item]);
       else group.push(item);
     }
-    return groups;
-  }, [history, search]);
+    return applyHistoryOrder(workbenches ?? [],historyOrder.workbenches,wb => wb.workbenchId).flatMap(wb => {
+      const scope = `workbench:${wb.workbenchId}`;
+      const all = applyHistoryOrder(groups.get(wb.workbenchId) ?? [],historyOrder[scope],item => item.conversationId);
+      const items = all.filter(item => item.title.toLocaleLowerCase().includes(query));
+      return items.length === 0 ? [] : [{ wb,scope,items,ids: all.map(item => item.conversationId),visibleIds: items.map(item => item.conversationId) }];
+    });
+  }, [history,historyOrder,search,workbenches]);
+  const visibleWorkbenchIds = historyGroups.map(({ wb }) => wb.workbenchId);
+  const workbenchIds = workbenches?.map(wb => wb.workbenchId) ?? [];
   useEffect(() => {
     let narrow = window.innerWidth <= 720;
     let wideHistory = true;
@@ -428,10 +436,12 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     <aside className="conversation-history" id="conversation-history"><header><h1>{t("chat.title")}</h1><button aria-label={t("common.close")} className="chat-history-close icon-button" onClick={() => setHistoryOpen(false)} type="button"><XIcon /></button></header>
       <button className="chat-new" onClick={newChat} type="button"><PlusIcon />{t("chat.newChat")}</button>
       <input aria-label={t("chat.search")} className="chat-search" onChange={e => setSearch(e.target.value)} placeholder={t("chat.search")} value={search} />
-      <div className="chat-history-groups">{workbenches?.map(wb => {
-        const items = historyByWorkbench.get(wb.workbenchId);
-        return items === undefined ? null : <details key={wb.workbenchId} open><summary><FolderIcon /><span>{wb.name}</span><small>{items.length}</small></summary>{items.map(item => <ConversationHistoryRow disabled={changing || submitting} item={{ ...item,...(item.conversationId === conversationId && busy ? { canArchive: false } : {}) }} key={item.conversationId} onArchive={() => void changeConversation(item,false)} onDelete={() => { setDeleteError(null);setDeleting(item); }} onRename={() => { setRenameError(null);setRenaming(item); }} onSelect={() => void selectConversation(item.conversationId)} selected={draft.id === item.conversationId} workbench={wb.name} />)}</details>;
-      })}{listsFailed ? <p className="chat-empty-note" role="alert">{t("chat.error")} <button onClick={retryLists} type="button">{t("common.retry")}</button></p>
+      <div className="chat-history-groups">{historyGroups.map(({ wb,scope,items,ids,visibleIds }) => (
+        <details key={wb.workbenchId} open>
+          <summary {...sortable("workbenches",wb.workbenchId,workbenchIds,visibleWorkbenchIds)}><FolderIcon /><span>{wb.name}</span><small>{items.length}</small></summary>
+          {items.map(item => <ConversationHistoryRow disabled={changing || submitting} item={{ ...item,...(item.conversationId === conversationId && busy ? { canArchive: false } : {}) }} key={item.conversationId} onArchive={() => void changeConversation(item,false)} onDelete={() => { setDeleteError(null);setDeleting(item); }} onRename={() => { setRenameError(null);setRenaming(item); }} onSelect={() => void selectConversation(item.conversationId)} selected={draft.id === item.conversationId} sortProps={sortable(scope,item.conversationId,ids,visibleIds)} workbench={wb.name} />)}
+        </details>
+      ))}{listsFailed ? <p className="chat-empty-note" role="alert">{t("chat.error")} <button onClick={retryLists} type="button">{t("common.retry")}</button></p>
         : workbenches === undefined || history === undefined ? <p className="chat-empty-note" role="status">{t("home.loading")}</p>
           : history.length === 0 ? <p className="chat-empty-note">{t("chat.emptyHistory")}</p> : null}</div>
     </aside>

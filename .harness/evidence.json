@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "c61b255e22eb93c42830ac203ada77fe52e3e9b3721a4c1fbedabdd278a81490",
-      "observedAt": "2026-11-18T05:07:30.219Z",
+      "hash": "48ef64cd091597b37a2577c3d0afefa301a0418004301f6636cc91c8ec44df9b",
+      "observedAt": "2026-11-18T09:18:49.895Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action. The selected transcript restores independently of configuration and history lists. Skills are read when opened, and send availability waits for applicable configuration. A completed reply can open a separate conversation with its initial configuration and an empty composer. Failed fork requests reuse the same identity.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action. The selected transcript restores independently of configuration and history lists. Skills are read when opened, and send availability waits for applicable configuration. A completed reply can open a separate conversation with its initial configuration and an empty composer. Failed fork requests reuse the same identity. Sidebar groups and rows use local ordering while the composer still uses the workbench catalog.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "7625a21fad4feea772334fa28a12885974c2cc707f59ce372aacd4d9795f0647",
-      "observedAt": "2026-11-18T08:17:08.675Z",
+      "hash": "34b64b98b3f34dea0174a76532e5de24e8856f09b9aae8b47bed79264e942596",
+      "observedAt": "2026-11-18T09:09:34.871Z",
       "range": {
         "startLine": 1,
-        "endLine": 494
+        "endLine": 504
       }
     },
     {
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "0babc5d8aa8a3ea6eee616766f0012124269e0ff896e79fb4d3ffeb4450f4609",
-      "observedAt": "2026-11-18T07:26:20.269Z",
+      "hash": "2c655f72949e385ca9589ffa88e7d143072be96316997c8d8d9a51ef7948ff95",
+      "observedAt": "2026-11-18T09:09:34.871Z",
       "range": {
         "startLine": 1,
-        "endLine": 48
+        "endLine": 49
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy and fork actions center 14px glyphs within adjacent 24px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy and fork actions center 14px glyphs within adjacent 24px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px. Sidebar reorder feedback uses grab cursors, dimmed sources and an insertion line.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "21be90acdfc56a35f7aad434dae560b0d319ed5ab33ead6ca8496abd57c5eac8",
-      "observedAt": "2026-11-18T08:17:08.675Z",
+      "hash": "26572983547975bbe206d54951b7fffe872eb56e96896e4669de402e110da8f5",
+      "observedAt": "2026-11-18T09:09:34.871Z",
       "range": {
         "startLine": 1,
-        "endLine": 328
+        "endLine": 338
       }
     },
     {
@@ -508,12 +508,12 @@
     {
       "id": "ececa617-c6a3-4ea1-a324-a7feb9d2e600",
       "kind": "source-code",
-      "claim": "Compact history row with keyboard/hover tooltip and unclipped actions menu. Rename remains available during generation and restores trigger focus before opening the editor.",
+      "claim": "Compact history row with keyboard/hover tooltip and unclipped actions menu. Rename remains available during generation and restores trigger focus before opening the editor. The title button accepts reorder controls independently of its action menu.",
       "location": {
         "path": "src/renderer/ConversationHistoryRow.tsx"
       },
-      "hash": "e1a1cca76e87a712201b4e85b8f9c767e7beb551834d4db48424bccae06765cb",
-      "observedAt": "2026-11-13T07:30:39.326Z",
+      "hash": "e4cee9a26e68b9b3fbf7e7a5c8f674acdfe8a197617bc8ea7004b07ae736f281",
+      "observedAt": "2026-11-18T09:09:34.871Z",
       "range": {
         "startLine": 1,
         "endLine": 36
@@ -848,8 +848,8 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "5c4e215633820f15dfdcafb527e6012d29273048c77a6b70fde4739d414b6810",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "hash": "038fac1e03cd063d5a07251cf5b5713c25fd14227f919450252558f144979877",
+      "observedAt": "2026-11-18T09:18:49.896Z",
       "range": {
         "startLine": 1,
         "endLine": 742
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "609895918e60651476ddf2e454c5e5d293f98bbea091b7ebbcd4a4ff277f16d3",
-      "observedAt": "2026-11-18T05:07:30.219Z",
+      "hash": "9a7bb1c4c377a09c9e6adf9a41f5fa33908fa311959bcf86197a863f143fdd47",
+      "observedAt": "2026-11-18T09:18:49.897Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
@@ -3849,6 +3849,20 @@
       "range": {
         "startLine": 1,
         "endLine": 9
+      }
+    },
+    {
+      "id": "fce68d9c-8f3e-46a1-a6c6-f1d4705e36ac",
+      "kind": "source-code",
+      "claim": "Conversation sidebar reordering is scoped to workbench groups or conversations within one workbench. The browser profile stores row identities and order; there are no runtime API writes. Pointer and keyboard use the same move operation.",
+      "location": {
+        "path": "src/renderer/useConversationHistoryOrder.ts"
+      },
+      "hash": "7991e8179f48c1cbd580c26d91455fa34d4d6bb3e8a147b07f7c741bf0bcbee8",
+      "observedAt": "2026-11-18T09:09:34.871Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 87
       }
     }
   ]

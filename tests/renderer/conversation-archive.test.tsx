@@ -9,7 +9,7 @@ import type { ConversationDto } from "../../src/shared/conversations";
 const chat: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "讨论设计",updatedAt: "2026-11-11T08:00:00Z",turns: [] };
 function setup() {
   const api = new DigitalLifeApi("",true);
-  vi.spyOn(api,"listWorkbenches").mockResolvedValue({ items: [{ workbenchId: "wb",name: "设计项目",scopeSummary: "Design",updatedAt: chat.updatedAt }] });
+  const workbenches = vi.spyOn(api,"listWorkbenches").mockResolvedValue({ items: [{ workbenchId: "wb",name: "设计项目",scopeSummary: "Design",updatedAt: chat.updatedAt }] });
   const list = vi.spyOn(api,"listConversations").mockResolvedValue({ items: [chat] });
   const get = vi.spyOn(api,"getConversation").mockResolvedValue(chat);
   vi.spyOn(api,"listPartners").mockResolvedValue({ items: [] });
@@ -19,8 +19,66 @@ function setup() {
   const archive = vi.spyOn(api,"archiveConversation").mockResolvedValue({ changed: true });
   const restore = vi.spyOn(api,"restoreConversation").mockResolvedValue({ changed: true });
   const remove = vi.spyOn(api,"deleteConversation").mockResolvedValue({ changed: true });
-  return { api,list,get,request,archive,restore,remove };
+  return { api,list,workbenches,get,request,archive,restore,remove };
 }
+
+it("CHAT-49 reorders workbenches and their conversations, keeps ownership, and restores the saved order", async () => {
+  const { api,list,workbenches } = setup();
+  const second = { ...chat,conversationId: "second",title: "讨论文案" };
+  const third = { ...chat,conversationId: "third",title: "讨论发布",workbenchId: "ops" };
+  const added = { ...chat,conversationId: "added",title: "讨论评审" };
+  workbenches.mockResolvedValue({ items: [
+    { workbenchId: "wb",name: "设计项目",scopeSummary: "Design",updatedAt: chat.updatedAt },
+    { workbenchId: "ops",name: "运营项目",scopeSummary: "Operations",updatedAt: chat.updatedAt },
+  ] });
+  list.mockResolvedValue({ items: [chat,second,third] });
+  const history = () => {
+    const sidebar = screen.getByRole("heading",{ name: "对话" }).closest("aside");
+    if (sidebar === null) throw new Error("Missing conversation sidebar");
+    return sidebar;
+  };
+  const order = () => [...history().querySelectorAll("summary span,.chat-history-open span")].map(item => item.textContent);
+  const drag = (source: HTMLElement,target: HTMLElement) => {
+    const dataTransfer = { setData: vi.fn(),effectAllowed: "none",dropEffect: "none" };
+    expect(source).toHaveAttribute("draggable","true");
+    fireEvent.dragStart(source,{ dataTransfer });
+    const accepted = !fireEvent.dragOver(target,{ dataTransfer });
+    fireEvent.drop(target,{ dataTransfer });
+    fireEvent.dragEnd(source,{ dataTransfer });
+    return accepted;
+  };
+  localStorage.clear();
+  try {
+    const view = render(<ConversationPage api={api} />);
+    fireEvent.click(await screen.findByRole("button",{ name: chat.title }));
+    await screen.findByText("设计项目 · 对话");
+    const row = (title: string) => within(history()).getByRole("button",{ name: title });
+    const design = within(history()).getByText("设计项目").closest("summary");
+    const operations = within(history()).getByText("运营项目").closest("summary");
+    if (design === null || operations === null) throw new Error("Missing workbench headers");
+    expect(drag(row(chat.title),row(third.title))).toBe(false);
+    expect(drag(row(second.title),row(chat.title))).toBe(true);
+    expect(drag(design,operations)).toBe(true);
+    expect(order()).toEqual(["运营项目",third.title,"设计项目",second.title,chat.title]);
+    expect(row(chat.title)).toHaveAttribute("aria-current","page");
+    view.unmount();
+
+    list.mockResolvedValue({ items: [added,chat,third,second] });
+    render(<ConversationPage api={api} />);
+    await within(history()).findByRole("button",{ name: added.title });
+    expect(order()).toEqual(["运营项目",third.title,"设计项目",second.title,chat.title,added.title]);
+
+    fireEvent.change(within(history()).getByRole("textbox",{ name: "搜索对话…" }),{ target: { value: "讨论文案" } });
+    expect(order()).toEqual(["设计项目",second.title]);
+    fireEvent.change(within(history()).getByRole("textbox",{ name: "搜索对话…" }),{ target: { value: "" } });
+    row(second.title).focus();
+    fireEvent.keyDown(row(second.title),{ key: "ArrowDown",altKey: true });
+    expect(order()).toEqual(["运营项目",third.title,"设计项目",chat.title,second.title,added.title]);
+    expect(row(second.title)).toHaveFocus();
+  } finally {
+    localStorage.clear();
+  }
+});
 
 it("CHAT-44 renames selected history, updates search and restores the title without losing the draft",async () => {
   const { api,list,get,request } = setup();
