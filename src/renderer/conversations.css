@@ -129,8 +129,9 @@ html:has(.archive-page),body:has(.archive-page) { min-width:0; }
 @keyframes chat-spin { to { transform:rotate(360deg); } }
 .chat-artifact { display:flex;align-items:center;gap:9px;background:#f1f5ee;border:1px solid var(--line);padding:12px;border-radius:8px; }
 .chat-turn-footer { display:flex;align-items:center;gap:12px;color:var(--muted);font-size:10px;margin-top:16px; }
-.chat-turn-footer .icon-button { margin-left:auto;width:28px;height:28px;padding:0;border-radius:6px;line-height:0; }
-.chat-turn-footer .icon-button > svg { display:block;width:16px;height:16px; }
+.chat-turn-actions { display:flex;gap:4px;margin-left:auto; }
+.chat-turn-actions .icon-button { width:24px;height:24px;padding:0;border-radius:5px;line-height:0; }
+.chat-turn-actions .icon-button > svg { display:block;width:14px;height:14px; }
 .chat-turn-status { display:inline-flex;align-items:center;gap:7px; }
 .chat-turn-activity { position:relative;flex:none;width:6px;height:6px;border-radius:50%;background:var(--forest); }
 .chat-turn-activity::after { content:"";position:absolute;inset:0;border-radius:inherit;background:inherit;animation:chat-activity-pulse 1.4s ease-out infinite; }

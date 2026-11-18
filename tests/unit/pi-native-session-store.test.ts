@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { PiNativeSessionStore } from "../../src/main/infrastructure/pi/pi-native-session-store.js";
+import { ConversationHandoff } from "../../src/main/infrastructure/pi/conversation-handoff.js";
 import { createJoiPiSession } from "../../src/main/infrastructure/pi/joi-pi-session.js";
 import { createModels, fauxProvider, fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import type { UsageContext, UsageRecorder } from "../../src/main/application/ports/usage.js";
@@ -64,6 +65,28 @@ it("PI-SESSION-21 preserves the official parent session relationship on a succes
     expect(second.manager.getSessionId()).not.toBe(first.manager.getSessionId());
     const restored = await store.open({ identity: ["conversation","wb","chat","B1"],cwd: root,state: { engine: "pi-core",messages: [],piNativeSession: second.reference() } });
     expect(restored.manager.getSessionId()).toBe(second.manager.getSessionId());
+  } finally { await rm(root,{ recursive: true,force: true }); }
+});
+
+it("CHAT-48 serializes the exact Pi turn from a segment with later private messages", async () => {
+  const root = await mkdtemp(path.join(tmpdir(),"joi-pi-fork-")),store = new PiNativeSessionStore(root);
+  try {
+    const identity = ["conversation","wb","chat","segment"];
+    const source = await store.open({ identity,cwd: root });
+    source.manager.appendMessage({ role: "user",content: "Selected private context",timestamp: 1 });
+    source.manager.appendMessage(fauxAssistantMessage("Selected answer"));
+    source.manager.appendCustomEntry("joi.work_result",{ actionId: "selected" });
+    source.manager.appendMessage({ role: "user",content: "Later private context",timestamp: 2 });
+    source.manager.appendMessage(fauxAssistantMessage("Later answer"));
+    source.manager.appendCustomEntry("joi.work_result",{ actionId: "later" });
+    const exact = await new ConversationHandoff(store).build({ conversationId: "chat",workbenchId: "wb",history: [],fork: { turnId: "selected" },
+      source: { segmentId: "segment",engine: "pi-core",partnerId: "p",capabilityKey: "p",state: { engine: "pi-core",messages: [],piNativeSession: source.reference() } },
+    });
+    expect(JSON.stringify(exact.messages)).toContain("Selected private context");
+    expect(JSON.stringify(exact.messages)).toContain("Selected answer");
+    expect(JSON.stringify(exact.messages)).not.toContain("Later private context");
+    expect(exact).not.toHaveProperty("piNativeSession");
+    expect((await store.readContext(identity))?.manager.getLeafId()).toBe(source.manager.getLeafId());
   } finally { await rm(root,{ recursive: true,force: true }); }
 });
 

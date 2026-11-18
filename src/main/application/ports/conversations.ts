@@ -8,8 +8,15 @@ export interface ConversationSegment {
   predecessorId?: string; state?: PartnerSessionState;
 }
 export interface ConversationHandoffPort {
-  build(input: { conversationId: string; workbenchId: string; source: ConversationSegment; history: NonNullable<PartnerRunRequest["conversationHistory"]> }): Promise<PartnerSessionState>;
+  build(input: { conversationId: string; workbenchId: string; source: ConversationSegment; history: NonNullable<PartnerRunRequest["conversationHistory"]>;
+    fork?: { turnId: string; messageCount?: number; inherited?: PartnerSessionState } }): Promise<PartnerSessionState>;
   read(input: { conversationId: string; workbenchId: string; segments: ConversationSegment[] }): Promise<unknown[]>;
+}
+
+export interface ConversationForkIdentity { sourceId: string; turnId: string; targetId: string; }
+export interface ConversationForkSource {
+  workbenchId: string; title: string; segment: ConversationSegment;
+  history: NonNullable<PartnerRunRequest["conversationHistory"]>; messageCount?: number; inherited?: PartnerSessionState;
 }
 
 export interface ConversationSubmission {
@@ -17,6 +24,10 @@ export interface ConversationSubmission {
   text: string; at: string; config: ConversationConfigDto; revision?: PartnerRevision;
 }
 export interface ConversationStore {
+  existingFork(input: ConversationForkIdentity): Promise<ConversationDto | null>;
+  forkSource(sourceId: string,turnId: string): Promise<ConversationForkSource>;
+  createFork(input: ConversationForkIdentity & { title: string; at: string; state: PartnerSessionState }): Promise<ConversationDto>;
+  forkSeed(id: string): Promise<PartnerSessionState | undefined>;
   segment(id: string,turnId?: string): Promise<ConversationSegment | undefined>;
   segments(id: string): Promise<ConversationSegment[]>;
   activateSegment(id: string,turnId: string,segment: ConversationSegment,expectedPredecessor?: string): Promise<ConversationSegment>;

@@ -13,6 +13,7 @@ interface Catalog { workbenches: unknown[];networks: unknown[];partners: unknown
 export class RemoteConversationApi extends DigitalLifeApi {
   constructor(private readonly transport: RemoteConversationTransport) { super(""); }
   override readonly conversationAttachments: boolean = false;
+  override readonly conversationForks: boolean = false;
   override watchConversation(): (() => void) | undefined { return undefined; }
 
   override async request<T>(path: string, options: RequestOptions = {}): Promise<T> {

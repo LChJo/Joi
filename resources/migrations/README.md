@@ -96,3 +96,5 @@ Migration 100 将 joi_session_messages、partner_instance_messages、conversatio
 Migration 101 新增普通对话执行段和 turn 到执行段的绑定。同搭档连续轮次复用当前段；切换搭档/引擎/能力时创建后继，A→B→A 创建 A1→B1→A2。段激活与当前 RUNNING 所有者、前驱和稳定 turn 身份同事务校验；旧会话表保持审计来源，不删除历史、不重跑旧任务。见 ADR 0035 与 PI-SESSION-21。
 
 Migration 102 扩展既有目录等待表，读写请求共用序号，旧条目默认 WRITE 并保留身份和顺序。租约释放、队列退出通过事务触发器提前已有 outbox 的可派发时间，目标暂停及 Work 终态清理等待位置；工作结果、用户文件和执行事实保持原样。见 AC-WR-01/09。
+
+Migration 103 保存对话分支的来源、初始配置和私有交接，以及执行段内的逐轮消息位置。旧轮次缺少私有截止位置时可从该轮的业务历史交接。创建分支不写入执行 outbox。见 CHAT-48。

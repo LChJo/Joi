@@ -51,6 +51,7 @@ export class DigitalLifeApi {
   constructor(readonly origin: string, readonly desktop = false) {}
 
   readonly conversationAttachments: boolean = true;
+  readonly conversationForks: boolean = true;
 
   setCsrfToken(token: string) {
     this.csrfToken = token;
@@ -112,6 +113,11 @@ export class DigitalLifeApi {
   restoreConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/restore`,{ method: "POST" }); }
   deleteConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}`,{ method: "DELETE" }); }
   getConversation(id: string,options: Pick<RequestOptions,"signal"> = {}) { return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}`,options); }
+  forkConversation(id: string,turnId: string,conversationId: string) {
+    return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}/turns/${encodeURIComponent(turnId)}/fork`,{
+      method: "POST",body: { conversationId },idempotencyKey: conversationId,
+    });
+  }
   watchConversation(id: string,onUpdate: (update: ConversationUpdateDto) => void,onError: () => void): (() => void) | undefined {
     if (typeof EventSource === "undefined") return undefined;
     let source: EventSource;

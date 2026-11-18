@@ -49,7 +49,7 @@ it("CHAT-04/45 streams prefixes and releases subscriptions on completion, discon
   } finally { vi.useRealTimers();await reader?.cancel();await listeners.close();await f.close(); }
 });
 
-it("CHAT-09/44 protects conversation mutations, rejects model overrides and confines workspace operations to desktop sessions", async () => {
+it("CHAT-09/44/48 protects conversation mutations, rejects model overrides and confines workspace operations to desktop sessions", async () => {
   const f = await createRuntimeFixture();
   const chat: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "Hello",updatedAt: "2026-11-11",turns: [] };
   const send = vi.fn(() => Promise.resolve(chat));
@@ -57,8 +57,9 @@ it("CHAT-09/44 protects conversation mutations, rejects model overrides and conf
   const list = vi.fn(() => Promise.resolve({ items: [chat] }));
   const archive = vi.fn(() => Promise.resolve()),restore = vi.fn(() => Promise.resolve()),remove = vi.fn(() => Promise.resolve());
   const rename = vi.fn((_id: string,title: string) => Promise.resolve({ ...chat,title }));
+  const fork = vi.fn(() => Promise.resolve({ ...chat,conversationId: "new-branch" }));
   const listeners = await startRuntimeListeners({ loopbackPort: 0,handler: createApiHandler({ ...f,
-    conversations: { list,get: () => Promise.resolve(chat),send,rename,archive,restore,delete: remove,stop: () => Promise.resolve(),inheritance: () => Promise.resolve({ memoryCount: 0,evolutionRevisionId: null }) },
+    conversations: { list,get: () => Promise.resolve(chat),send,rename,fork,archive,restore,delete: remove,stop: () => Promise.resolve(),inheritance: () => Promise.resolve({ memoryCount: 0,evolutionRevisionId: null }) },
     conversationWorkspace: { status: () => Promise.resolve({ available: false,branch: "",branches: [],ahead: 0,behind: 0,files: [],history: [] }),diff: () => Promise.resolve({ patch: "",truncated: false }),files: () => Promise.resolve({ items: [] }),file: () => Promise.resolve({ text: "",truncated: false }),execute },
   }) });
   const base = listeners.loopback.url;
@@ -98,6 +99,15 @@ it("CHAT-09/44 protects conversation mutations, rejects model overrides and conf
     expect(renamed.status).toBe(200);expect(await renamed.json()).toMatchObject({ title: "项目讨论" });expect(rename).toHaveBeenCalledWith("chat","项目讨论");
     for (const body of [{},{ title: 42 }]) expect((await fetch(renameUrl,{ method: "PUT",headers,body: JSON.stringify(body) })).status).toBe(400);
     expect(rename).toHaveBeenCalledTimes(1);
+    const forkUrl = `${base}/api/v1/conversations/chat/turns/selected/fork`,forkBody = JSON.stringify({ conversationId: "new-branch" });
+    expect((await fetch(forkUrl,{ method: "POST",headers: { cookie },body: forkBody })).status).toBe(403);
+    expect((await fetch(forkUrl,{ method: "POST",headers: { ...headers,origin: "https://foreign.invalid" },body: forkBody })).status).toBe(403);
+    expect((await fetch(forkUrl,{ method: "POST",headers,body: "{}" })).status).toBe(400);
+    expect(fork).not.toHaveBeenCalled();
+    const forked = await fetch(forkUrl,{ method: "POST",headers,body: forkBody });
+    expect(forked.status).toBe(201);
+    expect(await forked.json()).toEqual({ ...chat,conversationId: "new-branch" });
+    expect(fork).toHaveBeenCalledExactlyOnceWith("chat","selected","new-branch");
     expect((await fetch(`${base}/api/v1/conversation-workspaces/wb/git`,{ headers })).status).toBe(200);
     expect((await fetch(`${base}/api/v1/auth/setup`,{ method: "POST",headers: { ...headers,origin: "null" },body: JSON.stringify({ password: "conversation fixture password" }) })).status).toBe(204);
     const login = await fetch(`${base}/api/v1/auth/login`,{ method: "POST",headers: { origin: base,"content-type": "application/json" },body: JSON.stringify({ password: "conversation fixture password" }) });

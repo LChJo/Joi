@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint. An idempotent fork request targets a completed reply and returns the new conversation.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "293f78891e3bec83f6e520737205b486409e242023301eb7e87d7b456f958ed7",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "hash": "d749f3a0327447900171a27a59552c551810a6f20a100c50c8a24fc93bdef99f",
+      "observedAt": "2026-11-18T08:17:08.675Z",
       "range": {
         "startLine": 1,
-        "endLine": 597
+        "endLine": 603
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action. The selected transcript restores independently of configuration and history lists. Skills are read when opened, and send availability waits for applicable configuration.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct. LAN browsers reuse shared conversation controls without mounting desktop workspace/Git. Entering a narrow viewport closes history; phone history selection and new drafts close the drawer. Optional Settings and attachment transport capabilities keep unavailable controls out of the paired fallback. Enter and the send button share availability checks. Running turns display active feedback, and completed turn footers show the status and reply copy action. The selected transcript restores independently of configuration and history lists. Skills are read when opened, and send availability waits for applicable configuration. A completed reply can open a separate conversation with its initial configuration and an empty composer. Failed fork requests reuse the same identity.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "5f42b6458b35a6cd8418c3c8d515e8fc41768b622c9e04bc92399ab43e6b618e",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "hash": "7625a21fad4feea772334fa28a12885974c2cc707f59ce372aacd4d9795f0647",
+      "observedAt": "2026-11-18T08:17:08.675Z",
       "range": {
         "startLine": 1,
-        "endLine": 466
+        "endLine": 494
       }
     },
     {
@@ -340,29 +340,29 @@
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Ordinary conversations bind turns to execution segments and treat current user intent as the task. Startup restores trustworthy Pi results by stable turn and segment identity without dispatching.",
+      "claim": "Ordinary conversations bind turns to execution segments and treat current user intent as the task. Startup restores trustworthy Pi results by stable turn and segment identity without dispatching. Fork creation persists a selected-turn handoff without dispatching. The first submitted turn creates a fresh execution segment from that seed.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "f5cb312225dd841055156fc22623aed1315bdb3adcd7aa1a46b6a2c1a705daab",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "bfb998b6d314cbb6820cb68703ee620918985d9a5c2c5805a6973522849a80f3",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 349
+        "endLine": 363
       }
     },
     {
       "id": "db8263f3-5e65-499b-b358-e54b40a000cd",
       "kind": "source-code",
-      "claim": "SQLite binds running turns to stable execution segments, lists Pi recovery candidates and guards terminal updates. Public Pi history suppresses stale thinking summaries.",
+      "claim": "SQLite binds running turns to stable execution segments, lists Pi recovery candidates and guards terminal updates. Public Pi history suppresses stale thinking summaries. An atomic fork binds a new identity to the source turn and workbench and stores the private handoff separately from public configuration.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-conversation-store.ts"
       },
-      "hash": "26e531415af0f2585fb3141dbc5bf445db0d9b3744ca18767dbb8fa36a6e0000",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "f09a74e86fe9e6439c4948f34ef3a75d356298c7143973fad578d092579cd37f",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 318
+        "endLine": 377
       }
     },
     {
@@ -382,15 +382,15 @@
     {
       "id": "3a9f444d-04a7-43d1-9a57-0212eeda58ca",
       "kind": "source-code",
-      "claim": "Authenticated CSRF-protected conversation routes accept only fixed unique Pi extension IDs and reject model/workspace overrides. Authenticated write protection also covers idempotent title-only PUT requests with a required string title. The authenticated read surface includes the conversation SSE endpoint.",
+      "claim": "Authenticated CSRF-protected conversation routes accept only fixed unique Pi extension IDs and reject model/workspace overrides. Authenticated write protection also covers idempotent title-only PUT requests with a required string title. The authenticated read surface includes the conversation SSE endpoint. An authenticated write route accepts a source conversation, completed turn and stable target identity for forks.",
       "location": {
         "path": "src/main/interfaces/http/routes/conversation-routes.ts"
       },
-      "hash": "53dd2b13e5f4b95a6884abc9c0c5538848f4ed7f9e5a95509d298f5141e76f07",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "7521904a56f461c6780d0747327bd376b1787e7fcf53dda7706565dccbd3c035",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 99
+        "endLine": 106
       }
     },
     {
@@ -410,15 +410,15 @@
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Shared conversation DTOs expose safe committed turn updates, scoped history, timing and explicitly public provider summaries.",
+      "claim": "Shared conversation DTOs expose safe committed turn updates, scoped history, timing and explicitly public provider summaries. An empty fork exposes only its initial configuration, with the private seed kept server-side.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "308e1de665d6b101d2cf5d60f76b272bdfcc82419be1f13fbc3e31cd1f2a8966",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "227d25e1141fae10d3d36a697919c32c62068b7f26a651fea799ff73f29f76d0",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 119
+        "endLine": 120
       }
     },
     {
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "397fc4ca2c1787d58fe60e6d1d8f662fee5dfde054e43843c6107a3774d22dc1",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "hash": "0babc5d8aa8a3ea6eee616766f0012124269e0ff896e79fb4d3ffeb4450f4609",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 47
+        "endLine": 48
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy and fork actions center 14px glyphs within adjacent 24px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "b8b38116e6aee230e5dcf45554220d68c47c505cae0cbb568d00766e1b869f7d",
-      "observedAt": "2026-11-18T07:14:17.537Z",
+      "hash": "21be90acdfc56a35f7aad434dae560b0d319ed5ab33ead6ca8496abd57c5eac8",
+      "observedAt": "2026-11-18T08:17:08.675Z",
       "range": {
         "startLine": 1,
-        "endLine": 327
+        "endLine": 328
       }
     },
     {
@@ -1432,12 +1432,12 @@
     {
       "id": "886b35a7-9f5d-47fb-b555-4a774d237d50",
       "kind": "source-code",
-      "claim": "HTTP conversation dependencies optionally expose a typed application subscription alongside existing reads and mutations. The workbench agent read dependency exposes both full transcript pages and message-only pages.",
+      "claim": "HTTP conversation dependencies optionally expose a typed application subscription alongside existing reads and mutations. The workbench agent read dependency exposes both full transcript pages and message-only pages. The HTTP composition can expose the conversation fork operation.",
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "90cd225b0083647a253be567d733f717fa2ef16c482441319b94510e051a4df3",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "hash": "c0e6f0552858088823db20213346a0297642d2a215bc27f540d0d61e42f60766",
+      "observedAt": "2026-11-18T08:17:08.675Z",
       "range": {
         "startLine": 1,
         "endLine": 218
@@ -1460,57 +1460,57 @@
     {
       "id": "44b4de62-537a-42f1-8a5c-40d72900430b",
       "kind": "source-code",
-      "claim": "Disposable SQLite integration covers safe conversation progress, segments and repeatable recovery of trusted Pi result state without redispatch.",
+      "claim": "Disposable SQLite integration covers safe conversation progress, segments and repeatable recovery of trusted Pi result state without redispatch. Fork integration verifies duplicate requests, no outbox write, durable seed use after restart and exclusion of later turns.",
       "location": {
         "path": "tests/integration/normal-conversation-execution.test.ts"
       },
-      "hash": "a2ed3d0f23c782295a96e135860f657b00cc3818105fd715239c0c27289f35bc",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "4549b87530c9db0ebea8bf33214eb73eadbdcd8ad569fb36155134d562fea128",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 632
+        "endLine": 680
       }
     },
     {
       "id": "2cf215ea-bf39-4ead-a1d5-70c2133ae170",
       "kind": "source-code",
-      "claim": "Authenticated HTTP regressions read separate live prefixes before completion and verify subscription release after completion, client disconnect and session revocation.",
+      "claim": "Authenticated HTTP regressions read separate live prefixes before completion and verify subscription release after completion, client disconnect and session revocation. Fork HTTP coverage verifies CSRF and origin protection, validates the target and checks the created response.",
       "location": {
         "path": "tests/contract/conversation-http.test.ts"
       },
-      "hash": "6c18261489b6ecabd517cee9bb02be6d2336264850229f218751554202982a1d",
-      "observedAt": "2026-11-13T08:32:51.967Z",
+      "hash": "4db2f9b0590fcc9475ba6befc6d4b952ac28825a18bb4809443f43dcb2d243d0",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 109
+        "endLine": 119
       }
     },
     {
       "id": "25d2574d-1c15-4d09-85d8-982d6df10500",
       "kind": "source-code",
-      "claim": "The deliberate golden route manifest includes the authenticated conversation SSE read endpoint.",
+      "claim": "The deliberate golden route manifest includes the authenticated conversation SSE read endpoint. The manifest also lists the authenticated conversation fork write endpoint.",
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "210d96bff300c748e78dbe93d6ce50d26bfb90c93e5056a5d896281765542612",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "186e24058e3e376a04526af3ce59eedbe5ef11f2ffc2c302411fc994b808bf60",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 165
+        "endLine": 166
       }
     },
     {
       "id": "924fa695-204b-44c7-a782-358227365952",
       "kind": "source-code",
-      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission. Renderer regressions cover Enter, Shift+Enter, composition, draft preservation, indicators through stop and the completed footer with reply copy. Delayed-catalog regressions cover independent initial reads, warm history, retry, a superseded restoration and a renamed row with a stale refresh.",
+      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission. Renderer regressions cover Enter, Shift+Enter, composition, draft preservation, indicators through stop and the completed footer with reply copy. Delayed-catalog regressions cover independent initial reads, warm history, retry, a superseded restoration and a renamed row with a stale refresh. A fork can be retried with the same identity and opens a new blank composer without sending a message.",
       "location": {
         "path": "tests/renderer/conversation-interactions.test.tsx"
       },
-      "hash": "04fbed9916ab983c8b2d86ad18f0dff69a0718354cd2cfb4f78e386aae18253a",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "hash": "a7c977acf599440ba5c9988945b9f70bd51f5a3f48c0514894d8c26b6cdae856",
+      "observedAt": "2026-11-18T08:19:59.375Z",
       "range": {
         "startLine": 1,
-        "endLine": 463
+        "endLine": 492
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "f9a69c3bd655d845d652a103549947ce6e59b8129feabdca0216ef5d0a68293a",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "fa464ccb1eec05919f3d0c63d249707ff66536c83c0ff354bef716a91a01647f",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 9751
+        "endLine": 9756
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "f8ebac953956cb38724ab2f0658a3a6e548b2468c9f2ea72cfe48e50a3415625",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "33994cd3f4fdbb0b1decc1a9ba62250174b64dbb3be29196542d751fbdbd73c3",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 6858
+        "endLine": 6862
       }
     },
     {
@@ -1772,11 +1772,11 @@
       "location": {
         "path": "resources/locales/en/chat.json"
       },
-      "hash": "55e2794db3a948cb4c8518e6ae665b144ecd557ecdbe0ea7648ad0bf7d311bf3",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "8ca8a3bebdc936ef835b019be2b301959f4f17d449f98a2aac37319d3a119b76",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 198
+        "endLine": 199
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "75d95703f8e70c3ea94174737f64702e548a9f8e2f5ca2b6078b05872bc5c6ea",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "369be3e6ac531a7f1c0c98b79396ac6530d68f7d0bf8b30b25599b13907a0970",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 8661
+        "endLine": 8666
       }
     },
     {
@@ -1908,12 +1908,12 @@
     {
       "id": "19825361-c0da-4b03-b1bb-abfe0bef46ed",
       "kind": "source-code",
-      "claim": "The paired browser adapter maps only explicit conversation API operations to shared remote commands, preserves the application send request identity, carries read cancellation and provides no workspace, attachment or arbitrary HTTP transport.",
+      "claim": "The paired browser adapter maps only explicit conversation API operations to shared remote commands, preserves the application send request identity, carries read cancellation and provides no workspace, attachment or arbitrary HTTP transport. The paired command adapter keeps Fork hidden because its command contract contains no fork operation.",
       "location": {
         "path": "src/renderer/RemoteConversationApi.ts"
       },
-      "hash": "cabf33441ac4e77a35d89313bacb378028b2e7f7bbc2603f3be3361003fd8521",
-      "observedAt": "2026-11-14T11:23:51.971Z",
+      "hash": "cb387a44d5fdb09dd0d8bade630c690a77f72275b03df40af2ad38a6395e943c",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
         "endLine": 48
@@ -3115,12 +3115,12 @@
       "location": {
         "path": "src/main/infrastructure/pi/conversation-handoff.ts"
       },
-      "claim": "A recognized seed contributes only its effective context to the next handoff. Official serialization adds current facts and one fresh business appendix, with private source references retained.",
-      "hash": "642aed3321332efd1359cfd7b4a01605aded26c52c40c32d70ea446ddee00c9b",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "claim": "A recognized seed contributes only its effective context to the next handoff. Official serialization adds current facts and one fresh business appendix, with private source references retained. Forks use the selected Pi result marker or the retained journal cutoff. Older turns without a cutoff use business history through the selected turn.",
+      "hash": "82927248d7b460a06cfd7a5f2726e03177b58338d24a28deff0a2db089ddbe34",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 41
+        "endLine": 59
       }
     },
     {
@@ -3157,12 +3157,12 @@
       "location": {
         "path": "src/main/application/ports/conversations.ts"
       },
-      "claim": "Application ports cover segment activation, scoped handoff/source reads and enumeration of running Pi turns for recovery without SDK types.",
-      "hash": "d578f91fa46ffbb913a6837ced58b361981b629e2318e6d273b4d5aec34c8a73",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "claim": "Application ports cover segment activation, scoped handoff/source reads and enumeration of running Pi turns for recovery without SDK types. Conversation forks use the same serialization port, with private source state and durable fork identity behind the conversation store.",
+      "hash": "ce5a7e628559ae5aa10bea838d97d22247dc03671ec47bb27d82424d91c599fd",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 42
+        "endLine": 53
       }
     },
     {
@@ -3283,12 +3283,12 @@
       "location": {
         "path": "resources/migrations/README.md"
       },
-      "claim": "Migration guide documents preserved legacy facts, successor identities and the requirement for a pre-upgrade backup rather than direct same-database downgrade.",
-      "hash": "d3c41bd0ee26763b1b526b11aef4c23e6ca4889e6e28177252c8ad8b75a43623",
-      "observedAt": "2026-11-18T03:39:04.302Z",
+      "claim": "Migration guide documents preserved legacy facts, successor identities and the requirement for a pre-upgrade backup rather than direct same-database downgrade. Migration 103 adds durable fork provenance and private seeds, and supports a per-turn message cutoff.",
+      "hash": "524c2d6a110a9340317902848e948655666f15aaac1fe9f876fa37014c72b6bb",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 99
+        "endLine": 100
       }
     },
     {
@@ -3381,12 +3381,12 @@
       "location": {
         "path": "tests/unit/pi-native-session-store.test.ts"
       },
-      "claim": "Temporary native sessions verify canonical isolation and imports, durable numeric reconciliation, complete legacy checkpoint framing, and safe handling of ordinary marker references.",
-      "hash": "bc88fe05e1ec1cff8982b47f708154047475992007fbd6fa9e96bbcef55d8675",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "claim": "Temporary native sessions verify canonical isolation and imports, durable numeric reconciliation, complete legacy checkpoint framing, and safe handling of ordinary marker references. A real disposable SDK session verifies that fork serialization stops at the selected result marker and preserves the source leaf.",
+      "hash": "589b72b3fbee115fa9b366955b3d97ad0de48e4645e7b2114321e7691cf1c8f7",
+      "observedAt": "2026-11-18T07:26:20.269Z",
       "range": {
         "startLine": 1,
-        "endLine": 145
+        "endLine": 168
       }
     },
     {
@@ -3835,6 +3835,20 @@
       "range": {
         "startLine": 1,
         "endLine": 103
+      }
+    },
+    {
+      "id": "fc424fcd-e96b-4dde-b4a4-589153a6d74a",
+      "kind": "source-code",
+      "claim": "Persists the source turn, initial configuration and private handoff, with message cutoffs on turn-to-segment bindings.",
+      "location": {
+        "path": "resources/migrations/103_conversation_forks.sql"
+      },
+      "hash": "1ca8cb2e87ecb6cd8210e8e2e3c89a003e7abecf0d5a1eaafe61231988dda541",
+      "observedAt": "2026-11-18T07:26:20.269Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 9
       }
     }
   ]

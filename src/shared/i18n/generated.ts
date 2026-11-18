@@ -305,6 +305,7 @@ export interface MessageParameters {
   "chat.error": undefined;
   "chat.copied": undefined;
   "chat.copy": undefined;
+  "chat.forkConversation": undefined;
   "chat.help": undefined;
   "chat.helpText": undefined;
   "chat.emptyHistory": undefined;
@@ -2099,6 +2100,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.error": "This action could not be completed. Please try again.",
     "chat.copied": "Copied",
     "chat.copy": "Copy answer",
+    "chat.forkConversation": "Fork conversation",
     "chat.help": "Conversation rules",
     "chat.helpText": "Conversations belong to one workbench. Networks, partners, Skills and attachments can be chosen independently. Each sent message keeps its configuration snapshot. Stop preserves partial output; interrupted actions are never replayed automatically.",
     "chat.emptyHistory": "Your conversations will appear here",
@@ -3891,6 +3893,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.error": "操作未完成，请稍后重试。",
     "chat.copied": "已复制",
     "chat.copy": "复制回答",
+    "chat.forkConversation": "分支对话",
     "chat.help": "对话规则",
     "chat.helpText": "对话固定属于一个工作台。大模型网络、搭档、Skills、附件均可独立选择。每次发送保留当时的配置快照；停止会保留已输出内容，中断的操作不会自动重放。",
     "chat.emptyHistory": "新对话会按工作台保存在这里",
@@ -5961,6 +5964,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "已复制": "chat.copied",
   "Copy answer": "chat.copy",
   "复制回答": "chat.copy",
+  "Fork conversation": "chat.forkConversation",
+  "分支对话": "chat.forkConversation",
   "Conversation rules": "chat.help",
   "对话规则": "chat.help",
   "Conversations belong to one workbench. Networks, partners, Skills and attachments can be chosen independently. Each sent message keeps its configuration snapshot. Stop preserves partial output; interrupted actions are never replayed automatically.": "chat.helpText",
