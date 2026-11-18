@@ -90,7 +90,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(toolSummary).toContainText("bash");await expect(toolSummary).toContainText("共 2 次");
     await expect(toolSummary).toContainText(toolParameters);await expect(toolSummary).toContainText("执行失败");
     await expect(toolSummary.locator("code")).toHaveAttribute("title",toolParameters);
-    await expect(toolSummary).toContainText("思考完成");await expect(toolSummary).toContainText("正在摘要历史");
+    await expect(toolSummary).toContainText("思考完成");await expect(toolSummary).not.toContainText("正在摘要历史");
     await expect(page.getByText(/思考完成/)).toHaveCount(1);await expect(page.getByText("Earlier thinking must stay hidden")).toHaveCount(0);
     expect(await toolSummary.locator(".chat-activity-brief").evaluate(element => getComputedStyle(element).color))
       .not.toBe(await toolSummary.evaluate(element => getComputedStyle(element).color));
@@ -99,6 +99,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(tools.locator("li").first()).toBeHidden();await toolSummary.focus();await page.keyboard.press("Enter");
     await expect(tools.locator("li").first()).toContainText("ls");await expect(tools.locator("li").first()).toBeVisible();
     await expect(tools.locator("li").first()).toContainText("src/renderer");await expect(tools.locator("li").first()).toContainText("已完成");
+    await expect(tools.getByRole("status")).toContainText("正在摘要历史");
     await expect(tools.getByRole("status")).toContainText("100 / 1000");await expect(tools.getByText("已定位组件与工具调用边界。")).toBeVisible();
     await expect(page.getByText("导入历史不含完整的私有工具记录。")).toHaveCount(0);
     await expect(tools.locator("li").last()).toHaveAttribute("data-tool-state","failed");

@@ -1645,12 +1645,12 @@
       "location": {
         "path": "tests/e2e/model-source-advanced-limits.spec.ts"
       },
-      "claim": "Disposable Electron regression verifies new model defaults, expanded limit options, nonstandard existing values and reopening a saved 3M/512K revision.",
-      "hash": "1f9642a05b42a7a20d6b04e0c5972010c73fc67c7283be9597826a92a158a369",
-      "observedAt": "2026-11-14T10:03:13.841Z",
+      "claim": "Disposable Electron regression verifies model defaults, token limit tiers, saved nonstandard sizes and reopening a 3M/512K revision with a numeric Pi compaction percentage.",
+      "hash": "3885e8f7eb329a16885a1e830a2f9ca7559a6e9b403f065b760dffdf6548f896",
+      "observedAt": "2026-11-18T04:41:04.229Z",
       "range": {
         "startLine": 1,
-        "endLine": 109
+        "endLine": 108
       }
     },
     {

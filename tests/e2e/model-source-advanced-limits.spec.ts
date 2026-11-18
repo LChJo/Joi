@@ -43,7 +43,7 @@ function seedSizedSource(userDataDirectory: string): void {
   }
 }
 
-test("the advanced limits are picked from tiers and a size outside them is kept", async () => {
+test("the advanced limits preserve custom sizes and a numeric Pi compaction threshold", async () => {
   test.setTimeout(60_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
 
@@ -77,7 +77,7 @@ test("the advanced limits are picked from tiers and a size outside them is kept"
     const contextWindow = item.getByLabel("上下文窗口（tokens）");
     const maxOutput = item.getByLabel("最大输出（tokens）");
     const compaction = item.getByLabel("压缩阈值（窗口百分比）");
-    // Every field is a select now, and the revision's own figure is offered back rather than lost.
+    // The token selectors retain the saved figures alongside the standard tiers.
     await expect(contextWindow).toHaveValue("999424");
     await expect(maxOutput).toHaveValue("119040");
     await expect(contextWindow.locator("option", { hasText: "1M" })).toHaveCount(1);
@@ -92,16 +92,16 @@ test("the advanced limits are picked from tiers and a size outside them is kept"
     await item.locator(".model-source-advanced").scrollIntoViewIfNeeded();
     await item.locator(".model-source-advanced").screenshot({ path: path.resolve("test-results/e2e-model-source-limits.png") });
 
-    // Picking a tier is what a select is for; the value it submits is the tier's own figure.
     await contextWindow.selectOption("3000000");
     await maxOutput.selectOption("524288");
-    await compaction.selectOption("85");
+    await compaction.fill("79");
     await item.getByRole("button", { name: "保存修改" }).click();
     await expect(window.getByText(/修改已保存为草稿 revision/)).toBeVisible();
     await item.getByRole("button", { name: "编辑 127-glm" }).click();
     await item.locator("summary").click();
     await expect(contextWindow).toHaveValue("3000000");
     await expect(maxOutput).toHaveValue("524288");
+    await expect(compaction).toHaveValue("79");
   } finally {
     await application.close();
   }
