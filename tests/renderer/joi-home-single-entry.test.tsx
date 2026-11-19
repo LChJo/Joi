@@ -1361,6 +1361,8 @@ describe("joi home single entry", () => {
     ["goal_synthesis_correction_exhausted", "最终汇报未通过证据或格式校验", "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。"],
     ["goal_synthesis_reference_invalid", "最终汇报引用了无法核实的结果或需求", "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。"],
     ["source_balance", "主模型服务余额或配额不足", "请补充额度或更换主模型来源，再继续此任务。"],
+    ["source_safety_refusal", "主模型服务因安全策略拒绝了请求", "请核对模型服务的政策要求，调整任务后再继续。"],
+    ["source_content_refusal", "主模型服务因内容策略拒绝了请求", "请核对模型服务的政策要求，调整任务后再继续。"],
   ])("explains %s and the next step without hiding completed work", async (reasonCode, reason, action) => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-report", "汇报工作台");

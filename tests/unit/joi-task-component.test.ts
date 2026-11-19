@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiTaskComponent } from "../../src/main/application/actors/components/joi-task-component";
 import type { ActorTickContext } from "../../src/main/application/ports/actor-runtime";
-import type { JoiTaskPendingInput, JoiTaskStaleTurn } from "../../src/main/application/ports/joi-task";
+import type { JoiTaskInbox, JoiTaskPendingInput, JoiTaskStaleTurn } from "../../src/main/application/ports/joi-task";
 
 const BASE = "2026-08-05T10:00:00.000Z";
 
@@ -25,7 +25,8 @@ interface Harness {
   state: { canceled: string[]; pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
 }
 
-function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failureCode?: string }): Harness {
+function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failureCode?: string;
+  retry?: Pick<JoiTaskInbox, "getRetryState" | "deferRetry" | "recordSchedulingFailure"> }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
   const recoverReviews = vi.fn(async () => undefined);
@@ -50,6 +51,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failure
     },
     gate: { hasReadySource: async () => options?.ready ?? true },
     inbox: {
+      ...options?.retry,
       recoverInterruptedGoalReviews: recoverReviews,
       park: async (inputId, failure) => {
         state.pending = state.pending.filter((pending) => pending.inputId !== inputId);
@@ -136,6 +138,8 @@ describe("JoiTaskComponent traversal scheduling", () => {
     ];
     await harness.component.update(ctxAt(0));
     expect(harness.calls).toEqual(["synthesis_0", "unrelated_input", "synthesis_1", "synthesis_2", "synthesis_3"]);
+    await harness.component.update(ctxAt(500));
+    expect(harness.calls).toHaveLength(5);
 
     harness.settle("synthesis_1");
     await flush();
@@ -150,6 +154,56 @@ describe("JoiTaskComponent traversal scheduling", () => {
     harness.state.pending = harness.state.pending.filter(({ inputId }) => inputId !== "synthesis_0" && inputId !== "unrelated_input");
     await harness.component.update(ctxAt(2_000));
     expect(harness.calls.slice(6)).toEqual(["review"]);
+  });
+
+  it("defers background evolution while an independent synthesis is active", async () => {
+    const harness = makeHarness();
+    const background = { createdAt: BASE, inputId: "evolution:bench" };
+    harness.state.pending = [{ createdAt: BASE, inputId: "synthesis", synthesis: true }, background,
+      { createdAt: BASE, inputId: "foreground" }];
+    await harness.component.update(ctxAt(0));
+    expect(harness.calls).toEqual(["synthesis", "foreground"]);
+    harness.settle("foreground");
+    await flush();
+    harness.state.pending = [background];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.calls).toHaveLength(2);
+    harness.settle("synthesis");
+    await flush();
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.calls).toEqual(["synthesis", "foreground", background.inputId]);
+  });
+
+  it("honors a rejected persisted retry and parks rows that already exhausted their budget", async () => {
+    const deferRetry = vi.fn<NonNullable<JoiTaskInbox["deferRetry"]>>().mockResolvedValue(false);
+    const harness = makeHarness({ retry: { deferRetry } });
+    harness.state.pending = [
+      { createdAt: BASE, inputId: "exhausted", retryState: { failureCount: 8, epoch: 1, sessionGeneration: 1 } },
+      { createdAt: BASE, inputId: "stale", retryState: { failedAt: BASE, failureCount: 1, epoch: 1, sessionGeneration: 1 } },
+      { createdAt: BASE, inputId: "ready", retryState: { failureCount: 0, epoch: 2, sessionGeneration: 2 } },
+    ];
+    await harness.component.update(ctxAt(5_000));
+    expect(harness.parks).toEqual([{ inputId: "exhausted", failureCount: 8, reasonCode: "joi_task_turn_failed" }]);
+    expect(deferRetry).toHaveBeenCalledExactlyOnceWith("stale", { epoch: 1, failureCount: 1, retryAt: "2026-08-05T10:00:30.000Z" });
+    expect(harness.calls).toEqual(["ready"]);
+  });
+
+  it("does not impose an in-memory backoff when persistence rejects an old attempt", async () => {
+    const failed = { failedAt: BASE, failureCount: 1, epoch: 1, sessionGeneration: 1 };
+    const getRetryState = vi.fn<NonNullable<JoiTaskInbox["getRetryState"]>>().mockResolvedValue(failed);
+    const deferRetry = vi.fn<NonNullable<JoiTaskInbox["deferRetry"]>>().mockResolvedValue(false);
+    const recordSchedulingFailure = vi.fn<NonNullable<JoiTaskInbox["recordSchedulingFailure"]>>().mockResolvedValue(undefined);
+    const harness = makeHarness({ retry: { getRetryState, deferRetry, recordSchedulingFailure } });
+    const original = { createdAt: BASE, inputId: "retry", retryState: { failureCount: 0, epoch: 1, sessionGeneration: 1 } };
+    harness.state.pending = [original];
+    await harness.component.update(ctxAt(0));
+    harness.settle("retry", "fail");
+    await flush();
+    harness.state.pending = [{ ...original, retryState: { failureCount: 1, epoch: 2, sessionGeneration: 2 } }];
+    await harness.component.update(ctxAt(5_000));
+    expect(recordSchedulingFailure).toHaveBeenCalledExactlyOnceWith("retry", expect.objectContaining({ epoch: 1, reasonCode: "turn_boom" }));
+    expect(deferRetry).toHaveBeenCalledExactlyOnceWith("retry", { epoch: 1, failureCount: 1, retryAt: "2026-08-05T10:00:30.000Z" });
+    expect(harness.calls).toEqual(["retry", "retry"]);
   });
 
   it("retains a canceled synthesis reservation until it settles and recovers only orphaned turns", async () => {

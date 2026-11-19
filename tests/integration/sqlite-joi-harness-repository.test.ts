@@ -48,7 +48,7 @@ it("KN-01 organizes a committed answer from its sealed facts without reading the
   } finally { await fixture.close(); }
 });
 
-it.each([false,true])("HIST-01 compacts old facts once before appending the complete new fact (compaction fails: %s)", async fails => {
+it.each(["complete", "partial", "unavailable"] as const)("HIST-01 preserves old facts and the full new fact when compaction is %s", async outcome => {
   const fixture = await createRuntimeFixture();
   try {
     const old = await completeHistorySource(fixture,"old-facts","First conclusion");
@@ -61,7 +61,8 @@ it.each([false,true])("HIST-01 compacts old facts once before appending the comp
     expect(history.commit(previous,[{ section: "conclusions",text: longText,source: old.sourceId }])).toBe(true);
     const compact = vi.fn((_update: unknown,entries: readonly { text: string }[]) => {
       expect(entries.map(entry => entry.text)).toEqual([longText]);
-      return fails ? Promise.reject(new Error("model unavailable")) : Promise.resolve(new Map([[0,"Old verified conclusion"]]));
+      if (outcome === "unavailable") return Promise.reject(new Error("model unavailable"));
+      return Promise.resolve(outcome === "partial" ? new Map() : new Map([[0,"Old verified conclusion"]]));
     });
     const service = new HistoricalMemoryService(history,{
       organize: () => Promise.resolve([{ section: "conclusions",text: newText }]),
@@ -71,11 +72,49 @@ it.each([false,true])("HIST-01 compacts old facts once before appending the comp
     expect(compact).toHaveBeenCalledTimes(1);
     expect(history.entries("workbench",old.workbenchId).filter(entry => entry.section === "conclusions")).toEqual([
       { section: "conclusions",text: newText,source: next.sourceId },
-      expect.objectContaining({ section: "conclusions",text: fails ? longText : "Old verified conclusion",source: old.sourceId }),
+      expect.objectContaining({ section: "conclusions",text: outcome === "complete" ? "Old verified conclusion" : longText,source: old.sourceId }),
     ]);
     fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='old-facts'").run(NOW));
     expect(history.entries("workbench",old.workbenchId).filter(entry => entry.section === "conclusions"))
       .toEqual([{ section: "conclusions",text: newText,source: next.sourceId }]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-04 rejects malformed jobs and ignores a settlement that is already unavailable", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const organize = vi.fn().mockResolvedValue([]);
+    const service = new HistoricalMemoryService(history, { organize });
+    const validShape = historyJob("missing", "workbench");
+    await expect(service.handle({ ...validShape, kind: "other" })).rejects.toThrow("historical_memory_job_invalid");
+    await expect(service.handle({ ...validShape, payload: { scope: "workbench" } })).rejects.toThrow("historical_memory_job_invalid");
+    await expect(service.handle({ ...validShape, payload: { sourceId: "missing", scope: "other" } })).rejects.toThrow("historical_memory_job_invalid");
+    await expect(service.handle(validShape)).resolves.toBeUndefined();
+    expect(organize).not.toHaveBeenCalled();
+  } finally { await fixture.close(); }
+});
+
+it.each([false, true])("HIST-01/04 keeps short history uncompressed and checks source freshness at commit (reopened: %s)", async reopened => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const source = await completeHistorySource(fixture, "small-source", "Short conclusion");
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const decision = Promise.withResolvers<{ section: "conclusions"; text: string }[]>();
+    const organize = vi.fn().mockReturnValue(decision.promise);
+    const compact = vi.fn().mockResolvedValue(new Map());
+    const emit = vi.fn();
+    const service = new HistoricalMemoryService(history, { organize, compact }, { emit });
+    const pending = service.handle(historyJob(source.sourceId, "workbench"));
+    expect(organize).toHaveBeenCalledOnce();
+    if (reopened) {
+      fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='small-source'").run(NOW));
+    }
+    decision.resolve([{ section: "conclusions", text: "Short conclusion" }]);
+    await pending;
+    expect(compact).not.toHaveBeenCalled();
+    expect(history.entries("workbench", source.workbenchId).some(entry => entry.section === "conclusions")).toBe(!reopened);
+    expect(emit).toHaveBeenCalledTimes(reopened ? 0 : 1);
   } finally { await fixture.close(); }
 });
 

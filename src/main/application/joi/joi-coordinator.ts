@@ -733,6 +733,7 @@ export class JoiCoordinator {
         } catch (error) {
           if (signal?.aborted) throw error;
           const coverage = error instanceof GoalSynthesisCoverageError ? error.issues : undefined;
+          if (repair === "synthesis-disposition" && coverage !== undefined && coverage.requirementsStatus !== "READY") throw error;
           if (isGoalSynthesis && error instanceof DomainError && isSynthesisStateCorrection(error.code)
             && synthesisRejection === undefined && repair !== "synthesis-disposition" && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
             synthesisValidationRepairAttempted = true;

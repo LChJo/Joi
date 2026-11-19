@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "ecf60c0878116dc698af7c29d7bb20129dae98e37a4e8389232372eeaa6a8028",
-      "observedAt": "2026-11-19T16:56:26.778Z",
+      "hash": "66e33ed922aa48fb4631d6e69024e2eab5eca91e4af2c7abbadf5265520a1160",
+      "observedAt": "2026-11-19T17:38:00.754Z",
       "range": {
         "startLine": 1,
         "endLine": 761
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work.",
-      "hash": "e7b1efcc756ed7f8df517ce5e0af57064765782536aa81297fe46fafe8af95f9",
-      "observedAt": "2026-11-19T16:43:38.660Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance.",
+      "hash": "7bfbba08d0757b09dce86a5ba3fec240e1e11d17aafbe67fa5975be93c8eedd4",
+      "observedAt": "2026-11-19T17:38:00.761Z",
       "range": {
         "startLine": 1,
-        "endLine": 2494
+        "endLine": 2496
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied.",
+      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied. History regressions cover partial compaction, invalid jobs, short-history compaction bounds and source freshness at commit.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "22c48d3d4764d4c9bbd8d77a0702fd612c004b99ab0feb1c4f04687bf28f272e",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "hash": "4a169f49e65c520ab988c6a4de518ac9b849c4a8ee694d3e2e9bd8fea69c402b",
+      "observedAt": "2026-11-19T17:38:00.767Z",
       "range": {
         "startLine": 1,
-        "endLine": 2238
+        "endLine": 2277
       }
     },
     {
@@ -2678,15 +2678,15 @@
     {
       "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
       "kind": "source-code",
-      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Read-only recovery after trusted rejection can verify evidence and submit a complete report, continue for a concrete gap, or persist a blocked result when coverage is insufficient. Unresolved reference and format failures retain their reason. Recovery never repeats Work or relaxes validation. After exhausted read-only recovery, Joi tries an untried READY source before settling. Source-specific availability failures can switch without bypassing replay guards. Outcome persistence diagnostics carry a safe stage and SQLite number.",
+      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Read-only recovery after trusted rejection can verify evidence and submit a complete report, continue for a concrete gap, or persist a blocked result when coverage is insufficient. Unresolved reference and format failures retain their reason. Recovery never repeats Work or relaxes validation. After exhausted read-only recovery, Joi tries an untried READY source before settling. Source-specific availability failures can switch without bypassing replay guards. Outcome persistence diagnostics carry a safe stage and SQLite number. A fresh dirty or stale requirements verdict stops recovery before source fallback.",
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "62778ed820e93ac8c3f79b6abe2ab1dd3362b70413be7c86de48caaf3f14f363",
-      "observedAt": "2026-11-19T16:57:02.458Z",
+      "hash": "94cf7e33c3dc0bee074ae2c8b9c0910d51751d7091a6099572a2b405d0727237",
+      "observedAt": "2026-11-19T17:38:00.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 968
+        "endLine": 969
       }
     },
     {
@@ -2776,15 +2776,15 @@
     {
       "id": "f0062573-1c17-4520-b6bd-3106fb939515",
       "kind": "source-code",
-      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors. Recovery tests cover safe continuation, bounded blockage, reason preservation and rejection after potential Work mutation. Tests also cover recovery after goal requirement reconciliation and SQLite outcome-stage diagnostics without private error text.",
+      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors. Recovery tests cover safe continuation, bounded blockage, reason preservation and rejection after potential Work mutation. Tests also cover recovery after goal requirement reconciliation and SQLite outcome-stage diagnostics without private error text. Tests verify the current requirements gate, read-only effects, legacy coverage events and source avoidance after fallback.",
       "location": {
         "path": "tests/unit/joi-synthesis-validation.test.ts"
       },
-      "hash": "bacd7aeb8816fc77759e4f78ae1842d3c052c10303903e79983372cb3f9d12b4",
-      "observedAt": "2026-11-19T16:57:02.460Z",
+      "hash": "a38a7b98e754ed743c75a762618cbd27219c1554fdda28f549235a858d3b082f",
+      "observedAt": "2026-11-19T17:38:00.760Z",
       "range": {
         "startLine": 1,
-        "endLine": 174
+        "endLine": 221
       }
     },
     {
