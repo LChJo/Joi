@@ -158,15 +158,15 @@
     {
       "id": "aeb013b6-fda3-401d-88ca-e6464dcd5bba",
       "kind": "source-code",
-      "claim": "Composition builds SQLite adapters for workbenches, goals, instances, results and usage.",
+      "claim": "Persistence wiring builds SQLite adapters for conversations, user questions, workbenches, goals, instances, results and usage.",
       "location": {
         "path": "src/main/composition/wire-persistence.ts"
       },
-      "hash": "e7dbef122c05965e4bd3987dd4924acd489286281b678c173a74e3a1793a5329",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "39cf1df3fd22ac5859e3e899870bf655c8d5562e6c98c88bbcc6b6ad16b04e5c",
+      "observedAt": "2026-11-19T12:19:45.683Z",
       "range": {
         "startLine": 1,
-        "endLine": 95
+        "endLine": 97
       }
     },
     {
@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "6bcf2d5ac174f27783060a330ebecca3a786ff52a76e1ed3bea869a614823cf1",
-      "observedAt": "2026-11-19T02:43:29.172Z",
+      "hash": "389b80344aa3fe30b2e524296c064c7b0f5cc2026a6a15b70d95b8f9f2091063",
+      "observedAt": "2026-11-19T12:19:45.683Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -904,11 +904,11 @@
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "ec52f4202d89ff8a1690d14f225d68bf7c7e15a848bb4d13f52a6b341bc42a6a",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "217d6a9500bc4e0709f4b32a1af2fc44e6ec4d45d0f23c2a60e71ac3ec908bd2",
+      "observedAt": "2026-11-19T12:19:45.683Z",
       "range": {
         "startLine": 1,
-        "endLine": 388
+        "endLine": 387
       }
     },
     {
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "9aea982fb7163c41a1ec5ea963283f5cbb23dbca78114c707b19a7b6e825bc12",
-      "observedAt": "2026-11-19T02:43:29.172Z",
+      "hash": "f0a836a5364797f17d5ce6422fbeab5f6da94e4fd5241a2554f1aabab39f0e70",
+      "observedAt": "2026-11-19T12:19:45.683Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
@@ -1488,15 +1488,15 @@
     {
       "id": "25d2574d-1c15-4d09-85d8-982d6df10500",
       "kind": "source-code",
-      "claim": "The deliberate golden route manifest includes the authenticated conversation SSE read endpoint. The manifest also lists the authenticated conversation fork write endpoint.",
+      "claim": "The golden route manifest includes authenticated conversation SSE, fork, question answer and question resume, and the authenticated goal question answer endpoint.",
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "186e24058e3e376a04526af3ce59eedbe5ef11f2ffc2c302411fc994b808bf60",
-      "observedAt": "2026-11-18T07:26:20.269Z",
+      "hash": "5c2c24189559375cec45e64993c028d8d491f1409bd884f90064c15c4ba728d9",
+      "observedAt": "2026-11-19T12:19:45.683Z",
       "range": {
         "startLine": 1,
-        "endLine": 166
+        "endLine": 169
       }
     },
     {

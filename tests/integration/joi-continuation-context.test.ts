@@ -166,7 +166,13 @@ describe("Joi continuation context", () => {
       const prompt = await promptFor(fixture, String(row?.resume_input_id));
       expect(prompt).toContain(ROOT_CAUSE);
       expect(prompt).toContain(OUTCOME);
-      expect(prompt).toContain("answer=认可判断，直接完成修复");
+      const answerPrefix = "answeredQuestion=";
+      const structuredAnswer = prompt.split("\n").find((line) => line.startsWith(answerPrefix));
+      expect(JSON.parse(structuredAnswer?.slice(answerPrefix.length) ?? "null")).toMatchObject({
+        questionId: question.questionId,
+        version: question.questionVersion,
+        answer: { text: "认可判断，直接完成修复", source: "USER" },
+      });
       expect(prompt).toContain("goal_resume");
       expect(fixture.database.transaction((db) => db.prepare("SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goal.inputId)))
         .toEqual({ status: "REVIEWING" });

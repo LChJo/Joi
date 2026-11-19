@@ -14,13 +14,13 @@ function fixture() {
     CREATE TABLE work_result_bodies(body_ref TEXT,body TEXT);
     CREATE TABLE work_result_verifications(result_id TEXT,status TEXT,reason_code TEXT);
     CREATE TABLE joi_inbox_messages(input_id TEXT,workbench_id TEXT);
-    CREATE TABLE joi_goal_outcomes(input_id TEXT,result_revision INTEGER,disposition TEXT,completion_summary TEXT,requirements_revision INTEGER);
+    CREATE TABLE joi_goal_outcomes(input_id TEXT,result_revision INTEGER,disposition TEXT,completion_summary TEXT,requirements_revision INTEGER,completion_key TEXT,updated_at TEXT);
     CREATE TABLE joi_goal_outcome_history(goal_input_id TEXT,result_revision INTEGER,requirements_revision INTEGER,disposition TEXT,completion_summary TEXT);
     CREATE TABLE work_dependencies(work_id TEXT,depends_on_work_id TEXT);
     CREATE TABLE work_run_directories(work_id TEXT,workbench_id TEXT,status TEXT,root_path TEXT);
     CREATE TABLE workbench_context_snapshots(context_snapshot_id TEXT,workbench_id TEXT,work_id TEXT,persona_revision_id TEXT,workspace_ref TEXT,safe_context_json TEXT,memory_summary_refs_json TEXT,created_at TEXT);
     INSERT INTO joi_inbox_messages VALUES ('goal','bench'),('other-goal','bench');
-    INSERT INTO joi_goal_outcomes VALUES ('goal',7,'CONTINUE','latest conclusion',2);
+    INSERT INTO joi_goal_outcomes VALUES ('goal',7,'CONTINUE','latest conclusion',2,'completion-7','2026-07-15T12:00:00.000Z');
     INSERT INTO joi_goal_outcome_history VALUES ('goal',6,2,'CONTINUE','older conclusion tail'),('goal',7,2,'CONTINUE','latest conclusion');
   `);
   for (let n = 0; n < 163; n++) {

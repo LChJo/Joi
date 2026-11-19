@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { AgentService } from "../application/agents/agent-service.js";
 import { UserQuestionService } from "../application/joi/user-question-service.js";
-import { SqliteUserQuestionStore } from "../infrastructure/persistence/sqlite-user-question-store.js";
 import { AuthService } from "../application/auth/auth-service.js";
 import { LifeService } from "../application/lives/life-service.js";
 import { RemoteCommandService } from "../application/remote/remote-command-service.js";
@@ -162,7 +161,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       exporterFactory: (jobs) => desktop.createExporter(jobs),
       workbenchStack,
     });
-    const userQuestions = new UserQuestionService({ store: new SqliteUserQuestionStore(database),clock,
+    const userQuestions = new UserQuestionService({ store: persistence.userQuestionStore,clock,
       onAnswered: async question => { if (question.scope.kind === "GOAL") await persistence.joiInboxRepository.applyAnsweredGoalQuestion(question.questionId); } });
     const conversationStack = wireConversations({ clock,ids,database,persistence,partnerStack,modelSourceStack,workbenchStack,
       evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions });

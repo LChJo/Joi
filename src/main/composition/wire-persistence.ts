@@ -2,6 +2,7 @@ import type { Clock } from "../application/ports/runtime-store.js";
 import { SqliteConversationStore } from "../infrastructure/persistence/sqlite-conversation-store.js";
 import { SqliteGitCommandStore } from "../infrastructure/persistence/sqlite-git-command-store.js";
 import { SqliteUsageStore } from "../infrastructure/persistence/sqlite-usage-store.js";
+import { SqliteUserQuestionStore } from "../infrastructure/persistence/sqlite-user-question-store.js";
 import path from "node:path";
 import { WorkRunDirectoryProvisioner } from "../infrastructure/persistence/work-run-directory-provisioner.js";
 import { LegacyLifeStoreAdapter } from "../infrastructure/persistence/legacy-life-store-adapter.js";
@@ -56,6 +57,7 @@ export function wirePersistence(input: {
     conversations: new SqliteConversationStore(database),
     gitCommands: new SqliteGitCommandStore(database),
     usageStore: new SqliteUsageStore(database, () => clock.now().toISOString()),
+    userQuestionStore: new SqliteUserQuestionStore(database),
     runDirectories: new WorkRunDirectoryProvisioner({ database, clock, baseDirectory: input.runDirectory ?? path.join(userDataDirectory, "runs") }),
     automationStore: new SqliteAutomationStore(database),
     dispatchClaims: new SqlitePartnerDispatchClaims(database),
