@@ -72,9 +72,12 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
     handle: async (ctx, match) => {
       const service = joiHomeFeedService(ctx.dependencies);
       if (service.loadGoalDetail === undefined) throw new HttpError("joi_home_feed_unavailable", "Goal detail is unavailable.", 503);
+      const view = ctx.url.searchParams.get("view");
+      if (view !== null && view !== "summary" && view !== "map") throw new HttpError("goal_detail_page_invalid", "Goal detail view is invalid.", 400);
       const result = await service.loadGoalDetail(decodeURIComponent((match as RegExpExecArray)[1] ?? ""), {
         offset: Number(ctx.url.searchParams.get("offset") ?? "0"),
         limit: Number(ctx.url.searchParams.get("limit") ?? "50"),
+        ...(view === null ? {} : { view }),
       });
       if (result === null) throw new HttpError("goal_not_found", "Goal was not found.", 404);
       sendJson(ctx.response, 200, result);

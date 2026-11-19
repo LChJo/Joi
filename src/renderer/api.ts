@@ -221,6 +221,7 @@ export class DigitalLifeApi {
   joiHomeFeed() { return this.request<JoiHomeFeedDto>("/api/v1/joi/home-feed"); }
   joiGoalDetail(goalId: string, page: JoiGoalDetailPage = {}) {
     const query = new URLSearchParams({ offset: String(page.offset ?? 0), limit: String(page.limit ?? 50) });
+    if (page.view !== undefined) query.set("view", page.view);
     return this.request<JoiGoalDetailDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/detail?${query.toString()}`);
   }
   joiGoalResults(goalId: string, page: GoalResultPage = {}) {

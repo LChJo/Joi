@@ -27,7 +27,8 @@ it("requires a session and returns only the original goal's safe detail, with pa
     expect(body).toContain("last requirement api_key=[redacted]");
     expect(body).not.toContain("synthetic-private");
     expect(body).not.toContain("child private message");
-    for (const query of ["offset=-1", "offset=0.5", "offset=NaN", "limit=101", "limit=0"]) {
+    expect((await fetch(`${url}?view=summary`, { headers })).status).toBe(200);
+    for (const query of ["offset=-1", "offset=0.5", "offset=NaN", "limit=101", "limit=0", "view=invalid"]) {
       expect((await fetch(`${url}?${query}`, { headers })).status).toBe(400);
     }
     for (const id of ["missing", "child"]) expect((await fetch(`${listeners.loopback.url}/api/v1/joi/goals/${id}/detail`, { headers })).status).toBe(404);

@@ -1,5 +1,6 @@
 import { MessageChannel, Worker } from "node:worker_threads";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
+import type { WorkbenchAgentListQuery, WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiHomeFeedDto } from "../../../shared/joi.js";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../../../shared/goal-artifacts.js";
@@ -8,6 +9,7 @@ import { WorkerRpc } from "../runtime/worker-rpc.js";
 export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
   readonly #worker: Worker;
   readonly #rpc: WorkerRpc;
+  readonly #agentPages = new Map<string, ReturnType<WorkbenchAgentRepository["listAgents"]>>();
   #closePromise: Promise<void> | undefined;
 
   constructor(databasePath: string, workerUrl = new URL("./home-feed-read-worker.js", import.meta.url)) {
@@ -19,6 +21,16 @@ export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
   }
 
   load(now: Date): Promise<JoiHomeFeedDto> { return this.#rpc.call("load", now); }
+  listAgents(query: WorkbenchAgentListQuery): ReturnType<WorkbenchAgentRepository["listAgents"]> {
+    const key = JSON.stringify([query.workbenchId, query.goalId, query.cursor, query.limit]);
+    const active = this.#agentPages.get(key);
+    if (active !== undefined) return active;
+    const request = this.#rpc.call<Awaited<ReturnType<WorkbenchAgentRepository["listAgents"]>>>("listAgents", query)
+      .finally(() => { this.#agentPages.delete(key); });
+    this.#agentPages.set(key, request);
+    return request;
+  }
+
 
   loadGoalDetail(goalId: string, page: JoiGoalDetailPage): Promise<JoiGoalDetailDto | null> {
     return this.#rpc.call("loadGoalDetail", { goalId, page });

@@ -1,6 +1,7 @@
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import type { RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
 import type { WorkbenchArtifactOpener } from "../application/ports/workbench-artifacts.js";
+import type { WorkbenchAgentRepository } from "../application/ports/workbench-agents.js";
 import { WorkbenchRegistryService } from "../application/joi/workbench-registry-service.js";
 import { WorkbenchChangeService } from "../application/joi/workbench-change-service.js";
 import { WorkbenchContextAssembler } from "../application/joi/workbench-context-assembler.js";
@@ -20,6 +21,7 @@ export function wireWorkbenches(input: {
   partnerStack: PartnerBundle;
   persistence: PersistenceBundle;
   artifactOpener: WorkbenchArtifactOpener;
+  agentListRepository?: Pick<WorkbenchAgentRepository, "listAgents">;
 }) {
   const { artifactOpener, clock, diagnostics, ids, partnerStack, persistence } = input;
   const workRepository = persistence.workPlanRepository;
@@ -39,7 +41,10 @@ export function wireWorkbenches(input: {
       recovery: workRepository,
       repository: workRepository,
     }),
-    workbenchAgents: new WorkbenchAgentService({ clock, opener: artifactOpener, repository: persistence.workbenchAgentRepository }),
+    workbenchAgents: new WorkbenchAgentService({
+      clock, opener: artifactOpener, repository: persistence.workbenchAgentRepository,
+      ...(input.agentListRepository === undefined ? {} : { listRepository: input.agentListRepository }),
+    }),
     workbenchChanges: new WorkbenchChangeService({ clock, ids, repository: persistence.workbenchChangeRepository }),
     workbenchContextAssembler: new WorkbenchContextAssembler({
       clock,

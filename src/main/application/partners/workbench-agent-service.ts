@@ -4,10 +4,15 @@ import type { Clock } from "../ports/runtime-store.js";
 import { DomainError } from "../../domain/errors.js";
 
 export class WorkbenchAgentService {
-  constructor(private readonly dependencies: { clock: Clock; opener?: WorkbenchArtifactOpener; repository: WorkbenchAgentRepository }) {}
+  constructor(private readonly dependencies: {
+    clock: Clock;
+    opener?: WorkbenchArtifactOpener;
+    repository: WorkbenchAgentRepository;
+    listRepository?: Pick<WorkbenchAgentRepository, "listAgents">;
+  }) {}
 
   list(input: { workbenchId: string; cursor?: string; goalId?: string; limit?: number }) {
-    return this.dependencies.repository.listAgents({
+    return (this.dependencies.listRepository ?? this.dependencies.repository).listAgents({
       workbenchId: input.workbenchId,
       ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       ...(input.goalId === undefined ? {} : { goalId: input.goalId }),

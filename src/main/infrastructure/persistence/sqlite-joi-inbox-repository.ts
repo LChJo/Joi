@@ -52,7 +52,7 @@ function retireGoalQuestions(connection: DatabaseSync, goalId: string, status: "
 }
 
 /** Lazy upgrade preserves the old gate/action identity; activation starts a fresh deadline. */
-export function importLegacyGoalQuestions(connection: DatabaseSync, now: string, goalId?: string): void {
+function importLegacyGoalQuestions(connection: DatabaseSync, now: string, goalId?: string): void {
   const rows = connection.prepare(`SELECT i.input_id, i.clarification_prompt, gate.question_id, gate.question_version,
       action.action_id, action.run_id, action.work_id
     FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
@@ -1372,6 +1372,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           .run(now, inputId, completedAt);
       }
       recoverInterruptedGoalReviews(connection, now);
+      importLegacyGoalQuestions(connection, now);
     });
   }
 

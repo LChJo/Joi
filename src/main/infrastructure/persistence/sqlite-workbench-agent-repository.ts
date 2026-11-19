@@ -6,7 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
 import type { AgentConversationEntryDto, AgentConversationMessagesDto, AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
-import type { WorkbenchAgentConversationQuery, WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
+import type { WorkbenchAgentConversationQuery, WorkbenchAgentListQuery, WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
 import { stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
@@ -122,6 +122,23 @@ function decodeCursor(cursor: string | undefined): number {
   return parsed;
 }
 
+interface AgentPagePosition {
+  offset?: number;
+  before?: [string, string];
+}
+
+function agentPagePosition(input: WorkbenchAgentListQuery): AgentPagePosition {
+  if (input.cursor === undefined) return {};
+  const decoded = Buffer.from(input.cursor, "base64url").toString("utf8");
+  if (!decoded.startsWith("[")) return { offset: decodeCursor(input.cursor) };
+  try {
+    const value: unknown = JSON.parse(decoded);
+    if (Array.isArray(value) && value.length === 4 && value[0] === input.workbenchId && value[1] === (input.goalId ?? null)
+      && typeof value[2] === "string" && typeof value[3] === "string") return { before: [value[2], value[3]] };
+  } catch { /* The cursor must carry a complete boundary for this list. */ }
+  throw new DomainError("workbench_agent_cursor_invalid", "Agent cursor is invalid.");
+}
+
 function historyBoundary(cursor: string | undefined): [number, string] | undefined {
   if (cursor === undefined) return undefined;
   try {
@@ -131,56 +148,50 @@ function historyBoundary(cursor: string | undefined): [number, string] | undefin
   throw new DomainError("workbench_agent_cursor_invalid", "Agent cursor is invalid.");
 }
 
-function cardSelect(goalScoped: boolean): string {
+function cardSelect(goalScoped: boolean, paged = false): string {
   return `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
   pr.updated_at AS run_updated_at,
-  (SELECT e.phase FROM local_work_execution e JOIN dispatch_attempts ea ON ea.dispatch_attempt_id = e.dispatch_attempt_id
+  (SELECT e.phase FROM dispatch_attempts ea CROSS JOIN local_work_execution e ON ea.dispatch_attempt_id = e.dispatch_attempt_id
     WHERE ea.instance_id = s.backing_id AND s.backing_kind = 'LOCAL_INSTANCE' ORDER BY ea.created_at DESC LIMIT 1) AS execution_phase,
-  (SELECT e.wait_reason FROM local_work_execution e JOIN dispatch_attempts ea ON ea.dispatch_attempt_id = e.dispatch_attempt_id
+  (SELECT e.wait_reason FROM dispatch_attempts ea CROSS JOIN local_work_execution e ON ea.dispatch_attempt_id = e.dispatch_attempt_id
     WHERE ea.instance_id = s.backing_id AND s.backing_kind = 'LOCAL_INSTANCE' ORDER BY ea.created_at DESC LIMIT 1) AS wait_reason,
   CASE
     WHEN s.backing_kind = 'LOCAL_INSTANCE' AND EXISTS (
-      SELECT 1 FROM partner_runs lr JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+      SELECT 1 FROM dispatch_attempts la CROSS JOIN partner_runs lr ON la.dispatch_attempt_id = lr.dispatch_attempt_id
       WHERE la.instance_id = s.backing_id AND lr.status = 'RUNNING'
     ) THEN 'RUNNING'
     WHEN s.backing_kind = 'LOCAL_INSTANCE' AND EXISTS (
-      SELECT 1 FROM partner_runs lr JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+      SELECT 1 FROM dispatch_attempts la CROSS JOIN partner_runs lr ON la.dispatch_attempt_id = lr.dispatch_attempt_id
       WHERE la.instance_id = s.backing_id AND lr.status IN ('WAITING_INPUT', 'WAITING_AUTH')
     ) THEN 'WAITING_INPUT'
     ELSE NULL
   END AS execution_status,
-  (SELECT MAX(lr.updated_at) FROM partner_runs lr
-    JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+  (SELECT MAX(lr.updated_at) FROM dispatch_attempts la
+    CROSS JOIN partner_runs lr ON la.dispatch_attempt_id = lr.dispatch_attempt_id
     WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at,
-  ${goalScoped ? `(SELECT CASE WHEN gw.status = 'CANCELED' THEN 'CANCELED' ELSE gr.status END FROM partner_runs gr
-    JOIN dispatch_attempts ga ON ga.dispatch_attempt_id = gr.dispatch_attempt_id
-    JOIN work_items gw ON gw.work_id = gr.work_id
-    WHERE gw.input_id = ? AND (
-      (s.backing_kind = 'LOCAL_INSTANCE' AND ga.instance_id = s.backing_id)
-      OR (s.backing_kind = 'A2A_RUN' AND gr.run_id = s.backing_id)
-    )
-    ORDER BY CASE WHEN gr.status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH') THEN 0 ELSE 1 END,
-      gr.created_at DESC, gr.run_id DESC LIMIT 1)` : "NULL"} AS goal_execution_status,
-  (SELECT CASE WHEN qr.status = 'FAILED' AND result.is_authoritative = 1 AND result.is_late = 0
+  ${goalScoped ? "CASE WHEN goal_work.status = 'CANCELED' THEN 'CANCELED' ELSE chosen.status END" : "NULL"} AS goal_execution_status,
+  CASE WHEN chosen.status = 'FAILED' AND result.is_late = 0
       AND verification.status = 'FAILED'
       AND (length(trim(body.body, char(9) || char(10) || char(13) || ' ')) > 0 OR json_array_length(result.artifacts_json) > 0)
-      THEN 1 ELSE 0 END
-    FROM partner_runs qr JOIN dispatch_attempts qa ON qa.dispatch_attempt_id = qr.dispatch_attempt_id
-    JOIN work_items qw ON qw.work_id = qr.work_id
-    LEFT JOIN work_results result ON result.run_id = qr.run_id AND result.is_authoritative = 1
-    LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
-    LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id
-    WHERE ${goalScoped ? "qw.input_id = ? AND" : ""} (
-      (s.backing_kind = 'LOCAL_INSTANCE' AND qa.instance_id = s.backing_id)
-      OR (s.backing_kind = 'A2A_RUN' AND qr.run_id = s.backing_id))
-    ORDER BY CASE WHEN qr.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH') THEN 0 ELSE 1 END,
-      qr.created_at DESC, qr.run_id DESC LIMIT 1) AS incomplete_result
-  FROM workbench_agent_sessions s
+      THEN 1 ELSE 0 END AS incomplete_result
+  FROM ${paged ? "agent_page" : "workbench_agent_sessions"} s
   JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
   LEFT JOIN partner_instances i ON s.backing_kind = 'LOCAL_INSTANCE' AND i.instance_id = s.backing_id
-  LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id`;
+  LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id
+  LEFT JOIN partner_runs chosen ON chosen.run_id = CASE s.backing_kind WHEN 'A2A_RUN' THEN pr.run_id ELSE (
+    SELECT qr.run_id FROM dispatch_attempts qa
+    CROSS JOIN partner_runs qr ON qr.dispatch_attempt_id = qa.dispatch_attempt_id
+    ${goalScoped ? "CROSS JOIN work_items qw ON qw.work_id = qr.work_id" : ""}
+    WHERE qa.instance_id = s.backing_id ${goalScoped ? "AND qw.input_id = ?" : ""}
+    ORDER BY CASE WHEN qr.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH') THEN 0 ELSE 1 END,
+      qr.created_at DESC, qr.run_id DESC LIMIT 1
+  ) END
+  ${goalScoped ? "LEFT JOIN work_items goal_work ON goal_work.work_id = chosen.work_id" : ""}
+  LEFT JOIN work_results result ON chosen.status = 'FAILED' AND result.run_id = chosen.run_id AND result.is_authoritative = 1
+  LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
+  LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id`;
 }
 
 const goalMembership = ` AND EXISTS (
@@ -190,17 +201,29 @@ const goalMembership = ` AND EXISTS (
     SELECT 1 FROM partner_runs pr JOIN work_items pw ON pw.work_id = pr.work_id
       WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`;
 
-function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, offset: number, agentId?: string, goalId?: string): Row[] {
-  const clause = `${agentId === undefined ? "" : " AND s.agent_id = ?"}${goalId === undefined ? "" : goalMembership}`;
-  const values: (number | string)[] = [];
-  if (goalId !== undefined) values.push(goalId, goalId);
-  values.push(workbenchId);
-  if (agentId !== undefined) values.push(agentId);
-  if (goalId !== undefined) values.push(goalId, goalId);
-  values.push(limit, offset);
-  const rows = connection.prepare(`${cardSelect(goalId !== undefined)}
-    WHERE s.workbench_id = ? AND s.dismissed_at IS NULL${clause}
-    ORDER BY s.created_at DESC, s.agent_id DESC LIMIT ? OFFSET ?`).all(...values) as Row[];
+// Select the goal's session IDs and page boundary before projecting run statuses or result evidence.
+const goalAgentBackings = `SELECT 'LOCAL_INSTANCE', da.instance_id FROM work_items w
+  CROSS JOIN dispatch_attempts da ON da.work_id = w.work_id
+  WHERE w.input_id = ? AND da.instance_id IS NOT NULL
+  UNION SELECT 'A2A_RUN', pr.run_id FROM work_items w
+  CROSS JOIN partner_runs pr ON pr.work_id = w.work_id WHERE w.input_id = ?`;
+
+function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, options: AgentPagePosition & { agentId?: string; goalId?: string } = {}): Row[] {
+  const { agentId, goalId, before, offset = 0 } = options;
+  const boundary = before === undefined ? "" : " AND (s.created_at, s.agent_id) < (?, ?)";
+  const visible = "s.workbench_id = ? AND s.dismissed_at IS NULL";
+  const order = "ORDER BY s.created_at DESC, s.agent_id DESC";
+  const pagination = [ ...(before ?? []), limit, offset ];
+  const rows = goalId !== undefined && agentId === undefined
+    ? connection.prepare(`WITH backings(kind,id) AS (${goalAgentBackings}), agent_page AS MATERIALIZED (
+        SELECT s.* FROM backings b CROSS JOIN workbench_agent_sessions s ON s.backing_kind=b.kind AND s.backing_id=b.id
+        WHERE ${visible}${boundary} ${order} LIMIT ? OFFSET ?
+      ) ${cardSelect(true, true)} ${order}`).all(goalId, goalId, workbenchId, ...pagination, goalId)
+    : connection.prepare(`${cardSelect(goalId !== undefined)} WHERE ${visible}${agentId === undefined ? "" : " AND s.agent_id = ?"}
+      ${goalId === undefined ? "" : goalMembership}${boundary} ${order} LIMIT ? OFFSET ?`).all(
+      ...(goalId === undefined ? [] : [goalId]), workbenchId, ...(agentId === undefined ? [] : [agentId]),
+      ...(goalId === undefined ? [] : [goalId, goalId]), ...pagination,
+    );
   return rows.map((row) => ({
     ...row,
     last_activity_at: typeof row.last_used_at === "string" ? row.last_used_at
@@ -251,12 +274,17 @@ function readConversationMessages(connection: DatabaseSync, input: WorkbenchAgen
 export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
-  async listAgents(input: { workbenchId: string; cursor?: string; goalId?: string; limit: number }): Promise<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }> {
+  async listAgents(input: WorkbenchAgentListQuery): ReturnType<WorkbenchAgentRepository["listAgents"]> {
     const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
-    const offset = decodeCursor(input.cursor);
-    const rows = this.database.transaction((connection) => cardRows(connection, input.workbenchId, limit + 1, offset, undefined, input.goalId));
+    const position = agentPagePosition(input);
+    const rows = this.database.transaction(connection => cardRows(connection, input.workbenchId, limit + 1, {
+      ...position, ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
+    }));
     const items = rows.slice(0, limit).map(mapCard);
-    return { items, ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) };
+    const last = items.at(-1);
+    if (rows.length <= limit || last === undefined) return { items };
+    const nextCursor = Buffer.from(JSON.stringify([input.workbenchId, input.goalId ?? null, last.createdAt, last.agentId])).toString("base64url");
+    return { items, nextCursor };
   }
 
   async append(agentId: string, entries: NormalizedAgentConversationEntry[]): Promise<void> {
@@ -320,7 +348,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
   async revealToolTrace(input: WorkbenchToolTraceRevealInput): Promise<WorkbenchToolTraceDto> {
     const row = this.database.transaction((connection) => {
       // Same gate shape as resolveArtifact: prove the agent belongs to this workbench first.
-      const card = cardRows(connection, input.workbenchId, 1, 0, input.agentId)[0];
+      const card = cardRows(connection, input.workbenchId, 1, { agentId: input.agentId })[0];
       if (card === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
       // The join to a visible TOOL_CALL entry is the authorization link: a trace is only
       // readable while its call is still part of this agent's conversation.
@@ -346,7 +374,9 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
   async conversation(input: WorkbenchAgentConversationQuery): Promise<AgentConversationPageDto> {
     const window = conversationWindow(input);
     return this.database.transaction((connection) => {
-      const cardRow = cardRows(connection, input.workbenchId, 1, 0, input.agentId, input.goalId)[0];
+      const cardRow = cardRows(connection, input.workbenchId, 1, { agentId: input.agentId,
+        ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
+      })[0];
       if (cardRow === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
       return { agent: mapCard(cardRow), ...readConversationMessages(connection, input, window) };
     });
@@ -370,7 +400,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
       let artifact: StoredConversationArtifact | undefined;
       let workId: string | undefined;
       if (input.source === "AGENT") {
-        const card = cardRows(connection, input.workbenchId, 1, 0, input.sourceId)[0];
+        const card = cardRows(connection, input.workbenchId, 1, { agentId: input.sourceId })[0];
         if (card === undefined) return undefined;
         const row = connection.prepare(`SELECT e.artifact_json, pr.work_id FROM workbench_agent_conversation_entries e
           LEFT JOIN partner_runs pr ON pr.run_id = e.run_id
@@ -420,7 +450,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
 
   async dismiss(input: { agentId: string; workbenchId: string; dismissedAt: string }): Promise<void> {
     this.database.transaction((connection) => {
-      const row = cardRows(connection, input.workbenchId, 1, 0, input.agentId)[0];
+      const row = cardRows(connection, input.workbenchId, 1, { agentId: input.agentId })[0];
       if (row === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
       if (row.session_policy !== "EPHEMERAL") throw new DomainError("workbench_agent_resident_delete_forbidden", "Resident Agents cannot be deleted.");
       if (!terminal(mapStatus(row))) throw new DomainError("workbench_agent_not_terminal", "Agent is still running.");

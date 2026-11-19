@@ -4,6 +4,40 @@ import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persiste
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("Workbench Agent and joi home projections", () => {
+  it("keeps an Agent page boundary when a newer session arrives and accepts existing offset cursors", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const bench = await fixture.workbenchRegistry.create({ name: "Fixture", personaSummary: "fixture", projectLabel: "fixture", scopeSummary: "fixture" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "Fixture", kind: "local-pi", skills: [], tools: [] });
+      const add = () => fixture.instances.ensure({ workbenchId: bench.workbenchId, partnerId: partner.partnerId, sessionPolicy: "EPHEMERAL" });
+      const oldest = await add();
+      fixture.clock.advance(1000);
+      const first = await add();
+      const repository = new SqliteWorkbenchAgentRepository(fixture.database);
+      const request = { workbenchId: bench.workbenchId, limit: 1 };
+      const page = await repository.listAgents(request);
+      expect(page.items.map(item => item.agentId)).toEqual([first.instanceId]);
+      expect(page.nextCursor).toBeDefined();
+      fixture.clock.advance(1000);
+      await add();
+      const cursor = page.nextCursor ?? "";
+      expect((await repository.listAgents({ ...request, cursor })).items.map(item => item.agentId)).toEqual([oldest.instanceId]);
+      await expect(repository.listAgents({ ...request, cursor, goalId: "other" })).rejects.toMatchObject({ code: "workbench_agent_cursor_invalid" });
+      const legacy = Buffer.from("1").toString("base64url");
+      expect((await repository.listAgents({ ...request, cursor: legacy })).items.map(item => item.agentId)).toEqual([first.instanceId]);
+    } finally { await fixture.close(); }
+  });
+
+  it("indexes historical dispatch attempts by local instance", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const plan = fixture.database.transaction(db => db.prepare(`EXPLAIN QUERY PLAN
+        SELECT dispatch_attempt_id FROM dispatch_attempts WHERE instance_id=? ORDER BY created_at DESC LIMIT 1`).all("fixture"));
+      expect(plan).toHaveLength(1);
+      expect(plan[0]?.detail).toContain("instance_id=?");
+    } finally { await fixture.close(); }
+  });
+
   it("hides an old queued recovery whose canceled goal has already been dismissed", async () => {
     const fixture = await createRuntimeFixture();
     try {

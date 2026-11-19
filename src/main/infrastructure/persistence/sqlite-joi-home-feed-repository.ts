@@ -19,7 +19,6 @@ import { queryGoalResult, queryGoalResults } from "./sqlite-goal-result-history.
 import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
 import type { UserQuestionRecord } from "../../application/ports/user-questions.js";
 import { questionDto } from "../../application/joi/user-question-service.js";
-import { importLegacyGoalQuestions } from "./sqlite-joi-inbox-repository.js";
 import { coverageSynthesisSql } from "./sqlite-goal-result-synthesis.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -300,7 +299,6 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
 
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
-      importLegacyGoalQuestions(connection, now.toISOString());
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.archived_at, i.clarification_reason_code, i.clarification_prompt,
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,

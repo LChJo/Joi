@@ -13,6 +13,35 @@ function page(offset = 0): JoiGoalDetailDto {
   };
 }
 
+it("polls the summary and leaves loaded map pages alone until their revision changes", async () => {
+  vi.useFakeTimers();
+  try {
+    const api = new DigitalLifeApi("");
+    let revision = 2;
+    const load = vi.spyOn(api, "joiGoalDetail").mockImplementation((_id, options) => {
+      const result = page(options?.offset);
+      if (result.harness !== undefined) {
+        result.harness.revision = revision;
+        if (options?.view === "summary") result.harness.paths = [];
+      }
+      return Promise.resolve(result);
+    });
+    const { result, unmount } = renderHook(() => useGoalDetail(api, "g"));
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(async () => { result.current.loadMore(); await vi.advanceTimersByTimeAsync(1); });
+    expect(result.current.detail?.harness?.paths).toHaveLength(2);
+    load.mockClear();
+    await act(() => vi.advanceTimersByTimeAsync(1600));
+    expect(load.mock.calls).toEqual([["g", { view: "summary" }]]);
+    expect(result.current.detail?.harness?.paths).toHaveLength(2);
+    revision++;
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+    expect(result.current.detail?.harness?.revision).toBe(revision);
+    expect(result.current.detail?.harness?.paths).toHaveLength(2);
+    unmount();
+  } finally { vi.useRealTimers(); }
+});
+
 it("loads further pages and retains the last complete map on a failed refresh until retry succeeds", async () => {
   const api = new DigitalLifeApi("");
   let unavailable = false;
@@ -22,7 +51,7 @@ it("loads further pages and retains the last complete map on a failed refresh un
   await waitFor(() => expect(result.current.detail?.harness?.paths).toHaveLength(1));
   act(() => result.current.loadMore());
   await waitFor(() => expect(result.current.detail?.harness?.paths).toHaveLength(2));
-  expect(load).toHaveBeenCalledWith("g", { offset: 50 });
+  expect(load).toHaveBeenCalledWith("g", { offset: 50, view: "map" });
   expect(result.current.detail?.nextOffset).toBeUndefined();
   unavailable = true;
   act(() => result.current.retry());
@@ -52,6 +81,21 @@ it.each(["revision", "pathCount"] as const)("discards a mixed-%s page set and re
   changed = false;
   act(() => result.current.retry());
   await waitFor(() => expect(result.current.detail?.harness?.paths).toHaveLength(2));
+  unmount();
+});
+
+it("loads older map pages while linked Work statuses are changing", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "joiGoalDetail").mockImplementation((_id, options) => {
+    const result = page(options?.offset);
+    Object.assign(result.harness ?? {}, { pathOrderRevision: 1, detailRevision: options?.offset === undefined ? 1 : 2 });
+    return Promise.resolve(result);
+  });
+  const { result, unmount } = renderHook(() => useGoalDetail(api, "g"));
+  await waitFor(() => expect(result.current.detail?.harness?.paths).toHaveLength(1));
+  act(() => result.current.loadMore());
+  await waitFor(() => expect(result.current.detail?.harness?.paths).toHaveLength(2));
+  expect(result.current.failed).toBe(false);
   unmount();
 });
 

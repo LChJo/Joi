@@ -5,6 +5,7 @@ import { ResultExportMenu } from './ResultExportMenu';
 import { GoalResultHistory } from './GoalResultHistory';
 import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
+import { useWorkbenchAgentPage } from "./useWorkbenchAgentPage.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
@@ -677,6 +678,14 @@ function formatWorkbenchUpdated(iso: string): string {
   return new Date(iso).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+function AgentPageControls({ page }: { page: ReturnType<typeof useWorkbenchAgentPage> }) {
+  if (!page.hasPrevious && !page.hasNext) return null;
+  return <div className="joi-artifact-paging">
+    <button className="button ghost" disabled={page.busy || !page.hasPrevious} onClick={page.previous} type="button">{t("common.previousPage")}</button>
+    <button className="button ghost" disabled={page.busy || !page.hasNext} onClick={page.next} type="button">{t("common.nextPage")}</button>
+  </div>;
+}
+
 export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLifeApi; initialWorkbenchId?: string }) {
   useI18n();
   const [removing, setRemoving] = useState<{ workbenchId: string; name: string } | null>(null);
@@ -692,37 +701,27 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
   }, [removing]);
   const [workbenches, setWorkbenches] = useState<WorkbenchDto[]>([]);
   const [detail, setDetail] = useState<WorkbenchDetailDto | null>(null);
-  const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto | null>(null);
   const [tab, setTab] = useState<"agents" | "context" | "evolution">("agents");
+  const agentPage = useWorkbenchAgentPage(api, {
+    ...(detail === null ? {} : { workbenchId: detail.workbenchId }), enabled: tab === "agents" && selectedAgent === null,
+  });
+  const agents = agentPage.items;
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useNotice();
   const load = useCallback(async () => setWorkbenches((await api.listWorkbenches()).items), [api]);
-  const loadAgents = useCallback(async (workbenchId: string) => {
-    try {
-      const page = await api.listWorkbenchAgents(workbenchId, { limit: 100 });
-      setAgents(Array.isArray(page.items) ? page.items : []);
-    }
-    catch { setAgents([]); }
-  }, [api]);
   const open = useCallback(async (workbenchId: string, nextTab: "agents" | "context" | "evolution" = "agents") => {
     try {
       setDetail(await api.getWorkbench(workbenchId));
       setSelectedAgent(null); setTab(nextTab); setNotice(null);
-      await loadAgents(workbenchId);
     } catch (error) { setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("home.couldNotLoadTheWorkbenchContext")); }
-  }, [api, loadAgents, setNotice]);
+  }, [api, setNotice]);
   useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice(noticeMessage("home.couldNotLoadTheWorkbenchList"))), 0); return () => clearTimeout(timer); }, [load, setNotice]);
   useEffect(() => {
     if (initialWorkbenchId === undefined) return;
     const timer = setTimeout(() => void open(initialWorkbenchId), 0);
     return () => clearTimeout(timer);
   }, [initialWorkbenchId, open]);
-  useEffect(() => {
-    if (detail === null || selectedAgent !== null) return undefined;
-    const timer = setInterval(() => void loadAgents(detail.workbenchId), 1_500);
-    return () => clearInterval(timer);
-  }, [detail, loadAgents, selectedAgent]);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const field = (name: string) => { const value = form.get(name); return typeof value === "string" ? value.trim() : ""; };
@@ -749,7 +748,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
   };
   const removeAgent = async (agent: WorkbenchAgentCardDto) => {
     if (detail === null) return;
-    try { await api.deleteWorkbenchAgent(detail.workbenchId, agent.agentId); await loadAgents(detail.workbenchId); }
+    try { await api.deleteWorkbenchAgent(detail.workbenchId, agent.agentId); agentPage.refresh(); }
     catch (error) { setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("home.theAgentCouldNotBeDeleted")); }
   };
   const requestRemoval = (workbench: { workbenchId: string; name: string }) => {
@@ -761,7 +760,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     try {
       await api.archiveWorkbench(removing.workbenchId);
       setWorkbenches((items) => items.filter((item) => item.workbenchId !== removing.workbenchId));
-      setDetail(null); setAgents([]); setSelectedAgent(null); setRemoving(null);
+      setDetail(null); setSelectedAgent(null); setRemoving(null);
       setNotice(noticeMessage("home.workbenchRemovedHistoryAndWorkingDirectoryArePreserved"));
     } catch (error) {
       setRemoveError(error instanceof ApiError && error.code === "workbench_change_active_work"
@@ -784,7 +783,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
       {removeError === null ? null : <p role="alert">{removeError}</p>}
       <div className="row-actions"><button className="button ghost" disabled={removeBusy} onClick={() => setRemoving(null)} type="button">{t("common.cancel")}</button><button className="button danger-text" disabled={removeBusy} onClick={() => void removeWorkbench()} type="button">{removeBusy ? t("home.removing") : t("home.confirmRemoval")}</button></div>
     </section></div>}
-    <header className="page-title-row"><div><p className="eyebrow">{t("home.workbenchAgent")}</p><h1>{detail?.name ?? t("common.workbenches")}</h1><p>{detail === null ? t("home.eachWorkbenchHoldsALongTermContextAgentsAre") : t("home.allAgentsStartedByThisWorkbenchRemainHereUntil")}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? t("home.collapse") : t("home.createWorkbench")}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">{t("home.removeWorkbench")}</button><button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">{t("home.backToWorkbenches")}</button></div>}</header>
+    <header className="page-title-row"><div><p className="eyebrow">{t("home.workbenchAgent")}</p><h1>{detail?.name ?? t("common.workbenches")}</h1><p>{detail === null ? t("home.eachWorkbenchHoldsALongTermContextAgentsAre") : t("home.allAgentsStartedByThisWorkbenchRemainHereUntil")}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? t("home.collapse") : t("home.createWorkbench")}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">{t("home.removeWorkbench")}</button><button className="button ghost" onClick={() => setDetail(null)} type="button">{t("home.backToWorkbenches")}</button></div>}</header>
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>{t("automation.name")}<input name="name" placeholder={t("home.workCategoryEGFrontendDebugging")} required /></label><label>{t("home.projectName")}<input name="projectLabel" placeholder={t("home.workEnvironmentProjectEGDigitalLife")} required /></label><label>{t("home.responsibilities")}<textarea name="scopeSummary" placeholder={t("home.describeTheSharedEnvironmentAndBoundariesOfThisWork")} required rows={4} /></label><label>{t("home.personaSummary")}<textarea name="personaSummary" placeholder={t("home.describeLongTermWorkConstraintsRatherThanAnIndividual")} required rows={4} /></label><button className="button primary" type="submit">{t("home.saveWorkbench")}</button></form> : null}
     {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>{t("home.noWorkbenchesYet")}</h2><p>{t("home.tellJoiYourGoalOnTheHomePageIt")}</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button aria-label={t("home.openWorkbenchValue", { p0: workbench.name })} className="workbench-catalog-open" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-catalog-head"><span aria-hidden="true" className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong></span><span className="workbench-catalog-scope" title={workbench.scopeSummary}>{workbench.scopeSummary}</span></button><footer className="workbench-catalog-footer"><time dateTime={workbench.updatedAt} title={new Date(workbench.updatedAt).toLocaleString(currentLocale())}>{t("home.updated")} {formatWorkbenchUpdated(workbench.updatedAt)}</time><span className="workbench-catalog-actions"><button aria-label={t("home.manageContextValue", { p0: workbench.name })} className="workbench-catalog-manage" onClick={() => void open(workbench.workbenchId, "context")} type="button">{t("home.manageContext")}</button><button aria-label={t("home.removeWorkbenchValue", { p0: workbench.name })} className="button danger-text workbench-catalog-remove" onClick={() => requestRemoval(workbench)} type="button">{t("home.removeWorkbench")}</button></span></footer></article>)}</div>) : <>
       <article aria-label={t("home.workspace")} className="workbench-workspace-bar">
@@ -795,8 +794,12 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
         </div>
         <div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">{t("home.bindExistingDirectory")}</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">{t("home.useDefaultRunDirectory")}</button></div>
       </article>
-      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">{t("home.contextSettings")}</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">{t("home.automaticEvolution")}</button></div>
-      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>{t("home.noAgentsYet")}</h2><p>{t("home.agentsAppearHereWhenJoiAssignsWorkToThis")}</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={t("home.viewDetailsForValue", { p0: agent.partnerName })} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${(agent.resultAssessment === "INSUFFICIENT" && agent.status === "FAILED" ? "insufficient" : agent.status.toLowerCase())}`}>{agentExecutionLabel(agent)}</i><time>{new Date(agent.lastActivityAt).toLocaleString(currentLocale())}</time></button>{agent.canDelete ? <button aria-label={t("home.deleteValue", { p0: agent.partnerName })} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">{t("common.delete")}</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
+      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent {agentPage.loaded && !agentPage.hasPrevious && !agentPage.hasNext ? <span>{agents.length}</span> : null}</button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">{t("home.contextSettings")}</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">{t("home.automaticEvolution")}</button></div>
+      {tab === "agents" ? <div className="workbench-agent-list" aria-busy={agentPage.busy}>
+        <AgentPageControls page={agentPage} />
+        {agentPage.failed ? <p className="inline-notice danger" role="alert">{t("common.theRequestFailed")} <button className="button ghost" disabled={agentPage.busy} onClick={agentPage.refresh} type="button">{t("common.retry")}</button></p> : null}
+        {agentPage.loaded && agents.length === 0 ? <div className="plain-empty"><h2>{t("home.noAgentsYet")}</h2><p>{t("home.agentsAppearHereWhenJoiAssignsWorkToThis")}</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={t("home.viewDetailsForValue", { p0: agent.partnerName })} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${(agent.resultAssessment === "INSUFFICIENT" && agent.status === "FAILED" ? "insufficient" : agent.status.toLowerCase())}`}>{agentExecutionLabel(agent)}</i><time>{new Date(agent.lastActivityAt).toLocaleString(currentLocale())}</time></button>{agent.canDelete ? <button aria-label={t("home.deleteValue", { p0: agent.partnerName })} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">{t("common.delete")}</button> : null}</article>)}
+      </div> : tab === "context" ? <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>{t("automation.name")}<input defaultValue={detail.name} name="name" required /></label><label>{t("home.projectName")}<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>{t("home.responsibilities")}<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>{t("home.submitANewPersonaRevisionLeaveBlankToKeep")}<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">{t("home.saveContext")}</button></form>
         <article className="context-card"><h3>{t("home.activeWork")}</h3>{detail.activeWork.length === 0 ? <p>{t("home.noUnfinishedWorkRightNow")}</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {agentExecutionLabel(work)}</li>)}</ul>}</article>
         <article className="context-card"><h3>{t("home.recentResultSummaries")}</h3>{detail.recentOutcomes.length === 0 ? <p>{t("home.noGoalLevelSummariesYet")}</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString(currentLocale())}</small></li>)}</ul>}</article>
@@ -1363,28 +1366,15 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   const detailState = useGoalDetail(api, goal.goalId);
   const artifactVersion = goal.resultId ?? goal.completedAt ?? String(goal.artifactCount ?? goal.artifacts?.length ?? 0);
   const [showHistory, setShowHistory] = useState(false);
-  const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [notice, setNotice] = useNotice();
-  const loadAgents = useCallback(async () => {
-    try {
-      const page = await api.listWorkbenchAgents(goal.workbench.workbenchId, { goalId: goal.goalId, limit: 100 });
-      const items = Array.isArray(page.items) ? page.items : [];
-      setAgents(items);
-      setNotice(null);
-      setSelectedAgentId((current) => current !== null && items.some((agent) => agent.agentId === current)
-        ? current
-        : (items.find((agent) => agent.status === initialAgentStatus)?.agentId ?? items[0]?.agentId ?? null));
-    } catch {
-      setNotice(noticeMessage("home.couldNotLoadAgentsForThisGoal"));
-    }
-  }, [api, goal.workbench.workbenchId, goal.goalId, setNotice, initialAgentStatus]);
-  useEffect(() => {
-    const initial = setTimeout(() => void loadAgents(), 0);
-    const interval = setInterval(() => void loadAgents().catch(() => undefined), 1_500);
-    return () => { clearTimeout(initial); clearInterval(interval); };
-  }, [loadAgents]);
-  const selectedAgent = agents.find((agent) => agent.agentId === selectedAgentId);
+  const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto>();
+  const agentPage = useWorkbenchAgentPage(api, {
+    workbenchId: goal.workbench.workbenchId, goalId: goal.goalId,
+    enabled: !showHistory && goal.workbench.workbenchId !== "", goalActive: !TERMINAL_GOAL_STATUSES.includes(goal.status),
+    onPage: items => setSelectedAgent(current => current === undefined
+      ? items.find(agent => agent.status === initialAgentStatus) ?? items[0]
+      : items.find(agent => agent.agentId === current.agentId) ?? current),
+  });
+  const agents = agentPage.items;
   useEffect(() => {
     if (showHistory) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onBack(); };
@@ -1421,14 +1411,15 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         <GoalRecoveryNotice goal={goal} />
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} key={artifactVersion} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} key={artifactVersion} /></article>}
-        <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
+        <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgent(agents.find(agent => agent.status === "FAILED") ?? selectedAgent)} />
         <GoalQuestionHistory questions={goal.questions} />
         {(goal.questions?.length ?? 0) > 0 && (goal.clarification === undefined || goal.clarification.reasonCode === "question_required") ? <QuestionQueue questions={goal.questions ?? []} onAnswer={async (id,input) => { const saved = await api.answerQuestion({kind:"GOAL",id:goal.goalId},id,input); onResolved(); return saved; }} /> : goal.clarification === undefined ? null : <ClarificationActions key={`${goal.clarification.questionId ?? "legacy"}:${String(goal.clarification.questionVersion)}`} api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
-        {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
+        {agentPage.failed ? <p className="inline-notice danger" role="alert">{t("home.couldNotLoadAgentsForThisGoal")} <button className="button ghost" disabled={agentPage.busy} onClick={agentPage.refresh} type="button">{t("common.retry")}</button></p> : null}
         <div className="joi-goal-detail-body">
-          <aside aria-label={t("home.agentsForThisGoal")} className="joi-goal-agents">
-            {agents.length === 0 ? <p className="plain-empty">{t("home.joiHasNotStartedAnyAgentsForThisGoal")}</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgentId} className={`joi-goal-agent ${agent.agentId === selectedAgentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgentId(agent.agentId)} type="button">
+          <aside aria-label={t("home.agentsForThisGoal")} aria-busy={agentPage.busy} className="joi-goal-agents">
+            <AgentPageControls page={agentPage} />
+            {agents.length === 0 && (agentPage.loaded || goal.workbench.workbenchId === "") ? <p className="plain-empty">{t("home.joiHasNotStartedAnyAgentsForThisGoal")}</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgent?.agentId} className={`joi-goal-agent ${agent.agentId === selectedAgent?.agentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgent(agent)} type="button">
               <span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span>
               <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine}</small></span>
               <i className={`agent-status ${(agent.resultAssessment === "INSUFFICIENT" && agent.status === "FAILED" ? "insufficient" : agent.status.toLowerCase())}`}>{agentExecutionLabel(agent)}</i>
@@ -1437,7 +1428,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
           <div className="joi-goal-stream">
             {selectedAgent === undefined
               ? <p className="content-state">{t("home.agentActivityAndResultsAppearHereOnceAnAgent")}</p>
-              : <AgentMessageStream agent={selectedAgent} api={api} workbenchId={goal.workbench.workbenchId} goalId={goal.goalId} key={`${goal.goalId}:${selectedAgent.agentId}`} live={selectedAgent.status === "RUNNING" || selectedAgent.status === "WAITING"} />}
+              : <AgentMessageStream agent={selectedAgent} api={api} workbenchId={goal.workbench.workbenchId} goalId={goal.goalId} key={`${goal.goalId}:${selectedAgent.agentId}`} live={agents.some(agent => agent.agentId === selectedAgent.agentId && (agent.status === "RUNNING" || agent.status === "WAITING"))} />}
           </div>
         </div>
       </div>

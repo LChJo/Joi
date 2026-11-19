@@ -371,6 +371,8 @@ export interface JoiGoalMapDetailDto {
   destination?: string;
   mapStatus: "ACTIVE" | "CLEARED";
   revision: number;
+  detailRevision?: number;
+  pathOrderRevision?: number;
   currentLayer: number;
   pathCount: number;
   decisionCount: number;
@@ -424,6 +426,7 @@ export interface JoiGoalDetailDto {
 export interface JoiGoalDetailPage {
   offset?: number;
   limit?: number;
+  view?: "summary" | "map";
 }
 
 export interface JoiGoalWorkDto {

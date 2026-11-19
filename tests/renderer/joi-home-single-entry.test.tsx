@@ -73,6 +73,38 @@ function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归�
   fireEvent.click(goalMenuItem(name));
 }
 
+it("keeps one Agent list request in flight and exposes the next page in the workbench", async () => {
+  vi.useFakeTimers();
+  try {
+    const api = new DigitalLifeApi("");
+    const bench = workbenchDto("wb-paged", "分页工作台");
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [bench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({
+      activeWork: [], workbenchId: bench.workbenchId, instances: [], name: bench.name, personaRevisionId: "persona",
+      projectLabel: "Project", recentOutcomes: [], recentResults: [], responsibility: "Fixture", updatedAt: bench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+    });
+    const card: WorkbenchAgentCardDto = {
+      agentId: "first", workbenchId: bench.workbenchId, canDelete: true, createdAt: bench.updatedAt, engine: "codex",
+      lastActivityAt: bench.updatedAt, partnerId: "partner", partnerName: "第一页搭档", sessionPolicy: "EPHEMERAL", status: "COMPLETED", transport: "LOCAL",
+    };
+    let release!: (reply: { items: WorkbenchAgentCardDto[]; nextCursor?: string }) => void;
+    const list = vi.spyOn(api, "listWorkbenchAgents")
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+      .mockResolvedValue({ items: [{ ...card, agentId: "second", partnerName: "第二页搭档" }] });
+    const { unmount } = render(<WorkbenchManager api={api} initialWorkbenchId={bench.workbenchId} />);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    await act(() => vi.advanceTimersByTimeAsync(4500));
+    expect(list).toHaveBeenCalledTimes(1);
+    await act(async () => { release({ items: [card], nextCursor: "older" }); await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(list).toHaveBeenLastCalledWith(bench.workbenchId, expect.objectContaining({ cursor: "older" }));
+    expect(screen.getByRole("button", { name: "查看 第二页搭档 详情" })).toBeInTheDocument();
+    unmount();
+  } finally { vi.useRealTimers(); }
+});
+
 it("ASK-09 keeps the home question compact, then moves its receipt to collapsed goal views", async () => {
   const api = new DigitalLifeApi("");
   vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
@@ -220,7 +252,7 @@ describe("Workbench context center", () => {
     render(<WorkbenchManager api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "打开工作台 发布 Workbench" }));
     expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
     // The workspace binding sits above the tab strip: visible regardless of tab, before any context drill-in.
     const workspaceBar = screen.getByRole("heading", { name: "工作区" }).closest("article");
     expect(workspaceBar).toHaveTextContent("release · BOUND · READY");
@@ -395,16 +427,9 @@ describe("Workbench context center", () => {
       .mockResolvedValue({ items: [agent] });
     vi.spyOn(api, "agentConversation").mockRejectedValue(new Error("offline"));
 
-    const view = render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
-    expect(await screen.findByRole("heading", { name: "还没有 Agent" })).toBeInTheDocument();
-    view.unmount();
-
-    vi.restoreAllMocks();
-    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
-    vi.spyOn(api, "getWorkbench").mockResolvedValue(detail);
-    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
-    vi.spyOn(api, "agentConversation").mockRejectedValue(new Error("offline"));
     render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("请求没成功。");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
     fireEvent.click(await screen.findByRole("button", { name: "查看 容错搭档 详情" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("没能读取 Agent 对话。");
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();

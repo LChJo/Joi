@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 109 adds the local instance dispatch lookup index and a goal map detail revision for path and linked Work status changes. The renderer uses that revision to refresh loaded map pages after a committed change.
+
 Migration 107 adds durable user questions. Migration 108 limits the active-question slot and due index to pending deliveries and links persisted conversation recoveries to their original turns. The migration loader reassigns draft Ask ledger entries by their exact filenames so the historical migrations at 104 and 105 can run while preserving existing questions and receipts.
 
 Migration 099 releases the unique execution slot for `PAUSED` method experiments whose checkpoint reason is `insufficient_samples`. Their candidate, trials, costs and private cases remain unchanged. RUNNING and all other PAUSED experiments still share one unique slot. The migration does not resume learning or replay work.

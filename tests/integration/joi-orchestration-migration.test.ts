@@ -33,6 +33,38 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
 
 describe("JOI-01 non-destructive migration", () => {
+  it("keeps existing map identity and business revision when adding paged read versions", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-read-upgrade-"));
+    const previousMigrations = path.join(root, "migrations");
+    const databasePath = path.join(root, "runtime.sqlite");
+    try {
+      await copyMigrationsThrough(previousMigrations, 108);
+      const previous = await openRuntimeDatabase({ databasePath, migrationsDirectory: previousMigrations });
+      try {
+        expect(previous.inspect().schemaVersion).toBe(108);
+        previous.transaction(db => db.exec(`INSERT INTO workbenches
+          (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+          VALUES ('wb','Fixture','p','','','','m','ACTIVE','now','now');
+          INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES ('goal','goal','Fixture','CONSUMED','wb','now','now');
+          INSERT INTO joi_harness_maps (goal_input_id,workbench_id,revision,created_at,updated_at)
+          VALUES ('goal','wb',7,'now','now');
+          INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,created_at,updated_at)
+          VALUES ('path','goal',1,'Fixture','now','now');`));
+      } finally { previous.close(); }
+      const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      try {
+        upgraded.transaction(db => {
+          const read = db.prepare("SELECT revision, detail_revision, path_order_revision FROM joi_harness_maps WHERE goal_input_id='goal'");
+          expect(read.get()).toEqual({ revision: 7, detail_revision: 0, path_order_revision: 0 });
+          expect(db.prepare("SELECT path_id FROM joi_harness_paths WHERE goal_input_id='goal'").get()).toEqual({ path_id: "path" });
+          db.exec("UPDATE joi_harness_paths SET layer=2 WHERE path_id='path'");
+          expect(read.get()).toEqual({ revision: 7, detail_revision: 1, path_order_revision: 1 });
+        });
+      } finally { upgraded.close(); }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it.each([104,105])("ASK-01/06/10 upgrades draft Ask schema %i alongside parent history migrations", async draftVersion => {
     const root = await mkdtemp(path.join(os.tmpdir(),"joi-ask-upgrade-"));
     const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");
@@ -65,7 +97,7 @@ describe("JOI-01 non-destructive migration", () => {
         upgraded.transaction(db => {
           expect(db.prepare("SELECT filename FROM schema_migrations WHERE version >= 104 ORDER BY version").all().map(row => row.filename)).toEqual([
             "104_historical_memory.sql","105_historical_preference_order.sql","106_goal_evidence_reads.sql",
-            "107_user_questions.sql","108_question_recovery_lifecycle.sql",
+            "107_user_questions.sql","108_question_recovery_lifecycle.sql","109_large_goal_reads.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });

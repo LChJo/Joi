@@ -25,6 +25,13 @@ export interface WorkbenchAgentConversationQuery {
   limit?: number;
 }
 
+export interface WorkbenchAgentListQuery {
+  workbenchId: string;
+  cursor?: string;
+  goalId?: string;
+  limit: number;
+}
+
 export interface WorkbenchAgentRepository {
   append(agentId: string, entries: NormalizedAgentConversationEntry[]): Promise<void>;
   /**
@@ -36,7 +43,7 @@ export interface WorkbenchAgentRepository {
   conversation(input: WorkbenchAgentConversationQuery): Promise<AgentConversationPageDto>;
   conversationMessages(input: WorkbenchAgentConversationQuery): Promise<AgentConversationMessagesDto>;
   dismiss(input: { agentId: string; workbenchId: string; dismissedAt: string }): Promise<void>;
-  listAgents(input: { workbenchId: string; cursor?: string; goalId?: string; limit: number }): Promise<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }>;
+  listAgents(input: WorkbenchAgentListQuery): Promise<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }>;
   resolveArtifact(input: WorkbenchArtifactResolutionInput): Promise<ResolvedWorkbenchArtifact>;
   /** Reads one tool call's private body on demand; the caller is responsible for the desktop gate. */
   revealToolTrace(input: WorkbenchToolTraceRevealInput): Promise<WorkbenchToolTraceDto>;
