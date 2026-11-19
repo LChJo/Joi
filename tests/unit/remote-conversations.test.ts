@@ -5,6 +5,8 @@ import type { RemoteCommand,RemoteReadPage } from "../../src/shared/remote.js";
 
 const input = { conversationId: "chat",workbenchId: "wb",requestId: "stable",text: "Hello",partnerId: "joi-chat",networkId: "network",skills: [],attachmentIds: [] };
 const commands: RemoteCommand[] = [
+  { kind: "conversation.resumeQuestion", requestId: "resume-question", conversationId: "chat", questionId: "q1" },
+  { kind: "conversation.answerQuestion", requestId: "answer", conversationId: "chat", questionId: "q1", input: { version: 2, selectedOptionIds: ["a"], text: "Details" } },
   { kind: "conversation.catalog",requestId: "catalog" },
   { kind: "conversation.skills",requestId: "skills",engine: "pi-core" },
   { kind: "conversation.list",requestId: "list",archived: true },
@@ -23,13 +25,15 @@ const commands: RemoteCommand[] = [
 
 it.each(commands)("admits and maps the remote operation $kind", async command => {
   const operation = vi.fn().mockResolvedValue({ ok: true });
-  const source = { list: operation,get: operation,send: operation,inheritance: operation,page: operation,events: operation,rename: operation,stop: operation,archive: operation,restore: operation,delete: operation,cancelChild: operation };
+  const source = { resumeQuestion: operation,answerQuestion: operation,list: operation,get: operation,send: operation,inheritance: operation,page: operation,events: operation,rename: operation,stop: operation,archive: operation,restore: operation,delete: operation,cancelChild: operation };
   const service = new RemoteCommandService({ homeFeed: { load: vi.fn() },inbox: { accept: vi.fn() },conversations: { service: source,catalog: operation,skills: operation } });
   expect(isRemoteCommand(command)).toBe(true);
   const response = await service.handle(command,"phone");
   expect(response.error).toBeUndefined();
   expect(operation).toHaveBeenCalledTimes(1);
   expect(JSON.parse((response.result as RemoteReadPage).chunk)).toBeDefined();
+  if (command.kind === "conversation.resumeQuestion") expect(operation).toHaveBeenCalledWith("chat", "q1");
+  if (command.kind === "conversation.answerQuestion") expect(operation).toHaveBeenCalledWith("chat", "q1", { version: 2, selectedOptionIds: ["a"], text: "Details" });
   if (command.kind === "conversation.send") expect(operation).toHaveBeenCalledWith(input);
   if (command.kind === "conversation.rename") expect(operation).toHaveBeenCalledWith("chat","Renamed");
 });
@@ -58,6 +62,38 @@ it("preserves application refusals and leaves unavailable remote capabilities cl
   const service = new RemoteCommandService({ ...dependencies,conversations: { service: { send } } } as never);
   expect((await service.handle({ kind: "conversation.send",requestId: "send",input })).error?.code).toBe("conversation_busy");
   expect((await service.handle({ kind: "conversation.send",requestId: "send",input: { ...input,cwd: "/private" } } as never)).error?.code).toBe("remote_operation_forbidden");
+});
+
+it.each([
+  null, [], {}, { version: 0 }, { version: 1.5 }, { version: 1, text: 5 },
+  { version: 1, text: "x".repeat(8001) }, { version: 1, selectedOptionIds: "a" },
+  { version: 1, selectedOptionIds: [3] }, { version: 1, selectedOptionIds: ["a", "a"] },
+  { version: 1, selectedOptionIds: ["x".repeat(241)] }, { version: 1, selectedOptionIds: Array(65).fill("a") },
+  { version: 1, useDefault: "true" }, { version: 1, secret: "unsafe" },
+])("rejects malformed question answers at both boundaries %#", async input => {
+  const command = { kind: "conversation.answerQuestion", requestId: "answer", conversationId: "chat", questionId: "q1", input };
+  expect(isRemoteCommand(command)).toBe(false);
+  expect(isRemoteCommand({ ...command, kind: "question.answer", scopeKind: "GOAL", scopeId: "goal" })).toBe(false);
+  const answerQuestion = vi.fn();
+  const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn() }, conversations: { service: { answerQuestion } } } as never);
+  expect((await service.handle(command)).error?.code).toBe("remote_operation_forbidden");
+  expect(answerQuestion).not.toHaveBeenCalled();
+});
+
+it("routes scoped question answers and preserves terminal receipt projections", async () => {
+  const receipt = { questionId: "q1", status: "ANSWERED", answer: { source: "USER_DEFAULT", text: "Default", answeredAt: "2026-11-19T00:00:00Z" }, delivery: "DELIVERED" };
+  const answer = vi.fn().mockResolvedValue(receipt);
+  const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn() }, userQuestions: { answer } });
+  for (const scopeKind of ["GOAL", "CONVERSATION"] as const) {
+    const command = { kind: "question.answer" as const, requestId: "answer", scopeKind, scopeId: "scope", questionId: "q1", input: { version: 3, useDefault: true } };
+    expect(isRemoteCommand(command)).toBe(true);
+    const response = await service.handle(command, "phone");
+    expect(response.error).toBeUndefined();
+    expect(JSON.parse((response.result as RemoteReadPage).chunk)).toEqual(receipt);
+    expect(answer).toHaveBeenLastCalledWith({ kind: scopeKind, id: "scope" }, "q1", { version: 3, useDefault: true });
+  }
+  expect(isRemoteCommand({ kind: "question.answer", requestId: "a", scopeKind: "ALL", scopeId: "scope", questionId: "q1", input: { version: 1 } })).toBe(false);
+  expect(isRemoteCommand({ kind: "conversation.answerQuestion", requestId: "a", conversationId: "chat", questionId: "", input: { version: 1 } })).toBe(false);
 });
 
 it("admits conversation commands at the encrypted host boundary and refuses local workspace overrides", () => {

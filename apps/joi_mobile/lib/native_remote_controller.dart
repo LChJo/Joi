@@ -245,7 +245,10 @@ class SecureRemoteCredentialStore implements RemoteCredentialStore {
 }
 
 class NativeRemoteController extends ChangeNotifier
-    implements RemoteController, ConversationRemoteController {
+    implements
+        RemoteController,
+        ConversationRemoteController,
+        QuestionRemoteController {
   NativeRemoteController({
     required RemoteCredentialStore credentials,
     required NativeTransport transport,
@@ -653,6 +656,40 @@ class NativeRemoteController extends ChangeNotifier
     return _readResponse(response, generation);
   }
 
+  bool _supportsQuestions = false;
+  @override
+  bool get supportsQuestions =>
+      _supportsQuestions &&
+      _state.connection == RemoteConnectionState.connected;
+
+  @override
+  Future<Map<String, dynamic>> answerQuestion(
+    String scopeKind,
+    String scopeId,
+    String questionId,
+    Map<String, Object?> input,
+  ) async {
+    if (!_supportsQuestions) {
+      throw const RemoteActionFailure('remote_upgrade_required');
+    }
+    if (_state.connection != RemoteConnectionState.connected) {
+      throw StateError('joi_remote_not_ready');
+    }
+    if (scopeKind != 'GOAL' && scopeKind != 'CONVERSATION') {
+      throw const RemoteActionFailure('question_answer_invalid');
+    }
+    final generation = _generation;
+    final response = await _sendCommand({
+      'kind': 'question.answer',
+      'requestId': _requestId('question'),
+      'scopeKind': scopeKind,
+      'scopeId': scopeId,
+      'questionId': questionId,
+      'input': input,
+    });
+    return _readResponse(response, generation);
+  }
+
   bool _supportsConversations = false;
   @override
   bool get supportsConversations => _supportsConversations;
@@ -663,6 +700,10 @@ class NativeRemoteController extends ChangeNotifier
     Map<String, Object?> parameters = const {},
   }) async {
     if (!_supportsConversations) throw StateError('remote_upgrade_required');
+    if ((operation == 'answerQuestion' || operation == 'resumeQuestion') &&
+        !_supportsQuestions) {
+      throw const RemoteActionFailure('remote_upgrade_required');
+    }
     if (_state.connection != RemoteConnectionState.connected) {
       throw StateError('joi_remote_not_ready');
     }
@@ -1017,6 +1058,9 @@ class NativeRemoteController extends ChangeNotifier
       }
       if (generation != _generation || _disposed) return;
       _mode = 'resume';
+      _supportsQuestions =
+          value['capabilities'] is List &&
+          (value['capabilities'] as List).contains('questions.v1');
       _supportsConversations =
           value['capabilities'] is List &&
           (value['capabilities'] as List).contains('conversations.v1');

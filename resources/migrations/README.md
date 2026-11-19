@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 105 limits the unique active-question slot and due index to pending deliveries. It links persisted conversation recovery turns to their original turns, including previously queued recoveries with a matching request identity. It preserves existing answer and delivery records.
+
 Migration 099 releases the unique execution slot for `PAUSED` method experiments whose checkpoint reason is `insufficient_samples`. Their candidate, trials, costs and private cases remain unchanged. RUNNING and all other PAUSED experiments still share one unique slot. The migration does not resume learning or replay work.
 
 Migrations 094–096 add conversation-owned private session metadata and incrementally stored messages, durable child intents/checkpoints, safe context projections and payload-free update cursors. Conversation/turn ownership gates every write. Interrupted executions are recorded without replay; source text remains private and pageable. These migrations implement CHAT-18–26 / ADR 0033 and do not migrate or schedule historical work.

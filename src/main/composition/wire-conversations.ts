@@ -17,13 +17,15 @@ import { OutboxDispatcher } from "../application/operations/outbox-dispatcher.js
 import { DomainError } from "../domain/errors.js";
 import { createPartnerRevision } from "../domain/partners/partner.js";
 import { ConversationHandoff } from "../infrastructure/pi/conversation-handoff.js";
+import type { UserQuestionService } from "../application/joi/user-question-service.js";
 
 export function wireConversations(input: {
   clock: Clock; ids: IdGenerator; database: RuntimeDatabase; persistence: PersistenceBundle; partnerStack: PartnerBundle;
   modelSourceStack: ModelSourceBundle; workbenchStack: WorkbenchBundle; evolution: MethodLearningService;
-  attachments: JoiAttachmentPort; userDataDirectory: string;
+  attachments: JoiAttachmentPort; userDataDirectory: string; questions: UserQuestionService;
 }) {
   const { clock,ids,database,persistence,partnerStack,modelSourceStack } = input;
+  partnerStack.piRuntime.setUserQuestions(input.questions);
   const childDispatcherRef: { current?: OutboxDispatcher } = {};
   const subagents = new ConversationSubagentService({ clock,ids,store: persistence.conversationSubagents,kick: () => childDispatcherRef.current?.startOnce(4),
     execute: async (child,signal) => {
@@ -33,7 +35,7 @@ export function wireConversations(input: {
         skillEnvironmentKeys: skills.environmentKeys,
         revision: child.revision,sourcePin: child.sourcePin,restoredMessages: null,signal,
         saveSession: state => persistence.conversationSubagents.checkpoint(child.childId,state),
-        request: { ...child.request,actionId: child.childId,taskProjection: child.task,subagentChild: true } });
+        request: { ...child.request,actionId: child.childId,workId: child.childId,taskProjection: child.task,subagentChild: true } });
       try {
         const result = await run();
         if (result.status !== "COMPLETED") throw new DomainError("subagent_execution_failed","Child execution did not complete.");
@@ -53,7 +55,7 @@ export function wireConversations(input: {
     return Promise.resolve(row.root_path);
   } });
   let defaultPartner: Promise<Awaited<ReturnType<typeof persistence.partnerRegistryRepository.getActive>>> | undefined;
-  const conversations = new ConversationService({ clock,ids,store: persistence.conversations,workbenches: persistence.workbenches,subagents,
+  const conversations = new ConversationService({ clock,ids,store: persistence.conversations,workbenches: persistence.workbenches,subagents,questions: input.questions,
     handoffs: new ConversationHandoff(partnerStack.nativeSessions),
     workspaces: persistence.workbenchWorkspaceRepository,contexts: persistence.workbenchContextRepository,
     revisions: { getActive: async id => {
@@ -99,7 +101,7 @@ export function wireConversations(input: {
     close: async () => {
       const drain = Promise.all([dispatcher.close(),gitDispatcher.close()]);
       conversations.close();
-      await subagents.close();
+      await subagents.close(new DomainError("conversation_shutdown", "The host is shutting down."));
       await Promise.all([git.emergencyStop(),drain,childDispatcher.close()]);
     },
     quickWorkbench: async (rootPath: string) => {

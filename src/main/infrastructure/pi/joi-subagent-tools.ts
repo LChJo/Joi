@@ -5,6 +5,7 @@ import { registerSubagentCapabilityCeiling } from "pi-subagents/capability-ceili
 import type { ConversationChild,ConversationChildInput,ConversationSubagentPort } from "../../application/ports/conversation-subagents.js";
 import { DomainError } from "../../domain/errors.js";
 import { summaryCandidateKey } from "./pi-compaction.js";
+import { isPiQuestionShutdown } from "./pi-user-question-ui.js";
 
 function state(status: ConversationChild["status"]): ExternalJobState {
   return status === "QUEUED" ? "queued" : status === "RUNNING" ? "running" : status === "COMPLETED" ? "completed" : status === "CANCELED" ? "stopped" : "failed";
@@ -27,7 +28,7 @@ export function createJoiSubagentTools(port: ConversationSubagentPort,input: Omi
     reattach: async id => ({ providerJobId: id,state: state((await own(id)).status) }),
   };
   const unregister = registerExternalJobProvider(provider);
-  const abort = () => { void port.cancel(parent); };
+  const abort = () => { if (!isPiQuestionShutdown(signal)) void port.cancel(parent); };
   signal?.addEventListener("abort",abort,{ once: true });
   const tools: AgentTool[] = [
     { name: "subagent",label: "Delegate",description: "Start a Pi child with your current model, workspace and permission ceiling. Children are durable; wait for their results before concluding. Do not replay an interrupted child automatically.",
@@ -56,7 +57,7 @@ export function createJoiSubagentTools(port: ConversationSubagentPort,input: Omi
     }),
     close: async (cancel: boolean) => {
       try {
-        try { if (cancel) await port.cancel(parent); }
+        try { if (cancel && !isPiQuestionShutdown(signal)) await port.cancel(parent); }
         finally { await port.settle(parent); }
       } finally { signal?.removeEventListener("abort",abort);unregister();ceiling.dispose(); }
     },

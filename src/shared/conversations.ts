@@ -1,4 +1,5 @@
 import type { AgentConversationEntryDto } from "./joi.js";
+import type { UserQuestionDto } from "./user-questions.js";
 
 export const CONVERSATION_TITLE_MAX_LENGTH = 80;
 
@@ -55,6 +56,8 @@ export interface ConversationTurnDto {
   status: ConversationTurnStatus;
   config: ConversationConfigDto;
   entries: ConversationEntryDto[];
+  questions?: UserQuestionDto[];
+  waitingForUser?: boolean;
   artifacts: { name: string; size: number; mimeType?: string }[];
   errorCode?: string;
   failure?: ConversationFailureDto;
@@ -87,6 +90,7 @@ export interface ConversationDto extends ConversationSummaryDto {
 export interface ConversationUpdateDto {
   conversationId: string;
   turn: ConversationTurnDto;
+  relatedTurn?: ConversationTurnDto;
   context?: ConversationContextDto;
 }
 export interface ConversationHistoryPageDto { items: ConversationTurnDto[];nextCursor: string | null; }

@@ -32,6 +32,42 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
 
 describe("JOI-01 non-destructive migration", () => {
+  it("ASK-01/06/10 upgrades interrupted question indexes and links previously submitted recovery turns", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),"joi-ask-upgrade-"));
+    const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");
+    try {
+      await copyMigrationsThrough(previousMigrations,104);
+      const previous = await openRuntimeDatabase({ databasePath,migrationsDirectory:previousMigrations });
+      try {
+        expect(previous.inspect().schemaVersion).toBe(104);
+        previous.transaction(db => db.exec(`
+          INSERT INTO workbenches
+            (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+            VALUES ('wb','W','p','','','','m','ACTIVE','now','now');
+          INSERT INTO conversations(conversation_id,workbench_id,title,updated_at) VALUES ('chat','wb','Chat','now');
+          INSERT INTO conversation_turns(turn_id,conversation_id,request_id,body,config_json,status,created_at,question_recovery_context)
+            VALUES ('source','chat','source','Original','{}','INTERRUPTED','now',NULL),
+              ('retry','chat','question_resume_source','Recovery','{}','QUEUED','now','Private recovery context');
+          INSERT INTO user_questions(question_id,scope_kind,scope_id,owner_id,parent_turn_id,version,status,delivery,payload_json)
+            VALUES ('old','CONVERSATION','chat','source','source',1,'ACTIVE','INTERRUPTED','{}');
+        `));
+      } finally { previous.close(); }
+      const upgraded = await openRuntimeDatabase({ databasePath,migrationsDirectory:path.resolve("resources/migrations") });
+      try {
+        expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
+        upgraded.transaction(db => {
+          expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
+            .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });
+          db.exec(`INSERT INTO user_questions(question_id,scope_kind,scope_id,owner_id,parent_turn_id,version,status,delivery,payload_json)
+            VALUES ('new','CONVERSATION','chat','retry','retry',1,'ACTIVE','PENDING','{}')`);
+          expect(db.prepare("SELECT question_id,delivery FROM user_questions ORDER BY sequence").all())
+            .toEqual([{ question_id:"old",delivery:"INTERRUPTED" },{ question_id:"new",delivery:"PENDING" }]);
+          expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        });
+      } finally { upgraded.close(); }
+    } finally { await rm(root,{ recursive:true,force:true }); }
+  });
+
   it("preserves the ordering and identity of existing queued writers during the admission upgrade", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),"joi-admission-upgrade-"));
     const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");

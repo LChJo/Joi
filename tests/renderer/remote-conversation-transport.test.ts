@@ -10,6 +10,7 @@ const hostNonce = Buffer.alloc(24,9).toString("base64url");
 class Socket extends EventTarget {
   static OPEN = 1;
   static instances: Socket[] = [];
+  static capabilities: string[] | undefined;
   static respond: (command: RemoteCommand) => unknown = () => ({ items: [] });
   readyState = 1;
   key: Uint8Array = new Uint8Array();
@@ -24,7 +25,7 @@ class Socket extends EventTarget {
     const value = JSON.parse(serialized) as RemoteHandshakeHello | RemoteEncryptedFrame;
     if (value.kind === "handshake.hello") {
       this.key = deriveRemoteSessionKey(secret,value.clientNonce,hostNonce);
-      this.frame({ kind: "handshake.ready",version: 1,hostNonce,proof: remoteReadyProof(secret,{ ...value,pairingId: value.pairingId ?? "" },hostNonce) });
+      this.frame({ kind: "handshake.ready",version: 1,hostNonce,capabilities: Socket.capabilities,proof: remoteReadyProof(secret,{ ...value,pairingId: value.pairingId ?? "" },hostNonce) });
       return;
     }
     expect(value.seq).toBeGreaterThan(this.sequence);
@@ -41,11 +42,25 @@ class Socket extends EventTarget {
 let connection: BrowserRemoteJoiConnection;
 beforeEach(() => {
   vi.stubGlobal("crypto",webcrypto);vi.stubGlobal("WebSocket",Socket);
+  Socket.capabilities = undefined;
   Socket.instances = [];Socket.respond = () => ({ result: { items: [] } });
   localStorage.clear();localStorage.setItem("joi.remote.device.host",JSON.stringify({ hostId: "host",deviceId: "device",secret }));
   connection = new BrowserRemoteJoiConnection({ location: { origin: "https://relay.invalid",hash: "" } as Location });
 });
 afterEach(() => { connection.dispose();vi.useRealTimers();vi.unstubAllGlobals();localStorage.clear(); });
+
+it("publishes only this session's negotiated question capability", async () => {
+  Socket.capabilities = ["questions.v1"];
+  await connection.command({ kind: "conversation.catalog", requestId: "ready" });
+  expect(connection.capabilities()).toEqual(["questions.v1"]);
+  connection.dispose();
+  expect(connection.capabilities()).toEqual([]);
+});
+
+it("does not infer questions support from an old host", async () => {
+  await connection.command({ kind: "conversation.catalog", requestId: "ready" });
+  expect(connection.capabilities()).toEqual([]);
+});
 
 it("reassembles encrypted conversation history and serializes concurrent request frames", async () => {
   const body = JSON.stringify({ conversationId: "chat",text: "中文😀".repeat(10_000) });

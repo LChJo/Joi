@@ -1,6 +1,6 @@
 import type { AgentState,AgentMessage } from "@earendil-works/pi-agent-core";
 import { InMemoryCredentialStore,InMemoryModelsStore,type Models,type Message } from "@earendil-works/pi-ai";
-import { createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager,type AgentSession,type FileEntry,type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager,type AgentSession,type FileEntry,type ExtensionFactory,type ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { PartnerSessionState } from "../../application/ports/partner-instances.js";
 import { DomainError } from "../../domain/errors.js";
 import { withPiSummaryUsage } from "./pi-summary-usage.js";
@@ -64,7 +64,7 @@ export function retainUnknownEffects(manager: SessionManager): void {
 }
 
 /** The public factory owns the Agent callbacks, request projection and compaction. */
-export async function createJoiPiSession(agent: { state: Pick<AgentState,"model" | "systemPrompt" | "tools" | "thinkingLevel" | "messages"> },models: Models,cwd: string,options: JoiPiPromptOptions & { compactionThresholdPercent?: number;snapshot?: Snapshot;retryAttempts?: number;importedMessages?: unknown[];extensionFactories?: ExtensionFactory[];settingsManager?: SettingsManager;sessionManager?: SessionManager;skillPaths?: readonly string[];loadProjectContext?: boolean } = {}): Promise<AgentSession> {
+export async function createJoiPiSession(agent: { state: Pick<AgentState,"model" | "systemPrompt" | "tools" | "thinkingLevel" | "messages"> },models: Models,cwd: string,options: JoiPiPromptOptions & { compactionThresholdPercent?: number;snapshot?: Snapshot;retryAttempts?: number;importedMessages?: unknown[];extensionFactories?: ExtensionFactory[];uiContext?: ExtensionUIContext;settingsManager?: SettingsManager;sessionManager?: SessionManager;skillPaths?: readonly string[];loadProjectContext?: boolean } = {}): Promise<AgentSession> {
   const settings = options.settingsManager?.getSettings() ?? { cacheWarming: "off" as const };
   if (options.compactionThresholdPercent !== undefined) {
     const percent = Math.min(95, Math.max(50, options.compactionThresholdPercent));
@@ -101,7 +101,15 @@ export async function createJoiPiSession(agent: { state: Pick<AgentState,"model"
     additionalSkillPaths: [...(options.skillPaths ?? [])],
     systemPrompt: agent.state.systemPrompt, extensionFactories: [...(options.extensionFactories ?? []), joiPiSystemPrompt(agent.state.tools, options)] });
   await resourceLoader.reload();
+  // An explicit SDK tools list is also an allowlist. Admit the supplied factories' tools without
+  // flattening their definitions into AgentTools, which would discard ExtensionToolContext.
+  const extensionTools = resourceLoader.getExtensions().extensions.flatMap(extension => [...extension.tools.keys()]);
   const { session } = await createAgentSession({ model: agent.state.model,thinkingLevel: agent.state.thinkingLevel,modelRuntime,cwd,agentDir: cwd,sessionManager,settingsManager,resourceLoader,
-    tools: agent.state.tools.map(tool => tool.name),customTools: agent.state.tools.map(tool => ({ ...tool,execute: (id,params,signal,onUpdate) => tool.execute(id,params,signal,onUpdate) })) });
+    tools: [...new Set([...agent.state.tools.map(tool => tool.name), ...extensionTools])],
+    customTools: agent.state.tools.map(tool => ({ ...tool,execute: (id,params,signal,onUpdate) => tool.execute(id,params,signal,onUpdate) })) });
+  if (options.uiContext !== undefined) {
+    try { await session.bindExtensions({ uiContext: options.uiContext, mode: "rpc" }); }
+    catch (error) { session.dispose(); throw error; }
+  }
   return session;
 }

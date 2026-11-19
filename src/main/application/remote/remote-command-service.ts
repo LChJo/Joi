@@ -7,10 +7,11 @@ import { sanitizeAgentConversationText } from "../partners/agent-conversation-pr
 import type { JoiHomeFeedDto } from "../../../shared/joi.js";
 import type { ConversationService } from "../joi/conversation-service.js";
 import type { RemoteConversationCommand } from "../../../shared/remote.js";
-import { isRemoteConversationCommand } from "../../../shared/remote.js";
+import { isRemoteConversationCommand, isRemoteQuestionCommand } from "../../../shared/remote.js";
+import type { UserQuestionService } from "../joi/user-question-service.js";
 
 export interface RemoteConversations {
-  service: Pick<ConversationService, "list" | "get" | "send" | "inheritance" | "page" | "events" | "stop" | "rename" | "archive" | "restore" | "delete" | "cancelChild">;
+  service: Pick<ConversationService, "list" | "get" | "send" | "inheritance" | "page" | "events" | "stop" | "rename" | "archive" | "restore" | "delete" | "cancelChild"> & Partial<Pick<ConversationService, "answerQuestion" | "resumeQuestion">>;
   catalog(): Promise<unknown>;
   skills(engine: string): unknown;
 }
@@ -60,6 +61,7 @@ export class RemoteCommandService {
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     queries?: RemoteHomeQueries;
     conversations?: RemoteConversations;
+    userQuestions?: Pick<UserQuestionService, "answer">;
     now?: () => number;
   }) {}
 
@@ -72,6 +74,12 @@ export class RemoteCommandService {
     try {
       const c = command as RemoteCommand;
       const queries = this.dependencies.queries;
+      if (c.kind === "question.answer") {
+        if (!isRemoteQuestionCommand(c)) throw new DomainError("remote_operation_forbidden", "This remote operation is not available.");
+        const questions = this.dependencies.userQuestions;
+        if (questions === undefined) throw new DomainError("remote_upgrade_required", "Questions are unavailable on this host.");
+        return { ...base, result: this.#page(await questions.answer({ kind: c.scopeKind, id: c.scopeId }, c.questionId, c.input), scope) };
+      }
       if (c.kind.startsWith("conversation.") && this.dependencies.conversations !== undefined) {
         return { ...base, result: this.#page(await this.#conversation(c as RemoteConversationCommand), scope) };
       }
@@ -144,6 +152,12 @@ export class RemoteCommandService {
     if (remote === undefined) throw new DomainError("remote_operation_forbidden","This remote operation is not available.");
     const service = remote.service;
     switch (command.kind) {
+      case "conversation.resumeQuestion":
+        if (service.resumeQuestion === undefined) throw new DomainError("remote_upgrade_required", "Questions are unavailable on this host.");
+        return service.resumeQuestion(command.conversationId, command.questionId);
+      case "conversation.answerQuestion":
+        if (service.answerQuestion === undefined) throw new DomainError("remote_upgrade_required", "Questions are unavailable on this host.");
+        return service.answerQuestion(command.conversationId, command.questionId, command.input);
       case "conversation.catalog": return remote.catalog();
       case "conversation.skills": return { items: remote.skills(command.engine) };
       case "conversation.list": return service.list(command.archived === true);

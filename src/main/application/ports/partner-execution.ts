@@ -2,6 +2,7 @@ import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { WorkHandoff, WorkHandoffStatus } from "../../domain/work/work-handoff.js";
 import type { ConversationPiExtension,ConversationTurnDto } from "../../../shared/conversations.js";
+import type { UserQuestionPrompt } from "../../../shared/user-questions.js";
 
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
@@ -31,6 +32,7 @@ export interface PartnerRunOutput {
   body: string;
   /** Blocking question the partner asked the user; present together with status WAITING_INPUT. */
   pendingQuestion?: string;
+  pendingQuestionSpec?: UserQuestionPrompt;
 }
 
 export interface PartnerRunResult {
@@ -44,6 +46,7 @@ export interface PartnerRunResult {
   externalRunId: string;
   instanceId?: string;
   pendingQuestion?: string;
+  pendingQuestionSpec?: UserQuestionPrompt;
   status: PartnerRunStatus | "SUSPENDED";
   workId: string;
 }

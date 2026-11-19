@@ -673,6 +673,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
         kind: "terminal",
         ...(result.pendingQuestion === undefined ? {} : { pendingQuestion: result.pendingQuestion }),
+        ...(result.pendingQuestionSpec === undefined ? {} : { pendingQuestionSpec: result.pendingQuestionSpec }),
         status: result.status,
       };
     }
@@ -742,6 +743,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       ...(input.output.conversation === undefined ? {} : { conversation: input.output.conversation }),
       ...(input.output.failure === undefined ? {} : { failure: input.output.failure }),
       ...(input.output.pendingQuestion === undefined ? {} : { pendingQuestion: input.output.pendingQuestion }),
+      ...(input.output.pendingQuestionSpec === undefined ? {} : { pendingQuestionSpec: input.output.pendingQuestionSpec }),
     },input.prepared.workspaceLease?.generation);
   }
 
@@ -1048,7 +1050,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     const acceptanceChecks = status === "COMPLETED"
       ? brief.acceptanceChecks
       : brief.acceptanceChecks.filter((check) => check.kind !== "BODY_PRESENT");
-    if (acceptanceChecks.length > 0 && (status === "COMPLETED" || output.artifacts.length > 0)) {
+    if (status !== "WAITING_INPUT" && status !== "WAITING_AUTH" && acceptanceChecks.length > 0 && (status === "COMPLETED" || output.artifacts.length > 0)) {
       verification = row.context_snapshot_id === null
         ? { reasonCode: "verification_context_missing", status: "FAILED" }
         : this.dependencies.verifier === undefined
@@ -1062,6 +1064,11 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       if (verification.status === "PASSED") committedStatus = "COMPLETED";
       else committedStatus = "FAILED";
     }
+    // The repository commits this structured question and the authoritative pause together.
+    // Neither a result-write failure nor a UI projection failure can strand a terminal run.
+    const pendingQuestion = committedStatus === "WAITING_INPUT" && output.pendingQuestion !== undefined
+      ? { ...output.pendingQuestionSpec, question: `搭档『${row.partner_display_name}』在执行工作『${row.title}』时暂停并提问：\n${output.pendingQuestion}` }
+      : undefined;
     const recorded = await this.dependencies.results.record(createWorkResult({
       actionId: row.action_id,
       artifacts: output.artifacts,
@@ -1079,7 +1086,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       ...(verification.status === "FAILED" ? { summary: `Work verification failed (${verification.reasonCode ?? "verification_failed"}).${verification.detail === undefined ? "" : ` ${verification.detail}`}` } : {}),
       verification,
       workId: row.work_id,
-    }));
+    }), pendingQuestion);
     await this.#releaseResources(row,generation);
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.handoff", { workbenchId: row.workbench_id, workId: row.work_id,
       resultId: recorded.result.resultId, handoffStatus: recorded.result.handoffStatus ?? "MISSING",
@@ -1163,21 +1170,6 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     }
     if (recorded.isAuthoritative) {
       await this.dependencies.publish?.(recorded.event);
-    }
-    // A paused partner raises a deterministic question card on the goal input; the user's
-    // answer re-PENDs the input and joi resumes the waiting work from there.
-    if (recorded.isAuthoritative && committedStatus === "WAITING_INPUT" && output.pendingQuestion !== undefined) {
-      await this.dependencies.clarifications?.requireClarification(
-        row.input_id,
-        "question_required",
-        `搭档『${row.partner_display_name}』在执行工作『${row.title}』时暂停并提问：\n${output.pendingQuestion}`,
-        {
-          actionId: `joi_action:question:${runId}`,
-          kind: "PARTNER_QUESTION",
-          runId,
-          workId: row.work_id,
-        },
-      );
     }
     return { isAuthoritative: recorded.isAuthoritative, resultId: recorded.result.resultId };
   }

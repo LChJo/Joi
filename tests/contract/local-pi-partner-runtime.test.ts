@@ -549,6 +549,30 @@ describe("Pi partner engine runtime", () => {
     expect(serialized).toContain(traces[0]?.toolCallId ?? "unreachable");
   });
 
+  it("ASK-07 rejects invalid recommendations before terminating the Work and accepts the corrected question", async () => {
+    const faux = fauxProvider({ provider: "local-partner-question-correction" });
+    const prompt = { question:"Choose a route",options:[{ id:"valid",label:"Route A" }] };
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("ask_user",{ ...prompt,defaultOptionIds:["missing"] })],{ stopReason:"toolUse" }),
+      fauxAssistantMessage([fauxToolCall("ask_user",{ ...prompt,defaultOptionIds:["valid"] })],{ stopReason:"toolUse" }),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,prompts:{ read:async () => null },
+      resolver:{ resolve:async () => ({ model:faux.getModel(),models,thinkingLevel:"off" as const }) },
+      sources:{ selectInitial:async turnId => ({ modelId:"faux",modelRevisionId:"mr",sourceId:"source",sourceRevisionId:"sr",turnId }) },
+      tools:{ create:() => [],names:[] },
+    });
+    const revision = createPartnerRevision({ capabilities:[],createdAt:"2026-07-28T12:00:00.000Z",displayName:"Fixture",kind:"local-pi",
+      partnerId:"partner",partnerRevisionId:"revision",registryRevision:1,skills:[],tools:[] });
+    const result = await runtime.runEphemeral({ actionId:"action",workbenchId:"workbench_1",contextSnapshotId:"context_1",taskProjection:"Choose",workId:"work" },
+      revision,{ knowledgeSection:"",skillSection:"",skillEnvironmentKeys:[] });
+    expect(result.status).toBe("WAITING_INPUT");
+    expect(result.output.pendingQuestionSpec?.defaultOptionIds).toEqual(["valid"]);
+    expect(faux.state.callCount).toBe(2);
+  });
+
   it("PI-SESSION-07 lets the model request missing Skill input through the explicit business tool", async () => {
     const faux = fauxProvider({ provider: "local-partner-missing-skill-credential" });
     let firstSystemPrompt = "";

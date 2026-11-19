@@ -877,6 +877,203 @@
     "description": "chat.readRecovering",
     "placeholders": {}
   },
+  "chatQuestionQueueLabel": "Questions in this conversation",
+  "@chatQuestionQueueLabel": {
+    "description": "chat.questionQueueLabel",
+    "placeholders": {}
+  },
+  "chatQuestionRemoteUnavailable": "This host does not support remote question answers. Update the host or answer on the desktop.",
+  "@chatQuestionRemoteUnavailable": {
+    "description": "chat.questionRemoteUnavailable",
+    "placeholders": {}
+  },
+  "chatQuestionSource": "From {name}",
+  "@chatQuestionSource": {
+    "description": "chat.questionSource",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQuestionActive": "Awaiting your answer",
+  "@chatQuestionActive": {
+    "description": "chat.questionActive",
+    "placeholders": {}
+  },
+  "chatQuestionConfirm": "Awaiting your confirmation",
+  "@chatQuestionConfirm": {
+    "description": "chat.questionConfirm",
+    "placeholders": {}
+  },
+  "chatQuestionQueued": "Queued question",
+  "@chatQuestionQueued": {
+    "description": "chat.questionQueued",
+    "placeholders": {}
+  },
+  "chatQuestionAnswered": "Answered",
+  "@chatQuestionAnswered": {
+    "description": "chat.questionAnswered",
+    "placeholders": {}
+  },
+  "chatQuestionCanceled": "Canceled",
+  "@chatQuestionCanceled": {
+    "description": "chat.questionCanceled",
+    "placeholders": {}
+  },
+  "chatQuestionSuperseded": "Replaced",
+  "@chatQuestionSuperseded": {
+    "description": "chat.questionSuperseded",
+    "placeholders": {}
+  },
+  "chatQuestionInterrupted": "Delivery interrupted",
+  "@chatQuestionInterrupted": {
+    "description": "chat.questionInterrupted",
+    "placeholders": {}
+  },
+  "chatQuestionResumeSaved": "Continue from saved answers",
+  "@chatQuestionResumeSaved": {
+    "description": "chat.questionResumeSaved",
+    "placeholders": {}
+  },
+  "chatQuestionResumeDefault": "Use the default and resume",
+  "@chatQuestionResumeDefault": {
+    "description": "chat.questionResumeDefault",
+    "placeholders": {}
+  },
+  "chatQuestionQueuedHint": "Queued. The timer starts when this question becomes active.",
+  "@chatQuestionQueuedHint": {
+    "description": "chat.questionQueuedHint",
+    "placeholders": {}
+  },
+  "chatQuestionCanceledHint": "This question was canceled. No answer is needed.",
+  "@chatQuestionCanceledHint": {
+    "description": "chat.questionCanceledHint",
+    "placeholders": {}
+  },
+  "chatQuestionSupersededHint": "Replaced by a newer question. Please answer the latest one.",
+  "@chatQuestionSupersededHint": {
+    "description": "chat.questionSupersededHint",
+    "placeholders": {}
+  },
+  "chatQuestionInterruptedHint": "Delivery was interrupted. This question is closed; its answer will not be resent automatically.",
+  "@chatQuestionInterruptedHint": {
+    "description": "chat.questionInterruptedHint",
+    "placeholders": {}
+  },
+  "chatQuestionDefaultLabel": "Default answer",
+  "@chatQuestionDefaultLabel": {
+    "description": "chat.questionDefaultLabel",
+    "placeholders": {}
+  },
+  "chatQuestionTimeoutPolicy": "After 30 minutes without an answer, the default below will be used.",
+  "@chatQuestionTimeoutPolicy": {
+    "description": "chat.questionTimeoutPolicy",
+    "placeholders": {}
+  },
+  "chatQuestionCountdown": "Time remaining: {remaining}",
+  "@chatQuestionCountdown": {
+    "description": "chat.questionCountdown",
+    "placeholders": {
+      "remaining": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQuestionDeadline": "Answer by {time}",
+  "@chatQuestionDeadline": {
+    "description": "chat.questionDeadline",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "chatQuestionExpired": "The answer window has ended. Waiting for confirmation of the default answer.",
+  "@chatQuestionExpired": {
+    "description": "chat.questionExpired",
+    "placeholders": {}
+  },
+  "chatQuestionTimingPending": "Waiting for the question deadline. Answering is not available yet.",
+  "@chatQuestionTimingPending": {
+    "description": "chat.questionTimingPending",
+    "placeholders": {}
+  },
+  "chatQuestionChooseOne": "Choose one option, or write your own answer if available.",
+  "@chatQuestionChooseOne": {
+    "description": "chat.questionChooseOne",
+    "placeholders": {}
+  },
+  "chatQuestionChooseMany": "Choose one or more options. You can add details below if available.",
+  "@chatQuestionChooseMany": {
+    "description": "chat.questionChooseMany",
+    "placeholders": {}
+  },
+  "chatQuestionRecommended": "Recommended",
+  "@chatQuestionRecommended": {
+    "description": "chat.questionRecommended",
+    "placeholders": {}
+  },
+  "chatQuestionCustomAnswer": "Your answer or additional details",
+  "@chatQuestionCustomAnswer": {
+    "description": "chat.questionCustomAnswer",
+    "placeholders": {}
+  },
+  "chatQuestionKeyboardHint": "Enter for a new line · Ctrl/⌘+Enter to submit",
+  "@chatQuestionKeyboardHint": {
+    "description": "chat.questionKeyboardHint",
+    "placeholders": {}
+  },
+  "chatQuestionUseDefault": "Use recommendation and continue",
+  "@chatQuestionUseDefault": {
+    "description": "chat.questionUseDefault",
+    "placeholders": {}
+  },
+  "chatQuestionSubmit": "Submit and continue",
+  "@chatQuestionSubmit": {
+    "description": "chat.questionSubmit",
+    "placeholders": {}
+  },
+  "chatQuestionSubmitting": "Submitting your answer…",
+  "@chatQuestionSubmitting": {
+    "description": "chat.questionSubmitting",
+    "placeholders": {}
+  },
+  "chatQuestionSubmitted": "Answer submitted. Waiting for the updated question status.",
+  "@chatQuestionSubmitted": {
+    "description": "chat.questionSubmitted",
+    "placeholders": {}
+  },
+  "chatQuestionSubmitFailed": "Your answer could not be submitted. Your draft is kept; confirm that the question is still awaiting an answer, then retry.",
+  "@chatQuestionSubmitFailed": {
+    "description": "chat.questionSubmitFailed",
+    "placeholders": {}
+  },
+  "chatQuestionAnswerUser": "Your answer",
+  "@chatQuestionAnswerUser": {
+    "description": "chat.questionAnswerUser",
+    "placeholders": {}
+  },
+  "chatQuestionAnswerUserDefault": "You adopted the recommended answer",
+  "@chatQuestionAnswerUserDefault": {
+    "description": "chat.questionAnswerUserDefault",
+    "placeholders": {}
+  },
+  "chatQuestionAnswerTimeout": "Default answer used after timeout",
+  "@chatQuestionAnswerTimeout": {
+    "description": "chat.questionAnswerTimeout",
+    "placeholders": {}
+  },
+  "chatQuestionDeliveryPending": "Answer recorded. Waiting for delivery.",
+  "@chatQuestionDeliveryPending": {
+    "description": "chat.questionDeliveryPending",
+    "placeholders": {}
+  },
+  "chatQuestionDeliveryDelivered": "Answer delivered.",
+  "@chatQuestionDeliveryDelivered": {
+    "description": "chat.questionDeliveryDelivered",
+    "placeholders": {}
+  },
   "chatFailureCleanup": "Stop was requested, but some execution could not be confirmed as settled.",
   "@chatFailureCleanup": {
     "description": "chat.failureCleanup",

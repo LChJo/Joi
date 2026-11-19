@@ -6,6 +6,8 @@ import type { SseEvent } from "../../application/ports/runtime-store.js";
 import type { RecordedWorkResult, WorkResultRepository, WorkVerificationProjection } from "../../application/ports/work-results.js";
 import type { WorkResult } from "../../domain/work/work-result.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
+import { enqueueGoalQuestionInTransaction } from "./sqlite-joi-inbox-repository.js";
+import type { UserQuestionPrompt } from "../../../shared/user-questions.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -22,16 +24,20 @@ function workStatus(status: WorkResult["status"]): "COMPLETED" | "FAILED" | "WAI
 export class SqliteWorkResultRepository implements WorkResultRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
-  async record(result: WorkResult): Promise<RecordedWorkResult> {
+  async record(result: WorkResult, question?: UserQuestionPrompt): Promise<RecordedWorkResult> {
     return this.database.transaction((connection) => {
-      const current = connection.prepare("SELECT status FROM work_items WHERE work_id = ? AND workbench_id = ?")
-        .get(result.workId, result.workbenchId) as { status?: unknown } | undefined;
+      const current = connection.prepare("SELECT status, input_id FROM work_items WHERE work_id = ? AND workbench_id = ?")
+        .get(result.workId, result.workbenchId) as { status?: unknown; input_id?: unknown } | undefined;
       if (typeof current?.status !== "string") throw new Error("work_result_work_not_found");
       const isLate = current.status === "CANCELED";
       const authoritativeTerminal = connection.prepare(`SELECT 1 FROM work_results
         WHERE run_id = ? AND is_authoritative = 1 AND status IN ('COMPLETED', 'FAILED', 'UNKNOWN') LIMIT 1`)
         .get(result.runId);
       const isAuthoritative = authoritativeTerminal === undefined;
+      if (isAuthoritative && !isLate && result.status === "WAITING_INPUT" && question !== undefined && typeof current.input_id === "string") {
+        enqueueGoalQuestionInTransaction(connection, { inputId: current.input_id, prompt: question.question, question,
+          action: { actionId: `joi_action:question:${result.runId}`, runId: result.runId, workId: result.workId } }, result.createdAt);
+      }
       const bodySize = Buffer.byteLength(result.body, "utf8");
       const managedBody = bodySize > MANAGED_BODY_THRESHOLD_BYTES;
       const bodyRef = `${managedBody ? "work_result_artifact" : "work_result_body"}:${result.resultId}`;

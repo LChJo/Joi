@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'composer_text_field.dart';
 import 'conversation_output.dart';
+import 'user_question_card.dart';
 import 'i18n.dart';
 import 'remote_controller.dart';
 
@@ -748,11 +749,54 @@ class _ConversationScreenState extends State<ConversationScreen>
               entries: row,
               status: _text(turn['status']),
             ),
+          for (final question in RemoteUserQuestion.list(turn['questions']))
+            UserQuestionCard(
+              key: ValueKey(question.identity),
+              question: question,
+              supported:
+                  widget.controller is QuestionRemoteController &&
+                  (widget.controller as QuestionRemoteController)
+                      .supportsQuestions,
+              onResume:
+                  question.delivery == 'INTERRUPTED' &&
+                      !_busy &&
+                      [
+                        'FAILED',
+                        'STOPPED',
+                        'INTERRUPTED',
+                      ].contains(turn['status'])
+                  ? () async {
+                      final conversationId = _id;
+                      final epoch = _epoch;
+                      await _request('resumeQuestion', {
+                        'conversationId': conversationId,
+                        'questionId': question.questionId,
+                      });
+                      if (mounted && epoch == _epoch && conversationId == _id) {
+                        await _refresh();
+                      }
+                    }
+                  : null,
+              onAnswer: (input) async {
+                final conversationId = _id;
+                final epoch = _epoch;
+                await _request('answerQuestion', {
+                  'conversationId': conversationId,
+                  'questionId': question.questionId,
+                  'input': input,
+                });
+                if (mounted && epoch == _epoch && conversationId == _id) {
+                  await _refresh();
+                }
+              },
+            ),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  _turnStatus(turn['status']),
+                  turn['waitingForUser'] == true
+                      ? tr(Msg.chatQuestionActive)
+                      : _turnStatus(turn['status']),
                   style: Theme.of(context).textTheme.labelSmall,
                 ),
               ),

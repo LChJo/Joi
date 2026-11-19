@@ -17,9 +17,22 @@ import { queryJoiGoalDetail } from "./sqlite-joi-goal-detail.js";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
 import { queryGoalResult, queryGoalResults } from "./sqlite-goal-result-history.js";
 import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
+import type { UserQuestionRecord } from "../../application/ports/user-questions.js";
+import { questionDto } from "../../application/joi/user-question-service.js";
+import { importLegacyGoalQuestions } from "./sqlite-joi-inbox-repository.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
+
+/** Keep every pending card, but only the latest 24 receipts in this home projection. */
+function projectedGoalQuestions(connection: DatabaseSync, goalId: string) {
+  return connection.prepare(`SELECT payload_json, delivery FROM user_questions
+    WHERE scope_kind = 'GOAL' AND scope_id = ? AND (status IN ('ACTIVE','QUEUED') OR sequence IN (
+      SELECT sequence FROM user_questions WHERE scope_kind = 'GOAL' AND scope_id = ?
+        AND status NOT IN ('ACTIVE','QUEUED') ORDER BY sequence DESC LIMIT 24)) ORDER BY sequence`)
+    .all(goalId,goalId).map(row => questionDto({ ...JSON.parse(String(row.payload_json)) as UserQuestionRecord,
+      delivery: row.delivery as UserQuestionRecord["delivery"] }));
+}
 
 function text(row: Row, key: string): string {
   const value = row[key];
@@ -281,6 +294,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
 
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
+      importLegacyGoalQuestions(connection, now.toISOString());
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.archived_at, i.clarification_reason_code, i.clarification_prompt,
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
@@ -408,8 +422,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
           ? this.#artifactPreviews.read(connection, goalId, row.workbench_id)
           : {};
+        const questions = projectedGoalQuestions(connection, goalId);
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
+          ...(questions.length === 0 ? {} : { questions }),
           ...(status === "FINALIZING" && number(row, "live_turn_count") === 0 && active === 0 && activeRuns === 0
             && row.synthesis_result_revision === row.result_revision && number(row, "synthesis_requirements_current") === 1
             && (row.synthesis_status === "PENDING" || row.synthesis_status === "CONSUMED")
@@ -534,7 +550,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         WHERE i.dismissed_at IS NULL AND i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED'
         ORDER BY i.created_at DESC, i.input_id DESC`).all() as Row[]).map((row) => {
         const proposal = parseWorkbenchProposal(row.workbench_proposal_json);
+        const questions = projectedGoalQuestions(connection, text(row, "input_id"));
         return {
+        ...(questions.length === 0 ? {} : { questions }),
         acceptedAt: text(row, "created_at"),
         ...(typeof row.clarification_prompt === "string" ? { clarificationPrompt: row.clarification_prompt } : {}),
         ...(typeof row.clarification_reason_code === "string" ? { clarificationReasonCode: row.clarification_reason_code } : {}),

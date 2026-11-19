@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { AgentService } from "../application/agents/agent-service.js";
+import { UserQuestionService } from "../application/joi/user-question-service.js";
+import { SqliteUserQuestionStore } from "../infrastructure/persistence/sqlite-user-question-store.js";
 import { AuthService } from "../application/auth/auth-service.js";
 import { LifeService } from "../application/lives/life-service.js";
 import { RemoteCommandService } from "../application/remote/remote-command-service.js";
@@ -160,18 +162,21 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       exporterFactory: (jobs) => desktop.createExporter(jobs),
       workbenchStack,
     });
+    const userQuestions = new UserQuestionService({ store: new SqliteUserQuestionStore(database),clock,
+      onAnswered: async question => { if (question.scope.kind === "GOAL") await persistence.joiInboxRepository.applyAnsweredGoalQuestion(question.questionId); } });
     const conversationStack = wireConversations({ clock,ids,database,persistence,partnerStack,modelSourceStack,workbenchStack,
-      evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory });
+      evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions });
     await conversationStack.recover();
+    userQuestions.start();
     exportJobs = runtimeStack.exportJobs;
-    drainRuntime = async () => { await conversationStack.close(); await runtimeStack.drain(); };
+    drainRuntime = async () => { await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
     await runtimeStack.outboxDispatcher.dispatchOnce();
     await runtimeStack.actorTree.tick(clock.now());
     const remoteAccess = new RemoteAccessHost({
       clock,
       diagnostics: runtimeDiagnostics,
-      commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox, workbenchRegistry: workbenchStack.workbenchRegistry,
+      commands: new RemoteCommandService({ userQuestions,homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox, workbenchRegistry: workbenchStack.workbenchRegistry,
         conversations: {
           service: conversationStack.conversations,
           catalog: async () => {
@@ -230,6 +235,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     const { integrity, operations } = operationsBundle;
     databaseIntegrityMonitor = integrity;
     const dependencies = {
+      userQuestions,
       conversations: conversationStack.conversations,
       conversationWorkspace: conversationStack.workspace,
       conversationGit: conversationStack.git,

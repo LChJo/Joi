@@ -9,6 +9,7 @@ import 'message_body.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'remote_controller.dart';
+import 'user_question_card.dart';
 import 'workbench_choice.dart';
 import 'home_screen.dart';
 
@@ -219,7 +220,10 @@ class _GoalActionsState extends State<GoalActions> {
             state.busyGoals.contains(goal.goalId) ||
             state.connection != RemoteConnectionState.connected;
         final reason = goal.reasonCode;
-        final question = goal.status == 'NEEDS_ATTENTION';
+        final queueCurrent =
+            goal.questions.isNotEmpty &&
+            (reason == null || reason == 'question_required');
+        final question = goal.status == 'NEEDS_ATTENTION' && !queueCurrent;
         final workbench = const [
           'workbench_selection_invalid',
           'workbench_creation_unavailable',
@@ -249,6 +253,28 @@ class _GoalActionsState extends State<GoalActions> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            for (final queuedQuestion in goal.questions)
+              UserQuestionCard(
+                key: ValueKey(queuedQuestion.identity),
+                question: queuedQuestion,
+                supported:
+                    widget.controller is QuestionRemoteController &&
+                    (widget.controller as QuestionRemoteController)
+                        .supportsQuestions,
+                onAnswer: (input) async {
+                  final controller = widget.controller;
+                  if (controller is! QuestionRemoteController) {
+                    throw const RemoteActionFailure('remote_upgrade_required');
+                  }
+                  await (controller as QuestionRemoteController).answerQuestion(
+                    'GOAL',
+                    goal.goalId,
+                    queuedQuestion.questionId,
+                    input,
+                  );
+                  widget.onChanged?.call();
+                },
+              ),
             if (question) ...[
               const SizedBox(height: 12),
               if (historical) ...[

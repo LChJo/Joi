@@ -17,6 +17,13 @@ type Picker = "workbench" | "network" | "partner" | "skills" | "extensions" | "a
 interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean;piExtensions?: ConversationPiExtension[]; }
 const extensionLabels = { "agent-browser": "Agent Browser","cc-safety-net": "CC Safety Net" };
 const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
+function mergeConversationSnapshot(previous: ConversationDto, next: ConversationDto): ConversationDto {
+  const latest = new Set(next.turns.map(turn => turn.turnId));
+  const snapshot = { ...next,turns: [...previous.turns.filter(turn => !latest.has(turn.turnId)),...next.turns] };
+  if (previous.historyCursor === undefined) delete snapshot.historyCursor;
+  else snapshot.historyCursor = previous.historyCursor;
+  return snapshot;
+}
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");
 }
@@ -121,6 +128,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const pendingRequest = useRef<SendConversationInput | null>(null);
   const activeId = useRef(draft.id);
   const selection = useRef(0);
+  const updateRevision = useRef(0);
   const selectedRead = useRef<AbortController | null>(null);
   const updateCursor = useRef<{ id: string;cursor: string } | null>(null);
   const selectedPartner = partners.find(p => p.partnerId === draft.partnerId);
@@ -194,43 +202,39 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   },[conversationId,conversation?.eventCursor,conversation?.conversationId]);
   useEffect(() => {
     if (conversationId === undefined || !busy) return;
-    let current = true,fetching = false,streamRevision = 0,pollDelay = 700,failures = 0,pollingStopped = false;
+    let current = true,fetching = false,pollDelay = 700,failures = 0,pollingStopped = false;
     const epoch = selection.current,controller = new AbortController();
     const accepted = () => current && selection.current === epoch && activeId.current === conversationId;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = () => {
       timer = undefined;if (!accepted() || fetching || pollingStopped) return;fetching = true;
-      const revision = streamRevision;
+      const revision = updateRevision.current;
       let delay: number | undefined = pollDelay;
       const refresh = async () => {
         const cursor = updateCursor.current?.id === conversationId ? updateCursor.current.cursor : undefined;
         if (cursor !== undefined && typeof api.conversationEvents === "function") {
           const events = await api.conversationEvents(conversationId,cursor,{ signal: controller.signal });
-          if (!accepted() || revision !== streamRevision) return null;
+          if (!accepted() || revision !== updateRevision.current) return null;
           if (events.items.length === 0) { updateCursor.current = { id: conversationId,cursor: events.cursor };return null; }
         }
         const next = await api.getConversation(conversationId,{ signal: controller.signal });
-        if (accepted() && revision === streamRevision && next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
+        if (accepted() && revision === updateRevision.current && next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
         return next;
       };
       void refresh().then(next => {
-        if (!accepted() || revision !== streamRevision) return;
+        if (!accepted() || revision !== updateRevision.current) return;
         failures = 0;
         setConnectionNotice(previous => previous?.id === conversationId ? null : previous);
         if (next !== null) {
-          setConversation(previous => {
-            if (previous?.conversationId !== next.conversationId) return next;
-            const value = { ...next };delete value.historyCursor;
-            return { ...value,...(previous.historyCursor === undefined ? {} : { historyCursor: previous.historyCursor }),
-              turns: [...previous.turns.filter(turn => !next.turns.some(value => value.turnId === turn.turnId)),...next.turns] };
-          });
+          updateRevision.current++;
+          setConversation(previous => previous?.conversationId === next.conversationId ? mergeConversationSnapshot(previous,next) : next);
           if (!next.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING")) {
             delay = undefined;
             void loadHistory().catch((error: unknown) => { if (accepted()) showError(error); });
           }
         }
       }).catch((error: unknown) => {
-        if (!accepted() || revision !== streamRevision) return;
+        if (!accepted() || revision !== updateRevision.current) return;
         failures++;
         delay = error instanceof ApiError && (error.status === 401 || error.status === 403) ? undefined
           : Math.min(15_000,1000 * 2 ** Math.min(failures - 1,4)) * (1 + Math.random() * 0.1);
@@ -241,13 +245,15 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     };
     const dispose = api.watchConversation(conversationId,update => {
       if (!accepted() || update.conversationId !== conversationId) return;
-      streamRevision++;failures = 0;
+      updateRevision.current++;failures = 0;
       setConnectionNotice(previous => previous?.id === conversationId ? null : previous);
       setConversation(previous => {
         if (previous?.conversationId !== update.conversationId) return previous;
         const exists = previous.turns.some(turn => turn.turnId === update.turn.turnId);
+        const turns = previous.turns.map(turn => turn.turnId === update.turn.turnId ? update.turn
+          : update.relatedTurn?.turnId === turn.turnId ? update.relatedTurn : turn);
         return { ...previous,...(update.context === undefined ? {} : { context: update.context }),
-          turns: exists ? previous.turns.map(turn => turn.turnId === update.turn.turnId ? update.turn : turn) : [...previous.turns,update.turn] };
+          turns: exists ? turns : [...turns,update.turn] };
       });
       if (update.turn.status !== "QUEUED" && update.turn.status !== "RUNNING") {
         pollingStopped = true;clearTimeout(timer);
@@ -258,7 +264,15 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     timer = setTimeout(poll,pollDelay);
     return () => { current = false;clearTimeout(timer);controller.abort();dispose?.(); };
   },[api,conversationId,busy,readEpoch,loadHistory,showError]);
-  useEffect(() => { if (nearBottom.current && stream.current !== null) stream.current.scrollTop = stream.current.scrollHeight; },[conversation]);
+  useEffect(() => {
+    const element = stream.current;
+    if (!nearBottom.current || element === null) return;
+    const pending = element.querySelector<HTMLElement>(".user-question-card-active");
+    if (pending !== null) {
+      element.scrollTop += pending.getBoundingClientRect().top - element.getBoundingClientRect().top - 16;
+      nearBottom.current = false;
+    } else element.scrollTop = element.scrollHeight;
+  },[conversation]);
   const openConversation = (next: ConversationDto) => {
     const id = next.conversationId;
     const config = next.turns.at(-1)?.config ?? next.initialConfig;
@@ -398,13 +412,42 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
           {conversation.turns.map(turn => <article className="chat-turn" key={turn.turnId}>
           <div className="chat-user"><SafeMarkdown>{turn.text}</SafeMarkdown>{turn.config.attachmentIds.length === 0 ? null : <small><PaperclipIcon />{turn.config.attachmentIds.length}</small>}</div>
           <div className="chat-agent-heading"><span className="chat-agent-mark">j</span><strong>{turn.config.partnerName}</strong><small>{turn.config.modelName}</small></div>
-          <div className="chat-output"><ConversationOutput entries={turn.entries} status={turn.status} {...(turn.turnId !== conversation.turns.at(-1)?.turnId ? {} : {
+          <div className="chat-output"><ConversationOutput entries={turn.entries} status={turn.status} {...(turn.questions === undefined ? {} : { questions: turn.questions })} {...(busy ? {} : { onResumeQuestion: async (questionId: string) => {
+            const epoch = selection.current;
+            const resumed = await api.resumeConversationQuestion(conversation.conversationId,questionId);
+            if (selection.current === epoch && activeId.current === resumed.conversationId) {
+              updateRevision.current++;
+              setConversation(previous => previous?.conversationId === resumed.conversationId ? mergeConversationSnapshot(previous,resumed) : previous);
+            }
+            return resumed;
+          } })} onAnswerQuestion={async (questionId,input) => {
+            const id = conversation.conversationId;
+            const epoch = selection.current;
+            const isSelected = () => selection.current === epoch && activeId.current === id;
+            const answer = await api.answerQuestion({ kind: "CONVERSATION",id },questionId,input);
+            if (!isSelected()) return answer;
+            const revision = ++updateRevision.current;
+            setConversation(previous => previous?.conversationId !== id ? previous : { ...previous,turns: previous.turns.map(item => {
+              if (item.turnId !== turn.turnId || item.questions === undefined) return item;
+              const questions = item.questions.map(question => question.questionId === questionId && question.version === answer.version
+                && question.status === "ACTIVE" && question.delivery === "PENDING" ? answer : question);
+              return { ...item,questions,waitingForUser: item.status === "RUNNING"
+                && questions.some(question => question.delivery === "PENDING" && (question.status === "ACTIVE" || question.status === "QUEUED")) };
+            }) });
+            void api.getConversation(id).then(latest => {
+              if (!isSelected() || updateRevision.current !== revision) return;
+              updateRevision.current++;
+              if (latest.eventCursor !== undefined) updateCursor.current = { id,cursor: latest.eventCursor };
+              setConversation(previous => previous?.conversationId === id ? mergeConversationSnapshot(previous,latest) : previous);
+            }).catch(() => undefined);
+            return answer;
+          }} {...(turn.turnId !== conversation.turns.at(-1)?.turnId ? {} : {
             ...(conversation.context === undefined || turn.entries.some(entry => entry.kind === "ACTIVITY" && entry.activity.type === "CONTEXT") ? {} : { context: conversation.context }),
             ...(conversation.children === undefined ? {} : { children: conversation.children }),
             onCancel: childId => void api.cancelConversationChild(conversation.conversationId,childId).catch(showError),
           })} /></div>
           {turn.failure === undefined ? null : <div className="chat-turn-failure" role="alert"><p>{failureText(turn.failure.reasonCode)}</p>{turn.failure.sideEffectState === "NONE" ? null : <p>{t("chat.verifyEffects")}</p>}</div>}
-          <footer className={`chat-turn-footer status-${turn.status.toLowerCase()}`}><span className="chat-turn-status">{turn.status === "RUNNING" || turn.status === "QUEUED" ? <span aria-hidden="true" className="chat-turn-activity" /> : null}{statusText(turn.status)}</span>{turn.status !== "COMPLETED" && turn.config.skills.length > 0 ? <small>Skills · {turn.config.skills.length}</small> : null}
+          <footer className={`chat-turn-footer status-${turn.status.toLowerCase()}`}><span className="chat-turn-status">{turn.status === "RUNNING" || turn.status === "QUEUED" ? <span aria-hidden="true" className="chat-turn-activity" /> : null}{turn.waitingForUser ? t("chat.questionActive") : statusText(turn.status)}</span>{turn.status !== "COMPLETED" && turn.config.skills.length > 0 ? <small>Skills · {turn.config.skills.length}</small> : null}
             <div className="chat-turn-actions">
               {api.conversationForks && turn.status === "COMPLETED" ? <button aria-label={t("chat.forkConversation")} className="icon-button" disabled={forking} title={t("chat.forkConversation")} onClick={() => void forkConversation(conversation.conversationId,turn.turnId)} type="button"><GitForkIcon aria-hidden /></button> : null}
               <button aria-label={t("chat.copy")} className="icon-button" title={t("chat.copy")} onClick={() => { void navigator.clipboard.writeText(turn.entries.filter(e => e.role === "AGENT" && e.kind === "MARKDOWN").map(e => e.text ?? "").join("\n\n")).then(() => setCopied(turn.turnId)).catch(showError); }} type="button">{copied === turn.turnId ? <CheckIcon /> : <CopyIcon />}</button>

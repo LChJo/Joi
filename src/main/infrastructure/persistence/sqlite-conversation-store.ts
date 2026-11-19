@@ -7,6 +7,8 @@ import type { ConversationConfigDto, ConversationDto, ConversationSummaryDto, Co
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerSessionState } from "../../application/ports/partner-instances.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { questionDto } from "../../application/joi/user-question-service.js";
+import { listTurnUserQuestionsInTransaction, saveInterruptedQuestionChoiceInTransaction, settleRecoveredQuestionsInTransaction } from "./sqlite-user-question-store.js";
 
 interface Database { transaction<T>(operation: (db: DatabaseSync) => T): T; }
 type Row = Record<string, unknown>;
@@ -34,6 +36,19 @@ function turn(row: Row): ConversationTurnDto {
     artifacts: JSON.parse(String(row.artifacts_json)) as ConversationTurnDto["artifacts"],
     ...(typeof row.error_code === "string" ? { errorCode: row.error_code } : {}),
     ...(typeof row.failure_json === "string" ? { failure: JSON.parse(row.failure_json) as NonNullable<ConversationTurnDto["failure"]> } : {}) };
+}
+function projectTurnQuestions(db: DatabaseSync, conversationId: string, turns: ConversationTurnDto[]): ConversationTurnDto[] {
+  const grouped = new Map<string, NonNullable<ConversationTurnDto["questions"]>>();
+  for (const question of listTurnUserQuestionsInTransaction(db,conversationId,turns.map(item => item.turnId))) {
+    if (question.parentTurnId === undefined) continue;
+    const questions = grouped.get(question.parentTurnId) ?? [];
+    questions.push(questionDto(question));grouped.set(question.parentTurnId,questions);
+  }
+  return turns.map(item => {
+    const questions = grouped.get(item.turnId);
+    return questions === undefined ? item : { ...item,questions,waitingForUser: item.status === "RUNNING"
+      && questions.some(question => question.delivery !== "INTERRUPTED" && (question.status === "ACTIVE" || question.status === "QUEUED")) };
+  });
 }
 function read(db: DatabaseSync, id: string): ConversationDto | null {
   const row = db.prepare("SELECT * FROM conversations WHERE conversation_id=? AND deleted_at IS NULL").get(id);
@@ -64,7 +79,7 @@ function historyPage(db: DatabaseSync,id: string,cursor: string | undefined,limi
   const rows = db.prepare(`SELECT rowid AS position,* FROM conversation_turns WHERE conversation_id=?${before === undefined ? "" : " AND rowid<?"} ORDER BY rowid DESC LIMIT ?`)
     .all(...(before === undefined ? [id,limit + 1] : [id,before,limit + 1]));
   const visible = rows.slice(0,limit).reverse();
-  return { items: visible.map(turn),nextCursor: rows.length > limit ? `history:${id}:${String(visible[0]?.position)}` : null };
+  return { items: projectTurnQuestions(db,id,visible.map(turn)),nextCursor: rows.length > limit ? `history:${id}:${String(visible[0]?.position)}` : null };
 }
 function requireConversation(db: DatabaseSync,id: string): ConversationDto {
   const value = read(db,id);
@@ -269,12 +284,14 @@ export class SqliteConversationStore implements ConversationStore {
   }
   async submit(input: ConversationSubmission): Promise<ConversationDto> {
     return this.database.transaction(db => {
-      const duplicate = db.prepare("SELECT conversation_id,body,config_json FROM conversation_turns WHERE request_id=?").get(input.requestId);
+      const duplicate = db.prepare("SELECT conversation_id,body,config_json,question_recovery_context,question_recovery_source_turn_id FROM conversation_turns WHERE request_id=?").get(input.requestId);
       if (duplicate !== undefined) {
         if (duplicate.conversation_id !== input.conversationId) throw new DomainError("conversation_request_conflict", "Request identity is already in use.");
         const config = JSON.parse(String(duplicate.config_json)) as ConversationTurnDto["config"];
         const current = requireConversation(db,input.conversationId);
         if (duplicate.body !== input.text || current.workbenchId !== input.workbenchId
+          || duplicate.question_recovery_source_turn_id !== (input.questionRecovery?.sourceTurnId ?? null)
+          || (input.questionRecovery === undefined && duplicate.question_recovery_context !== (input.recoveryContext ?? null))
           || (config.subagentsEnabled ?? true) !== (input.config.subagentsEnabled ?? true)
           || config.partnerId !== input.config.partnerId || config.networkId !== input.config.networkId || JSON.stringify(config.skills) !== JSON.stringify(input.config.skills)
           || JSON.stringify(config.attachmentIds) !== JSON.stringify(input.config.attachmentIds)) throw new DomainError("conversation_request_conflict", "Request identity is already in use.");
@@ -288,8 +305,13 @@ export class SqliteConversationStore implements ConversationStore {
       if (current?.turns.some(t => t.status === "QUEUED" || t.status === "RUNNING")) throw new DomainError("conversation_busy", "A conversation turn is already active.");
       db.prepare("INSERT INTO conversations(conversation_id,workbench_id,title,updated_at) VALUES (?,?,?,?) ON CONFLICT(conversation_id) DO UPDATE SET updated_at=excluded.updated_at")
         .run(input.conversationId,input.workbenchId,sanitizeAgentConversationText(input.text).slice(0,80),input.at);
-      db.prepare("INSERT INTO conversation_turns(turn_id,conversation_id,request_id,body,config_json,revision_json,status,created_at) VALUES (?,?,?,?,?,?,'QUEUED',?)")
-        .run(input.turnId,input.conversationId,input.requestId,input.text,JSON.stringify(input.config),input.revision === undefined ? null : JSON.stringify(input.revision),input.at);
+      if (input.questionRecovery !== undefined) {
+        saveInterruptedQuestionChoiceInTransaction(db,{ ...input.questionRecovery,conversationId:input.conversationId,at:input.at });
+      }
+      db.prepare(`INSERT INTO conversation_turns(turn_id,conversation_id,request_id,body,config_json,revision_json,
+        question_recovery_context,question_recovery_source_turn_id,status,created_at) VALUES (?,?,?,?,?,?,?,?,'QUEUED',?)`)
+        .run(input.turnId,input.conversationId,input.requestId,input.text,JSON.stringify(input.config),input.revision === undefined ? null : JSON.stringify(input.revision),
+          input.recoveryContext ?? null,input.questionRecovery?.sourceTurnId ?? null,input.at);
       // Internal Work identities retain workspace ownership and context attribution.
       db.prepare("INSERT INTO work_items(work_id,workbench_id,title,intent_json,access_mode,status,created_at,updated_at) VALUES (?,?,?,'{}','READ','READY',?,?)")
         .run(input.turnId,input.workbenchId,"Conversation turn",input.at,input.at);
@@ -326,16 +348,28 @@ export class SqliteConversationStore implements ConversationStore {
   async get(id: string) { return this.database.transaction(db => read(db,id)); }
   async request(id: string) { return this.database.transaction(db => {
     const row = db.prepare("SELECT * FROM conversation_turns WHERE request_id=?").get(id);
-    return row === undefined ? null : { conversation: requireConversation(db,String(row.conversation_id)),turn: turn(row),text: String(row.body) };
+    return row === undefined ? null : { conversation: requireConversation(db,String(row.conversation_id)),turn: turn(row),text: String(row.body),
+      ...(typeof row.question_recovery_source_turn_id === "string" ? { questionRecoverySourceTurnId: row.question_recovery_source_turn_id } : {}) };
   }); }
+  async latestQuestionRecovery(sourceTurnId: string) {
+    return this.database.transaction(db => {
+      const row = db.prepare(`SELECT turn_id,status FROM conversation_turns WHERE question_recovery_source_turn_id=?
+        ORDER BY rowid DESC LIMIT 1`).get(sourceTurnId);
+      return row === undefined ? null : { turnId:String(row.turn_id),status:row.status as ConversationTurnDto["status"] };
+    });
+  }
   async turn(id: string) {
     return this.database.transaction(db => {
       const row = db.prepare("SELECT * FROM conversation_turns WHERE turn_id=?").get(id);
       if (row === undefined) return null;
       const conversation = read(db,String(row.conversation_id));
       if (conversation === null) return null;
-      return { conversation, turn: turn(row), text: String(row.body),
-        revision: typeof row.revision_json === "string" ? JSON.parse(row.revision_json) as PartnerRevision : null };
+      const projected = projectTurnQuestions(db,conversation.conversationId,[turn(row)])[0];
+      if (projected === undefined) throw new Error("conversation_turn_missing");
+      return { conversation, turn: projected, text: String(row.body),
+        revision: typeof row.revision_json === "string" ? JSON.parse(row.revision_json) as PartnerRevision : null,
+        ...(typeof row.question_recovery_context === "string" ? { recoveryContext: row.question_recovery_context } : {}),
+        ...(typeof row.question_recovery_source_turn_id === "string" ? { questionRecoverySourceTurnId: row.question_recovery_source_turn_id } : {}) };
     });
   }
   async begin(id: string) { return this.database.transaction(db => {
@@ -356,6 +390,7 @@ export class SqliteConversationStore implements ConversationStore {
       if (changed.changes === 0) return;
       if (patch.status !== "RUNNING") db.prepare("UPDATE work_items SET status=? WHERE work_id=?")
         .run(patch.status === "COMPLETED" ? "COMPLETED" : patch.status === "STOPPED" ? "CANCELED" : "FAILED",id);
+      if (patch.status === "COMPLETED") settleRecoveredQuestionsInTransaction(db,id);
     });
   }
   async stop(id: string) { this.database.transaction(db => {

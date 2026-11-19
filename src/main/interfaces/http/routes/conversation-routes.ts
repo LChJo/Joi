@@ -2,6 +2,7 @@ import { AuthError } from "../../../application/auth/auth-service.js";
 import { HttpError, readJson, sendJson, sessionToken, stringField } from "../http-core.js";
 import { exact, pattern, type RouteContext, type RouteDefinition } from "../route-types.js";
 import type { GitCommandInput } from "../../../../shared/conversations.js";
+import type { AnswerUserQuestionInput } from "../../../../shared/user-questions.js";
 import { isConversationPiExtensions } from "../../../../shared/conversations.js";
 import { streamConversation } from "../conversation-stream.js";
 
@@ -21,7 +22,34 @@ function strings(body: Record<string,unknown>,key: string): string[] {
   if (!Array.isArray(value) || value.some(v => typeof v !== "string")) throw new HttpError("request_field_invalid",`${key} must be a string list.`,400);
   return value as string[];
 }
+function questionAnswer(body: Record<string,unknown>): AnswerUserQuestionInput {
+  if (typeof body.version !== "number" || !Number.isInteger(body.version) || body.version < 1
+    || body.useDefault !== undefined && typeof body.useDefault !== "boolean"
+    || body.text !== undefined && typeof body.text !== "string") throw new HttpError("question_answer_invalid","The answer is invalid.",400);
+  return {version:body.version,...(typeof body.text === "string" ? {text:body.text} : {}),
+    ...(typeof body.useDefault === "boolean" ? {useDefault:body.useDefault} : {}),
+    ...(body.selectedOptionIds === undefined ? {} : {selectedOptionIds:strings(body,"selectedOptionIds")})};
+}
 export const CONVERSATION_ROUTES: RouteDefinition[] = [
+  { auth: "write",id: "POST /api/v1/conversations/:id/questions/:questionId/resume",match: pattern("POST",/^\/api\/v1\/conversations\/([^/]+)\/questions\/([^/]+)\/resume$/),handle: async (ctx,match) => {
+    const resume = service(ctx).resumeQuestion;
+    if (resume === undefined) throw new HttpError("question_unavailable","Question recovery is unavailable.",503);
+    const [,id,questionId] = match as RegExpExecArray;
+    sendJson(ctx.response,202,await resume.call(service(ctx),decodeURIComponent(id ?? ""),decodeURIComponent(questionId ?? "")));
+  } },
+  { auth: "write",id: "POST /api/v1/conversations/:id/questions/:questionId/answer",match: pattern("POST",/^\/api\/v1\/conversations\/([^/]+)\/questions\/([^/]+)\/answer$/),handle: async (ctx,match) => {
+    const body = await readJson(ctx.request);
+    const answer = service(ctx).answerQuestion;
+    if (answer === undefined) throw new HttpError("question_unavailable","Questions are unavailable.",503);
+    const [,id,questionId] = match as RegExpExecArray;
+    sendJson(ctx.response,200,await answer.call(service(ctx),decodeURIComponent(id ?? ""),decodeURIComponent(questionId ?? ""),questionAnswer(body)));
+  } },
+  { auth: "write",id: "POST /api/v1/joi/goals/:id/questions/:questionId/answer",match: pattern("POST",/^\/api\/v1\/joi\/goals\/([^/]+)\/questions\/([^/]+)\/answer$/),handle: async (ctx,match) => {
+    const body = await readJson(ctx.request);
+    if (ctx.dependencies.userQuestions === undefined) throw new HttpError("question_unavailable","Questions are unavailable.",503);
+    const [,id,questionId] = match as RegExpExecArray;
+    sendJson(ctx.response,200,await ctx.dependencies.userQuestions.answer({kind:"GOAL",id:decodeURIComponent(id ?? "")},decodeURIComponent(questionId ?? ""),questionAnswer(body)));
+  } },
   { auth: "read",id: "GET /api/v1/conversations",match: exact("GET","/api/v1/conversations"),handle: async ctx => sendJson(ctx.response,200,await service(ctx).list(ctx.url.searchParams.get("archived") === "true")) },
   { auth: "write",id: "POST /api/v1/conversations",match: exact("POST","/api/v1/conversations"),handle: async ctx => {
     const body = await readJson(ctx.request);

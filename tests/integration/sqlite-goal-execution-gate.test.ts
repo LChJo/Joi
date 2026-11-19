@@ -24,15 +24,19 @@ describe("goal execution gate", () => {
       if (waiting?.questionId === undefined || waiting.questionVersion === undefined) throw new Error("question metadata missing");
 
       await repository.requireClarification(goal.inputId, "question_required", "需要发布到哪些操作系统？");
-      const revised = (await inbox.list()).find((item) => item.inputId === goal.inputId);
-      expect(revised).toMatchObject({ questionVersion: 2 });
-      if (revised?.questionId === undefined || revised.questionVersion === undefined) throw new Error("revised question metadata missing");
+      // A second question queues without replacing the question already on screen.
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({ questionVersion: 1 });
       await expect(inbox.clarify({
         inputId: goal.inputId,
         questionId: waiting.questionId,
         questionVersion: waiting.questionVersion,
-        text: "Windows 和 macOS",
-      })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
+        text: "桌面平台",
+      })).resolves.toMatchObject({ status: "CLARIFICATION_REQUIRED" });
+      const revised = (await inbox.list()).find((item) => item.inputId === goal.inputId);
+      expect(revised).toMatchObject({ questionVersion: 2 });
+      if (revised?.questionId === undefined || revised.questionVersion === undefined) throw new Error("revised question metadata missing");
+      await expect(inbox.clarify({ inputId: goal.inputId, questionId: waiting.questionId, questionVersion: waiting.questionVersion, text: "过期回答" }))
+        .rejects.toMatchObject({ code: "joi_clarification_unavailable" });
       await expect(inbox.clarify({
         inputId: goal.inputId,
         questionId: revised.questionId,

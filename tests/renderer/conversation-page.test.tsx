@@ -1,8 +1,51 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DigitalLifeApi } from "../../src/renderer/api";
 import { ConversationPage } from "../../src/renderer/ConversationPage";
-import type { ConversationDto } from "../../src/shared/conversations";
+import type { ConversationDto, ConversationUpdateDto } from "../../src/shared/conversations";
+import type { UserQuestionDto } from "../../src/shared/user-questions";
+
+
+it("ASK-08 retains the completed SSE update when the answer refresh returns late", async () => {
+  const api = new DigitalLifeApi("",true);
+  const token = new Date().toISOString(), title = "Synthetic timeline";
+  const question: UserQuestionDto = { scope:{kind:"CONVERSATION",id:"chat"},questionId:"q",version:1,ownerId:"turn",sourceName:"Pi",question:"Pick a route",
+    kind:"QUESTION",createdAt:token,expiresAt:new Date(Date.now()+60_000).toISOString(),status:"ACTIVE",delivery:"PENDING",allowCustom:true,multiSelect:false,options:[],defaultOptionIds:[],defaultAnswer:"Route one" };
+  const initial: ConversationDto = { conversationId:"chat",workbenchId:"wb",title,updatedAt:token,eventCursor:"events:chat:1",
+    turns:[{ turnId:"turn",status:"RUNNING",text:"User request",createdAt:token,waitingForUser:true,questions:[question],entries:[],artifacts:[],
+      config:{partnerId:"joi-chat",partnerName:"joi",networkId:"network",networkName:"Model",modelName:"Configured",skills:[],attachmentIds:[]}}] };
+  const active = initial.turns[0];
+  if (active === undefined) throw new Error("Missing turn fixture");
+  const answered: UserQuestionDto = {...question,status:"ANSWERED",delivery:"PENDING",answer:{text:"Route one",source:"USER_DEFAULT",selectedOptionIds:[],answeredAt:token}};
+  const stale: ConversationDto = {...initial,eventCursor:"events:chat:2",turns:[{...active,questions:[answered],waitingForUser:false}]};
+  const refresh = Promise.withResolvers<ConversationDto>();
+  const get = vi.spyOn(api,"getConversation").mockResolvedValueOnce(initial).mockImplementation(() => refresh.promise);
+  let deliver: ((update: ConversationUpdateDto) => void) | undefined;
+  vi.spyOn(api,"watchConversation").mockImplementation((_id,listener) => { deliver = listener;return () => undefined; });
+  vi.spyOn(api,"conversationEvents").mockResolvedValue({cursor:"events:chat:1",items:[],hasMore:false});
+  vi.spyOn(api,"listWorkbenches").mockResolvedValue({items:[{workbenchId:"wb",name:"Workbench",scopeSummary:"Scope",updatedAt:token}]});
+  vi.spyOn(api,"listPartners").mockResolvedValue({items:[]});
+  vi.spyOn(api,"listModelSources").mockResolvedValue({items:[{sourceId:"network",displayName:"Model",activeModel:{id:"configured"},status:"READY"} as never]});
+  vi.spyOn(api,"listConversations").mockResolvedValue({items:[initial]});
+  vi.spyOn(api,"conversationInheritance").mockResolvedValue({memoryCount:0,evolutionRevisionId:null});
+  vi.spyOn(api,"request").mockResolvedValue({items:[]});
+  const answer = vi.spyOn(api,"answerQuestion").mockResolvedValue(answered);
+  const view = render(<ConversationPage api={api} />);
+  fireEvent.click(await screen.findByRole("button",{name:title}));
+  const card = await screen.findByRole("article",{name:"Pick a route"});
+  const button = card.querySelector<HTMLButtonElement>("button[type=button]");
+  if (button === null) throw new Error("Missing default selection button");
+  fireEvent.click(button);
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  expect(answer).toHaveBeenCalledOnce();
+  act(() => deliver?.({conversationId:"chat",turn:{...active,status:"COMPLETED",waitingForUser:false,questions:[{...answered,delivery:"DELIVERED"}],
+    entries:[{entryId:"final",kind:"MARKDOWN",role:"AGENT",sequence:1,createdAt:token,text:"Final answer"}]}}));
+  expect(screen.getByText("Final answer")).toBeInTheDocument();
+  await act(async () => { refresh.resolve(stale);await refresh.promise; });
+  expect(screen.getByText("Final answer")).toBeInTheDocument();
+  expect(view.container.querySelector(".chat-turn-footer")).toHaveClass("status-completed");
+});
+
 
 it("CHAT-02/03 starts from a blank composer, selects independently, and locks the workbench after sending", async () => {
   const api = new DigitalLifeApi("",true);

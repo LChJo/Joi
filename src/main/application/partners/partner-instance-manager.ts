@@ -303,6 +303,7 @@ export class PartnerInstanceManager {
           externalRunId: result.externalRunId,
           instanceId: record.instanceId,
           ...(result.output.pendingQuestion === undefined ? {} : { pendingQuestion: result.output.pendingQuestion }),
+          ...(result.output.pendingQuestionSpec === undefined ? {} : { pendingQuestionSpec: result.output.pendingQuestionSpec }),
           status: result.status,
           workId: input.request.workId,
         };
@@ -371,6 +372,7 @@ export class PartnerInstanceManager {
         externalRunId: turn.externalRunId,
         instanceId: record.instanceId,
         ...(turn.output.pendingQuestion === undefined ? {} : { pendingQuestion: turn.output.pendingQuestion }),
+        ...(turn.output.pendingQuestionSpec === undefined ? {} : { pendingQuestionSpec: turn.output.pendingQuestionSpec }),
         status: turn.status,
         workId: input.request.workId,
       };

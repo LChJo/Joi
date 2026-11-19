@@ -1,6 +1,7 @@
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "./joi.js";
 import type { SendConversationInput } from "./conversations.js";
 import { isConversationPiExtensions } from "./conversations.js";
+import type { AnswerUserQuestionInput } from "./user-questions.js";
 
 export const REMOTE_PROTOCOL_VERSION = 1;
 export const REMOTE_PAIRING_TTL_MS = 10 * 60 * 1_000;
@@ -48,6 +49,8 @@ export interface RemoteAccessStatusDto {
 }
 
 export type RemoteConversationCommand =
+  | { kind: "conversation.resumeQuestion"; requestId: string; conversationId: string; questionId: string }
+  | { kind: "conversation.answerQuestion"; requestId: string; conversationId: string; questionId: string; input: AnswerUserQuestionInput }
   | { kind: "conversation.catalog"; requestId: string }
   | { kind: "conversation.skills"; requestId: string; engine: string }
   | { kind: "conversation.list"; requestId: string; archived?: boolean }
@@ -58,7 +61,9 @@ export type RemoteConversationCommand =
   | { kind: "conversation.rename"; requestId: string; conversationId: string; title: string }
   | { kind: "conversation.cancelChild"; requestId: string; conversationId: string; childId: string };
 
-export type RemoteCommand = RemoteConversationCommand
+export interface RemoteQuestionCommand { kind: "question.answer"; requestId: string; scopeKind: "GOAL" | "CONVERSATION"; scopeId: string; questionId: string; input: AnswerUserQuestionInput }
+
+export type RemoteCommand = RemoteConversationCommand | RemoteQuestionCommand
   | { kind: "feed.get"; requestId: string; paged?: boolean; preview?: boolean }
   | { kind: "catalog.get"; requestId: string }
   | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
@@ -73,12 +78,34 @@ export type RemoteCommand = RemoteConversationCommand
   | { kind: "message.clarify"; requestId: string; inputId: string; text?: string; workbenchId?: string; partnerId?: string; questionId?: string; questionVersion?: number; actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }
   | { kind: "message.cancel" | "message.dismiss" | "message.archive" | "message.unarchive" | "message.closeHistoricalReview"; requestId: string; inputId: string };
 
+export function isRemoteQuestionAnswerInput(value: unknown): value is AnswerUserQuestionInput {
+  if (value === null || Array.isArray(value) || typeof value !== "object") return false;
+  const input = value as Record<string, unknown>;
+  return Object.keys(input).every(key => ["version", "text", "selectedOptionIds", "useDefault"].includes(key))
+    && Number.isSafeInteger(input.version) && Number(input.version) >= 1
+    && (input.text === undefined || typeof input.text === "string" && input.text.length <= 8000)
+    && (input.useDefault === undefined || typeof input.useDefault === "boolean")
+    && (input.selectedOptionIds === undefined || Array.isArray(input.selectedOptionIds)
+      && input.selectedOptionIds.length <= 64 && new Set(input.selectedOptionIds).size === input.selectedOptionIds.length
+      && input.selectedOptionIds.every((id: unknown) => typeof id === "string" && id.length > 0 && id.length <= 240));
+}
+
+export function isRemoteQuestionCommand(value: unknown): value is RemoteQuestionCommand {
+  if (value === null || Array.isArray(value) || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return item.kind === "question.answer" && (item.scopeKind === "GOAL" || item.scopeKind === "CONVERSATION")
+    && ["requestId", "scopeId", "questionId"].every(key => typeof item[key] === "string" && item[key].length > 0 && item[key].length <= 160)
+    && isRemoteQuestionAnswerInput(item.input);
+}
+
 export function isRemoteConversationCommand(value: unknown): value is RemoteConversationCommand {
   if (value === null || Array.isArray(value) || typeof value !== "object") return false;
   const item = value as Record<string,unknown>;
   const string = (key: string,max = 160,empty = false) => typeof item[key] === "string" && (empty || item[key].length > 0) && item[key].length <= max;
   if (!string("requestId")) return false;
   switch (item.kind) {
+    case "conversation.resumeQuestion": return string("conversationId") && string("questionId");
+    case "conversation.answerQuestion": return string("conversationId") && string("questionId") && isRemoteQuestionAnswerInput(item.input);
     case "conversation.catalog": return true;
     case "conversation.skills": return ["pi-core","codex","claude-code"].includes(String(item.engine));
     case "conversation.list": return item.archived === undefined || typeof item.archived === "boolean";
