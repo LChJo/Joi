@@ -17,7 +17,7 @@ export function isSynthesisStateCorrection(reasonCode: string): boolean {
 }
 
 export function isTerminalTurnFailure(reasonCode: string): boolean {
-  return ["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal", "source_content_refusal"].includes(reasonCode);
+  return ["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal", "source_content_refusal", "model_context_budget_exhausted"].includes(reasonCode);
 }
 
 export function joiTurnRetryDelay(failureCount: number): number {

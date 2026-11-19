@@ -14,9 +14,14 @@ import { trackPiModels } from "./pi-usage.js";
 import { PiSessionUsage } from "./pi-session-usage.js";
 import type { PiNativeSessionStore } from "./pi-native-session-store.js";
 import { PiObservationQueue } from "./pi-observation-queue.js";
+import { renderHistoricalContext } from "../../domain/work/historical-context.js";
+import { JOI_MEMORY_OWNER, type HistoricalMemoryReader } from "../../application/ports/historical-memory.js";
+import { historicalMemoryTools } from "./pi-historical-memory-tools.js";
+import { assertPiRequestCapacity, PI_REQUEST_CAPACITY_ERROR } from "./pi-model-budget.js";
 
 export const JOI_REASONING_TOOL_NAMES = [
   "context_read_history",
+  "workbench_read_history",
   "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
   "workbench_list_summaries",
   "workbench_select",
@@ -68,6 +73,7 @@ export const JOI_REASONING_TOOL_NAMES = [
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
 interface PiReasoningRuntimeOptions {
+  memory?: HistoricalMemoryReader;
   compactionThresholdPercent?: number;
   sourceName?: string;
   diagnostics?: RuntimeDiagnostics; usage?: UsageRecorder; nativeSessions?: PiNativeSessionStore;
@@ -153,25 +159,56 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     let runtime: SessionRuntime | undefined;
     try {
       const previous = this.#sessions.get(input.sessionId);
-      const stored = previous?.metadata ?? this.#snapshots.get(input.sessionId) ?? await this.options.sessionStore.load(input.sessionId);
+      const isolated = input.executionScope === "turn";
+      const stateId = isolated ? JSON.stringify([input.sessionId,input.turnId]) : input.sessionId;
+      const cached = previous?.metadata ?? this.#snapshots.get(input.sessionId);
+      const stored = cached?.sessionId === stateId ? cached : await this.options.sessionStore.load(stateId);
+      const legacy = isolated && stored === null ? await this.options.sessionStore.load(input.sessionId) : null;
       if (this.#canceledStartup.has(input.sessionId)) return;
-      if (stored !== null && stored.workbenchId !== input.workbenchId) throw new Error("reasoning_session_workbench_mismatch");
+      if ([stored,legacy].some(snapshot => snapshot !== null && snapshot.workbenchId !== input.workbenchId)) throw new Error("reasoning_session_workbench_mismatch");
       previous?.session.dispose();
-      const source = stored === null ? undefined : { engine: "pi-core" as const, messages: [...(stored.archivedMessages ?? []), ...stored.messages],
+      const seed = legacySummarySeed(this.options.model,input,legacy?.compaction?.summary);
+      const source = stored === null ? { engine: "pi-core" as const, messages: seed } : { engine: "pi-core" as const, messages: stored.messages,
         ...(stored.piSession === undefined ? {} : { piSession: stored.piSession }), ...(stored.piNativeSession === undefined ? {} : { piNativeSession: stored.piNativeSession }),
         ...(stored.compaction === undefined ? {} : { checkpoint: stored.compaction }) };
-      const native = await this.options.nativeSessions?.open({ identity: ["primary", input.workbenchId, input.sessionId], cwd: process.cwd(), ...(source === undefined ? {} : { state: source, legacySource: stored }) });
+      const legacyIdentity = ["primary", input.workbenchId, input.sessionId];
+      const native = await this.options.nativeSessions?.open({ identity: isolated ? [...legacyIdentity,input.turnId] : legacyIdentity,
+        cwd: process.cwd(), state: source, ...(stored === null ? {} : { legacySource: stored }) });
+      const listPriorTurns = () => this.options.sessionStore.listPriorTurnIds?.(input) ?? Promise.resolve([]);
+      const readTurn = !isolated || this.options.sessionStore.listPriorTurnIds === undefined ? undefined : async (turnId: string) => {
+        if (!(await listPriorTurns()).includes(turnId)) return null;
+        const snapshot = await this.options.sessionStore.load(JSON.stringify([input.sessionId,turnId]));
+        if (snapshot !== null && snapshot.workbenchId !== input.workbenchId) return null;
+        const context = await this.options.nativeSessions?.readContext([...legacyIdentity,turnId],snapshot?.piNativeSession);
+        if ((context === null || context === undefined) && snapshot === null) return null;
+        const messages = context?.manager.getEntries().flatMap(entry => entry.type === "message" ? [entry.message] : []) ?? snapshot?.messages ?? [];
+        return [...(snapshot?.archivedMessages ?? []),...messages];
+      };
       const tools: AgentTool[] = [...(typeof this.options.tools === "function" ? this.options.tools(input) : this.options.tools),
-        createContextHistoryTool(() => session.sessionManager.getEntries().flatMap(entry => entry.type === "message" ? [entry.message] : []))].map(tool => tool.name === "user_ask" || tool.name === "turn_complete" ? { ...tool,executionMode: "sequential" as const } : tool);
+        ...(this.options.memory === undefined ? [] : historicalMemoryTools(this.options.memory,input.workbenchId,true)),
+        createContextHistoryTool(async () => {
+          const current = session.sessionManager.getEntries().flatMap(entry => entry.type === "message" ? [entry.message] : []);
+          if (!isolated) return [...(stored?.archivedMessages ?? []), ...current];
+          const old = legacy ?? await this.options.sessionStore.load(input.sessionId);
+          if (old?.workbenchId !== undefined && old.workbenchId !== input.workbenchId) throw new DomainError("reasoning_session_workbench_mismatch", "History belongs to another workbench.");
+          const oldNative = await this.options.nativeSessions?.readContext(legacyIdentity, old?.piNativeSession);
+          const oldMessages = oldNative === null || oldNative === undefined ? old?.messages ?? []
+            : oldNative.manager.getEntries().flatMap(entry => entry.type === "message" ? [entry.message] : []);
+          const priorTurns = (await listPriorTurns()).map(turnId => ({ kind: "prior_turn",turnId }));
+          const oldSummary = old?.compaction?.summary.trim();
+          return [...priorTurns, ...(oldSummary ? [{ kind: "legacy_summary",text: oldSummary }] : []),
+            ...(old?.archivedMessages ?? []), ...oldMessages, ...current];
+        },readTurn)].map(tool => tool.name === "user_ask" || tool.name === "turn_complete" ? { ...tool,executionMode: "sequential" as const } : tool);
       validateToolNames(tools);
+      const memory = renderHistoricalContext("joi",this.options.memory?.entries("joi",JOI_MEMORY_OWNER) ?? []).text;
       const factories: ExtensionFactory[] = [pi => {
         pi.on("tool_call", event => { runtime?.validatedToolCalls.add(event.toolCallId); });
         pi.on("context", async event => {
           const required = await input.refreshRequiredContext?.() ?? input.requiredContext;
           const background = [required, input.backgroundContext].filter(Boolean).join("\n\n");
-          if (background === "") return;
+          if (background === "" && memory === "") return;
           return { messages: [...event.messages, {
-            role: "system", content: "", sections: { workbench_context: background }, timestamp: Date.now(),
+            role: "system", content: "", sections: { workbench_context: background, ...(memory === "" ? {} : { joi_memory: memory }) }, timestamp: Date.now(),
           }] };
         });
       }];
@@ -179,7 +216,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       if (this.options.sourceName !== undefined) usageContext.sourceName = this.options.sourceName;
       const models = trackPiModels(this.options.models, undefined, () => usageContext, this.options.diagnostics);
       const session = await createJoiPiSession({ state: { model: this.options.model, thinkingLevel: this.options.thinkingLevel, tools,
-        messages: stored?.piSession === undefined ? (source?.messages ?? []) as AgentMessage[] : [],
+        messages: stored?.piSession === undefined ? source.messages as AgentMessage[] : [],
         systemPrompt: input.systemPrompt,
       } }, models, process.cwd(), { extensionFactories: factories,
         ...(input.skillContext === undefined ? {} : { skillContext: input.skillContext }),
@@ -202,7 +239,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         return;
       }
       const metadata: JoiReasoningSessionSnapshot = { workbenchId: input.workbenchId, modelRevisionId: input.modelRevisionId, sourceRevisionId: input.sourceRevisionId,
-        sessionId: input.sessionId, systemPrompt: input.systemPrompt, updatedAt: new Date().toISOString(), messages: [] };
+        sessionId: stateId, systemPrompt: input.systemPrompt, updatedAt: new Date().toISOString(), messages: [] };
       runtime = { events: [], session, agent: session.agent, current: input, metadata, ...(native === undefined ? {} : { nativeReference: native.reference }), delivered: { tool: false }, validatedToolCalls: new Set(), dispatchAcceptanceCalls: new Set(), dispatchAcceptanceFailures: 0, cancelled: false,
         rollbackPoint: previous?.rollbackPoint?.turnId === input.turnId ? previous.rollbackPoint : { leafId: session.sessionManager.getLeafId(), turnId: input.turnId }, idle: Promise.resolve() };
       this.#sessions.set(input.sessionId, runtime);
@@ -365,5 +402,22 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) throw new Error("reasoning_session_not_found");
     return session;
+  }
+}
+
+function legacySummarySeed(model: Model<Api>, input: StartReasoningTurnInput, storedSummary?: string) {
+  const summary = storedSummary?.trim();
+  if (!summary) return [];
+  const seed = { role: "user" as const,content: `Retained goal summary (reference data):\n${summary}`,timestamp: 0 };
+  try {
+    assertPiRequestCapacity(model,{
+      systemPrompt: [input.systemPrompt,input.requiredContext,input.backgroundContext].filter(Boolean).join("\n\n"),
+      messages: [seed,{ role: "user",timestamp: 0,content: [{ type: "text",text: input.prompt },
+        ...(input.images ?? []).map(image => ({ ...image,type: "image" as const }))] }],
+    });
+    return [seed];
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== PI_REQUEST_CAPACITY_ERROR) throw error;
+    return [{ ...seed,content: "The retained goal summary is available through context_read_history." }];
   }
 }

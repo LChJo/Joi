@@ -29,6 +29,9 @@ import { LifeRuntimeService } from "../application/lives/life-runtime-service.js
 import { OutboxDispatcher } from "../application/operations/outbox-dispatcher.js";
 import { createPartnerMemoryRefreshDispatcher } from "../application/partners/partner-memory-refresh-handler.js";
 import { PARTNER_MEMORY_REFRESH_KIND } from "../application/ports/partner-memory.js";
+import { HISTORICAL_MEMORY_KIND } from "../application/ports/historical-memory.js";
+import { HistoricalMemoryService } from "../application/joi/historical-memory-service.js";
+import { PiHistoricalMemoryOrganizer } from "../infrastructure/pi/pi-historical-memory-organizer.js";
 import { MODEL_SOURCE_RECOVERY_KIND } from "../application/model-sources/model-source-recovery.js";
 import { AlarmScheduler } from "../application/rhythm/alarm-scheduler.js";
 import { ScheduleScheduler } from "../application/rhythm/schedule-scheduler.js";
@@ -236,7 +239,7 @@ export function wireRuntime(input: {
     diagnostics,
     // evolution.model rows are audit-only outbox records written by the evolution store; the
     // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
-    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", "conversation.turn", "conversation.git", "conversation.subagent", PARTNER_MEMORY_REFRESH_KIND, MODEL_SOURCE_RECOVERY_KIND],
+    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", "conversation.turn", "conversation.git", "conversation.subagent", PARTNER_MEMORY_REFRESH_KIND, HISTORICAL_MEMORY_KIND, MODEL_SOURCE_RECOVERY_KIND],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {
@@ -281,7 +284,12 @@ export function wireRuntime(input: {
     handlers: { [MODEL_SOURCE_RECOVERY_KIND]: record => modelSourceStack.recovery.handle(record) },
     onBackgroundError: () => process.stderr.write("A model source recovery remains queued for retry.\n"),
   });
+  const historicalMemory = new HistoricalMemoryService(persistence.historicalMemory,new PiHistoricalMemoryOrganizer({
+    nativeSessions: partnerStack.nativeSessions,resolver: modelSourceStack.configuredModelResolver,
+    sources: modelSourceStack.reasoningSources,usage: modelSourceStack.statistics,
+  }),diagnostics);
   const memoryRefreshDispatcher = createPartnerMemoryRefreshDispatcher({ clock, store: database.store, diagnostics,
+    historical: record => historicalMemory.handle(record),
     memory: partnerStack.partnerMemory, owner: `memory_outbox_${String(process.pid)}`,
     canStart: () => database.transaction(connection => connection.prepare(`SELECT 1 AS busy WHERE
       EXISTS (SELECT 1 FROM joi_turns WHERE status='RUNNING') OR EXISTS (
@@ -302,6 +310,7 @@ export function wireRuntime(input: {
     continuity: new ContinuityService({ clock, publisher, store: database.store }),
     delegations,
     drain: async () => {
+      historicalMemory.stop();
       await partnerStack.stopPiUsageReconciliation();
       modelSourceStack.recovery.stop();
       try { await modelRecoveryDispatcher.close(); }
@@ -319,6 +328,7 @@ export function wireRuntime(input: {
     lifeRuntime,
     outboxDispatcher,
     memoryRefreshDispatcher,
+    stopHistoricalMemory: () => historicalMemory.stop(),
     modelRecoveryDispatcher,
     resultExports,
   };

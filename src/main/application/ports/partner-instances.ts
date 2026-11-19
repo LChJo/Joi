@@ -81,6 +81,7 @@ export interface ResidentTurnInput extends PartnerExecutionContext {
 
 /** Private execution history, separate from the safe UI projection and disposable instances. */
 export interface PartnerSessionState {
+  executionWorkId?: string;
   handoff?: { sourceSegmentId: string; sourcePiSession?: NonNullable<PartnerSessionState["piNativeSession"]> };
   piNativeSession?: { version: 1; key: string; sessionId: string; leafId: string | null; lastEntryId: string | null };
   modelRetry?: { turnId: string;attempts: number };

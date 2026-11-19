@@ -460,6 +460,7 @@ export class JoiCoordinator {
         const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
+            executionScope: "turn",
             ...(repair === undefined ? {} : { repair }),
             ...(contract === undefined
               ? input.synthesisContext === undefined ? {} : { requiredContext: input.synthesisContext.originalRequest }

@@ -9,6 +9,7 @@ import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.j
 import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
 import { buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
+import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
@@ -1103,6 +1104,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
+      if (completion?.outcome === "DIRECT_ANSWER") {
+        const completed = connection.prepare("SELECT workbench_id FROM joi_inbox_messages WHERE input_id=?").get(inputId);
+        if (typeof completed?.workbench_id === "string") enqueueHistoricalMemory(connection,{ workbenchId: completed.workbench_id,kind: "direct",subjectId: inputId,now });
+      }
       connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
         WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')
           AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);

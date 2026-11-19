@@ -85,10 +85,20 @@ it("CHAT-02/06 wires path-only creation, default Joi partner, scoped memory inhe
     const wb = await stack.quickWorkbench(f.root);
     expect(wb.name).toBe(path.basename(f.root));expect(wb).not.toHaveProperty("rootPath");
     const other = await f.workbenchRegistry.create({ name: "Other",personaSummary: "Other",projectLabel: "Other",scopeSummary: "Other" });
-    f.database.transaction(db => {
-      db.prepare("UPDATE workbenches SET task_summary=? WHERE workbench_id=?").run("PROJECT_MEMORY_SENTINEL",wb.workbenchId);
-      db.prepare("UPDATE workbenches SET task_summary=? WHERE workbench_id=?").run("OTHER_WORKBENCH_SENTINEL",other.workbenchId);
-    });
+    for (const [benchId,text] of [[wb.workbenchId,"PROJECT_MEMORY_SENTINEL"],[other.workbenchId,"OTHER_WORKBENCH_SENTINEL"]] as const) {
+      const goal = `goal-${benchId}`, turn = `turn-${benchId}`, now = f.clock.now().toISOString();
+      f.database.transaction(db => {
+        db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES (?,?,?,'ROUTED',?,?,?)`).run(goal,goal,"Raw source kept privately",benchId,now,now);
+        db.prepare(`INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES (?,?,?,?,'RUNNING',?,?)`).run(turn,goal,benchId,turn,now,now);
+      });
+      await persistence.joiInboxRepository.completeInput(goal,turn,{ outcome: "DIRECT_ANSWER",completionSummary: "Source conclusion" });
+      const source = f.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources WHERE workbench_id=?").get(benchId));
+      const update = persistence.historicalMemory.loadUpdate(String(source?.source_id),"workbench");
+      if (update === null) throw new Error("Missing Workbench history update");
+      persistence.historicalMemory.commit(update,[{ section: "conclusions",text,source: update.sourceId }]);
+    }
     expect(await stack.conversations.inheritance(wb.workbenchId,"joi-chat","network")).toEqual({ memoryCount: 1,evolutionRevisionId: null });
     const input = { conversationId: "chat",workbenchId: wb.workbenchId,partnerId: "joi-chat",networkId: "network",skills: [],attachmentIds: [],requestId: "send",text: "Explain the project" };
     const accepted = await stack.conversations.send(input);expect(accepted.turns[0]?.status).toBe("QUEUED");

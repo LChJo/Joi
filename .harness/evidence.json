@@ -102,15 +102,15 @@
     {
       "id": "6c84adef-da3b-49e2-8c3c-3162e41cb524",
       "kind": "source-code",
-      "claim": "Runtime drain stops numeric reconciliation with owned lifecycle shutdown; existing business workers and dispatch contracts remain.",
+      "claim": "Background outbox handles historical memory organization independently of the foreground tick. Shutdown stops historical inference, numeric reconciliation and other owned dispatchers.",
       "location": {
         "path": "src/main/composition/wire-runtime.ts"
       },
-      "hash": "e2fc9ea33f21ba60c2002bb2bf93aa1168763acf4dbc9593ec17adca0ed16d5a",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "109604c493f3cfd79b620fa0ba195af7e6fc5f036d8b35163f48d108e49b9428",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 327
+        "endLine": 337
       }
     },
     {
@@ -120,11 +120,11 @@
       "location": {
         "path": "src/main/composition/wire-joi.ts"
       },
-      "hash": "e6431885701ab61a8857371640ce6e1b4221757924bf635a97b64666f78168b3",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "c8ffccd314547812b2ad2c31fda2a8dc68466ea2fbb44cfcbd38b4057318475a",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 138
+        "endLine": 142
       }
     },
     {
@@ -162,11 +162,11 @@
       "location": {
         "path": "src/main/composition/wire-persistence.ts"
       },
-      "hash": "49a67b83cbaa4da6c4abb0e6cb654b40446f307083e56491186c39071d340417",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "e7dbef122c05965e4bd3987dd4924acd489286281b678c173a74e3a1793a5329",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 65
+        "endLine": 95
       }
     },
     {
@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "48ef64cd091597b37a2577c3d0afefa301a0418004301f6636cc91c8ec44df9b",
-      "observedAt": "2026-11-18T09:18:49.895Z",
+      "hash": "6bcf2d5ac174f27783060a330ebecca3a786ff52a76e1ed3bea869a614823cf1",
+      "observedAt": "2026-11-19T02:43:29.172Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -396,15 +396,15 @@
     {
       "id": "0928551c-008e-4486-b324-fdd3cc15e717",
       "kind": "source-code",
-      "claim": "Composition wires private handoff and Pi result recovery before resuming conversation dispatch. Isolated child turns retain their own outbox and pinned capabilities.",
+      "claim": "Conversations inherit a bounded owned Workbench projection and currently active learned method. Handoffs, settled recovery and child identities keep their private scopes.",
       "location": {
         "path": "src/main/composition/wire-conversations.ts"
       },
-      "hash": "48ca79b8ef78f491649a5b6f0ec3af4e51275966215feee57ca7272e4700fe2e",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "32227d67387f748500cf00d5bfb7067c9a95dd1f26b25bab8515f3ca8b142166",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 115
+        "endLine": 116
       }
     },
     {
@@ -634,15 +634,15 @@
     {
       "id": "629887d6-ca08-4e3b-9116-9def218c167e",
       "kind": "source-code",
-      "claim": "The public SDK factory manages resources, requests, retry, parallel scheduling and compaction. Auditable context edits retain unknown effects and omit fully framed legacy checkpoints from model context.",
+      "claim": "SDK owns session resources and compaction. The model adapter checks normal and summary requests before delivery. Context edits preserve prior Workbench evidence privately and project a small reference notice in later turns.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-pi-session.ts"
       },
-      "hash": "a9d510a832295035bbc04ce3d5566beecb6f16d9c18a8ccd37f09b3ca3b81512",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "9b257116cd25436c13af11ecc1f1554d41811b18952e643c24c1f69fd8675273",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 107
+        "endLine": 122
       }
     },
     {
@@ -904,11 +904,11 @@
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "f239c052e555690ce99e30d88255ec49b3743908bd24c752fc012bd3b2c0e6aa",
-      "observedAt": "2026-11-18T04:14:36.902Z",
+      "hash": "0ad9f58d489f96264d39d9bbddc1e7bd438edc95caecb0c9338eb33ba740c258",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 379
+        "endLine": 380
       }
     },
     {
@@ -988,25 +988,25 @@
       "location": {
         "path": "src/main/application/ports/partner-instances.ts"
       },
-      "hash": "3a53cd7418bf2a1923731e35cbd5cc1d607735752053b4c23533c710a1fc5ffb",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "d353419e1ab7c3cfa87b85d97df7291cea5cb27e43a59008058534cdf455ab72",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 143
+        "endLine": 144
       }
     },
     {
       "id": "60fe6b4d-06e2-46f5-8e7f-e680ff854cf9",
       "kind": "source-code",
-      "claim": "The primary reasoning port separates selected skill metadata from role policy and request context while keeping existing event, session and execution contracts.",
+      "claim": "The primary reasoning port carries Turn isolation, scoped prior Turn identity lookup, and private session projections.",
       "location": {
         "path": "src/main/application/ports/primary-reasoning-runtime.ts"
       },
-      "hash": "91d4ad8b7f59301cce24099c4dfe29cb72c7224bf8c202a7ba63100573e3dff6",
-      "observedAt": "2026-11-18T04:34:42.677Z",
+      "hash": "46b192d0ee1ca0f4937d5d3d6364ef79d63d69fb08f782ac9cf857d3f484fd4f",
+      "observedAt": "2026-11-19T02:11:41.594Z",
       "range": {
         "startLine": 1,
-        "endLine": 95
+        "endLine": 98
       }
     },
     {
@@ -1016,25 +1016,25 @@
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "281c6a38794ac630ee1cb57a4e3e33010a33f40cc5b3e9062a829d1375fd6360",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "53bb3d4558609c01facb0bff40ae36fb276ef8db16a3b1ec4c979d6959babef9",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 883
+        "endLine": 884
       }
     },
     {
       "id": "b3dad04a-df5c-45cd-a2da-86f7e73d273e",
       "kind": "source-code",
-      "claim": "SQLite stores incremental primary projections and native references under the migrated projection table. Legacy archives remain import/audit sources, without overwriting native canonical facts.",
+      "claim": "SQLite stores private reasoning projections and resolves prior Turn identities using authoritative Workbench and session membership.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.ts"
       },
-      "hash": "ef69a50d8118be5d44fcbbbd6ca6219ed313370ad287e7cb61afc42397e426c1",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "e35c8f1983308f6a27c441a93c359893b459d1e6af7592fb8e1f0dc42cbae9e1",
+      "observedAt": "2026-11-19T02:10:54.149Z",
       "range": {
         "startLine": 1,
-        "endLine": 185
+        "endLine": 195
       }
     },
     {
@@ -1058,25 +1058,25 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "39f64c3e50205191a28840ef6f0320337b0d77b7e17df3742c724d029537a91c",
-      "observedAt": "2026-11-17T16:34:59.281788Z",
+      "hash": "731fccc7000a91eefab09a12c7a31ec015b4c59d47e7682573222c5253cab8cf",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 548
+        "endLine": 577
       }
     },
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary reasoning projects current requirements and continuation background into model requests via SDK context hooks. Native result recovery is keyed by business turn and repair kind; each result is independently recoverable.",
+      "claim": "Primary Pi isolates business Turns and loads a complete legacy summary if it fits the model window, with scoped history available on demand.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "b04ca336454987071005bad607c0569bcf9d7cca6c01d62a2f6f8213984745c3",
-      "observedAt": "2026-11-18T04:34:42.675Z",
+      "hash": "899a28035b4c696e147928556773d900115b362bce73fb402624130ef050f800",
+      "observedAt": "2026-11-19T02:28:56.932Z",
       "range": {
         "startLine": 1,
-        "endLine": 369
+        "endLine": 423
       }
     },
     {
@@ -1100,11 +1100,11 @@
       "location": {
         "path": "tests/contract/local-pi-partner-runtime.test.ts"
       },
-      "hash": "ead4ce510d43b83aea0eb96191979151325cd3cf9467d9e0a0730b7ef961ab8c",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "50d48bcc039d6f98b9a1f62741dc13893c32990733999b76700f4ec06c5dff2d",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 1049
+        "endLine": 1054
       }
     },
     {
@@ -1114,11 +1114,11 @@
       "location": {
         "path": "tests/contract/pi-runtime-contract.test.ts"
       },
-      "hash": "337d9746337d19fc9d7854b44eb28214fec6c6c6a39ec7f71747cb941d6bab0a",
-      "observedAt": "2026-11-18T04:28:47.728Z",
+      "hash": "a67e5e358bf81b45fa1bff8843735d32404f5a1c0f947ee652b37e363e3b6fc6",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 1032
+        "endLine": 1033
       }
     },
     {
@@ -1296,11 +1296,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "39f64c3e50205191a28840ef6f0320337b0d77b7e17df3742c724d029537a91c",
-      "observedAt": "2026-11-17T16:33:24.058716Z",
+      "hash": "731fccc7000a91eefab09a12c7a31ec015b4c59d47e7682573222c5253cab8cf",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 548
+        "endLine": 577
       }
     },
     {
@@ -1352,11 +1352,11 @@
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "281c6a38794ac630ee1cb57a4e3e33010a33f40cc5b3e9062a829d1375fd6360",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "53bb3d4558609c01facb0bff40ae36fb276ef8db16a3b1ec4c979d6959babef9",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 883
+        "endLine": 884
       }
     },
     {
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "9a7bb1c4c377a09c9e6adf9a41f5fa33908fa311959bcf86197a863f143fdd47",
-      "observedAt": "2026-11-18T09:18:49.897Z",
+      "hash": "9aea982fb7163c41a1ec5ea963283f5cbb23dbca78114c707b19a7b6e825bc12",
+      "observedAt": "2026-11-19T02:43:29.172Z",
       "range": {
         "startLine": 1,
         "endLine": 14189
@@ -2388,11 +2388,11 @@
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "2df00e118d72275287f3b372d91639b49e64acce860ae5597573750bbaa4d501",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "cca2525a5a0cb7878d2ba68f0a417c44a60dd96e812008ec0211b2969c8e55c5",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 1403
+        "endLine": 1405
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite regressions cover Work-path identity, terminal state, recovery, decision/exclusion/cleared guards, legacy duplicate paging and retained history.",
+      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "53a15593991bb89d76543c023fbf1d2019f4e34cc729c3826f5642d049fd2570",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "f7c72b13a1433eb83dce98b4485b09e26617ef29a78ca6cb5b9dfaf55fad936e",
+      "observedAt": "2026-11-19T02:28:56.933Z",
       "range": {
         "startLine": 1,
-        "endLine": 2075
+        "endLine": 2215
       }
     },
     {
@@ -2654,8 +2654,8 @@
       "location": {
         "path": "src/main/domain/work/joi-turn-recovery.ts"
       },
-      "hash": "2ca48f5a90cfd027f87a8a1e169a41796091e33a8f3bb2abca9fd0195fe30a0c",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "7a389b4f7bdca1f40e8b1fcb1b881e1147cabd7e34e9e7936b57ecfa29170325",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
         "endLine": 31
@@ -2682,11 +2682,11 @@
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "7bab337dd326a40bffd88896663fc171528a07bb6208ea35dc75b3f6cf9fbe72",
-      "observedAt": "2026-11-18T04:34:42.677Z",
+      "hash": "a2e1ee0ff22d9875a2ab772916646d4c45f2e46e4806c302867974bb616d2212",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 881
+        "endLine": 882
       }
     },
     {
@@ -2724,11 +2724,11 @@
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "283be984957ec520c3ccebc4dab32fed8cbe22b5b85e32bc7a69356bba8c8a0a",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "098134bdb632a803fb40eb4ca3aba941a28f90ed42836731452cd77d5a5de9e9",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 1490
+        "endLine": 1495
       }
     },
     {
@@ -2738,11 +2738,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-failure-classifier.ts"
       },
-      "hash": "1ed3f3ec9ccd1a3b7c44b2ac4abda151dbd75183d9b1a86d0a91749bf82c0d27",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "0b40ce88d940eb431fa2ef5954bfce27627dc1950e55745bd780b9b123137876",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 51
+        "endLine": 53
       }
     },
     {
@@ -3004,11 +3004,11 @@
       "location": {
         "path": "docs/pi-session-ownership-spec.md"
       },
-      "hash": "54e5b607f8df6b87cf396ea5ba9d2c10bee436d8175aa0c4879d898c1809139f",
-      "observedAt": "2026-11-18T04:34:42.678Z",
+      "hash": "7ccb2692a7448d76ef04d5d34f051ba66410c6022f37163b4a233dbd0ea9e9a0",
+      "observedAt": "2026-11-19T02:28:56.934Z",
       "range": {
         "startLine": 1,
-        "endLine": 229
+        "endLine": 231
       }
     },
     {
@@ -3046,11 +3046,11 @@
         "path": "src/main/infrastructure/pi/configured-pi-reasoning-runtime.ts"
       },
       "claim": "The primary facade pins model/source revisions and SDK settings, refreshes selected skill tools each turn, and supplies selected skill metadata through a separate context field.",
-      "hash": "79dc293f43a89d6ed24f6ff45659516b41e2724e12b87a44a32a3c25af5a6b6a",
-      "observedAt": "2026-11-17T16:33:24.059362Z",
+      "hash": "c635e68451d4b2955fe3391d72b1f26022a3d3210c6a26e6001d54dc90da8f7b",
+      "observedAt": "2026-11-18T17:12:39.599Z",
       "range": {
         "startLine": 1,
-        "endLine": 89
+        "endLine": 92
       }
     },
     {
@@ -3115,12 +3115,12 @@
       "location": {
         "path": "src/main/infrastructure/pi/conversation-handoff.ts"
       },
-      "claim": "A recognized seed contributes only its effective context to the next handoff. Official serialization adds current facts and one fresh business appendix, with private source references retained. Forks use the selected Pi result marker or the retained journal cutoff. Older turns without a cutoff use business history through the selected turn.",
-      "hash": "82927248d7b460a06cfd7a5f2726e03177b58338d24a28deff0a2db089ddbe34",
-      "observedAt": "2026-11-18T07:26:20.269Z",
+      "claim": "At a soft trigger, a handoff compacts earlier context and preserves the latest turn and source references.",
+      "hash": "76800af3285351f8b7fd54303b4b2435e60abe3f66448cd7da3461854793742d",
+      "observedAt": "2026-11-19T02:28:56.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 59
+        "endLine": 108
       }
     },
     {
@@ -3129,12 +3129,12 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-history-tools.ts"
       },
-      "claim": "A closure-scoped history tool pages stable raw canonical facts independently of SDK compacted requests; asynchronous source readers cannot select another conversation.",
-      "hash": "7ba8f6ca3c42231930c1d9ef12914c0ab258ad8ce225e5e93e1fe94f799e5c7a",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "claim": "The scoped history tool pages one snapshot at a time and binds the cursor to the selected Turn when the caller supports authorized Turn selection.",
+      "hash": "c63f42a54693f7113733b44f3063449ef7a63e38c5d3720d912f69f3164201d8",
+      "observedAt": "2026-11-19T02:10:54.152Z",
       "range": {
         "startLine": 1,
-        "endLine": 51
+        "endLine": 62
       }
     },
     {
@@ -3283,12 +3283,12 @@
       "location": {
         "path": "resources/migrations/README.md"
       },
-      "claim": "Migration guide documents preserved legacy facts, successor identities and the requirement for a pre-upgrade backup rather than direct same-database downgrade. Migration 103 adds durable fork provenance and private seeds, and supports a per-turn message cutoff.",
-      "hash": "524c2d6a110a9340317902848e948655666f15aaac1fe9f876fa37014c72b6bb",
-      "observedAt": "2026-11-18T07:26:20.269Z",
+      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering.",
+      "hash": "7a2d91975b3c67b8ea3ce7ef9865d2b7625b788f6b2c27c260593f5960b0a5c1",
+      "observedAt": "2026-11-19T02:11:41.595Z",
       "range": {
         "startLine": 1,
-        "endLine": 100
+        "endLine": 104
       }
     },
     {
@@ -3367,12 +3367,12 @@
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "claim": "Official SDK contract tests cover prompt metadata, resources/dates, compaction, settlement and cross-engine handoff, including preservation of one business appendix across switches.",
-      "hash": "a013cf76398fc5dccf83c4ddc8b6a72a1e431b07eb09be06fab5f371597947f5",
-      "observedAt": "2026-11-18T04:34:42.677Z",
+      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity.",
+      "hash": "58128d6125f583226430182a7b8117a0631926a8f88207d3ffb42ef24c34ca8b",
+      "observedAt": "2026-11-19T02:28:56.936Z",
       "range": {
         "startLine": 1,
-        "endLine": 655
+        "endLine": 807
       }
     },
     {
@@ -3675,12 +3675,12 @@
       "location": {
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
-      "claim": "Temporary database migration regressions include upgrade 101 to 102 preserving queued writer identities, generations, FIFO and foreign-key integrity.",
-      "hash": "c53bfc01ab7e8aef72181ed6b4823c51b275b081b96d6ac7689771132f0873c9",
-      "observedAt": "2026-11-18T03:39:04.298Z",
+      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades.",
+      "hash": "2f2f53c8ec7cf2d8dedf81ef5bcebf7f5d4924400d925f32dd7563563dca5415",
+      "observedAt": "2026-11-19T02:10:54.153Z",
       "range": {
         "startLine": 1,
-        "endLine": 923
+        "endLine": 964
       }
     },
     {
@@ -3863,6 +3863,104 @@
       "range": {
         "startLine": 1,
         "endLine": 87
+      }
+    },
+    {
+      "id": "4b18689f-6b0f-410b-a946-5b7479e53b33",
+      "kind": "document",
+      "claim": "HIST-01?07 define scoped histories, soft compaction triggers, provenance and independently guarded provider requests.",
+      "location": {
+        "path": "docs/historical-context-policy-spec.md"
+      },
+      "hash": "450a0e299ca4b78cbbd138c145a87fe3ae79964afe7cf346c71988ddacdcc9d8",
+      "observedAt": "2026-11-19T02:28:56.936Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 109
+      }
+    },
+    {
+      "id": "cc1776fb-b429-4c12-880f-09bd1e93aeaf",
+      "kind": "source-code",
+      "claim": "The domain defines scope-specific Unicode compaction triggers and renders complete validated, deduplicated entries.",
+      "location": {
+        "path": "src/main/domain/work/historical-context.ts"
+      },
+      "hash": "88c5a40f8262b64fede987f278a9fcec764780bec2b291542cbfb11f4361f58f",
+      "observedAt": "2026-11-19T02:28:56.937Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 54
+      }
+    },
+    {
+      "id": "451b17f1-11fa-490a-8fdf-2c76ffe9ae95",
+      "kind": "source-code",
+      "claim": "Durable settlement jobs compact a batch of older facts at the threshold and append complete new facts even if compaction fails.",
+      "location": {
+        "path": "src/main/application/joi/historical-memory-service.ts"
+      },
+      "hash": "b0d54c4c81edd4b761237a556e7209dd4a1f117b872d311e980420251d70e47e",
+      "observedAt": "2026-11-19T02:28:56.937Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 64
+      }
+    },
+    {
+      "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
+      "kind": "source-code",
+      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
+      },
+      "hash": "74916e2213988b3dc67bfc5b3aec89685587a48c0a7dc285bdc072ede986c4c6",
+      "observedAt": "2026-11-19T02:28:56.937Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 183
+      }
+    },
+    {
+      "id": "eb72ebe5-3ff0-4346-bd46-ba89d8d592b9",
+      "kind": "source-code",
+      "claim": "Migration 104 adds scoped history, source references and receipts without replaying historical turns or importing raw transcripts.",
+      "location": {
+        "path": "resources/migrations/104_historical_memory.sql"
+      },
+      "hash": "93a015246bb8962461a04b0ae9c214f29da474d7173e1a69968afff191448006",
+      "observedAt": "2026-11-18T17:12:39.599Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 22
+      }
+    },
+    {
+      "id": "e870d27a-37da-4a69-b130-82041cd4c549",
+      "kind": "source-code",
+      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity.",
+      "location": {
+        "path": "tests/contract/pi-session-ownership.test.ts"
+      },
+      "hash": "58128d6125f583226430182a7b8117a0631926a8f88207d3ffb42ef24c34ca8b",
+      "observedAt": "2026-11-19T02:28:56.938Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 807
+      }
+    },
+    {
+      "id": "505875ad-e83c-4b6f-bdd0-847face7b34c",
+      "kind": "source-code",
+      "claim": "Migration 105 initializes per-topic input watermarks from existing Joi preferences to reject delayed older corrections.",
+      "location": {
+        "path": "resources/migrations/105_historical_preference_order.sql"
+      },
+      "hash": "63b0796f36f0fbb64d64f8463939ebb0040a32ae8503ca75a26f87bea565ff74",
+      "observedAt": "2026-11-19T02:10:54.155Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 14
       }
     }
   ]

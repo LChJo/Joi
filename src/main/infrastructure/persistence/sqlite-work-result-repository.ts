@@ -6,6 +6,7 @@ import type { SseEvent } from "../../application/ports/runtime-store.js";
 import type { RecordedWorkResult, WorkResultRepository, WorkVerificationProjection } from "../../application/ports/work-results.js";
 import type { WorkResult } from "../../domain/work/work-result.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
+import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -89,6 +90,7 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
           (event_id, run_id, workbench_id, work_id, partner_revision_id, status, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?)`
         ).run(eventId, result.runId, result.workbenchId, result.workId, result.partnerRevisionId, result.status, result.createdAt);
+      if (isAuthoritative && !isLate && result.status === "COMPLETED") enqueueHistoricalMemory(connection,{ workbenchId: result.workbenchId,kind: "partner",subjectId: result.resultId,now: result.createdAt });
       const payload = {
         workbenchId: result.workbenchId,
         isAuthoritative,

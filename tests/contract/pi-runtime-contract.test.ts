@@ -612,6 +612,7 @@ describe("Pi reasoning runtime contract", () => {
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
       "context_read_history",
+      "workbench_read_history",
       "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
       "workbench_list_summaries",
       "workbench_select",

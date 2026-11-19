@@ -1,6 +1,7 @@
 import type { ReasoningFailureClassifier } from "../../application/ports/joi-coordinator.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
+import { PI_REQUEST_CAPACITY_ERROR } from "./pi-model-budget.js";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" ? value as Record<string, unknown> : null;
@@ -41,6 +42,7 @@ const streamFailures = new WeakMap<Error, SourceFailureKind>();
 
 /** Provider text is classified locally and never becomes a public error or diagnostic field. */
 export function reasoningStreamFailure(detail = ""): Error & { code: string } {
+  if (detail === PI_REQUEST_CAPACITY_ERROR) return Object.assign(new Error("The assembled request exceeds the model window."), { code: PI_REQUEST_CAPACITY_ERROR });
   const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(detail)?.[1]
     ?? /^\s*([1-5]\d{2})\b/u.exec(detail)?.[1];
   const code = /\b(?:ECONNREFUSED|ECONNRESET|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)\b/iu.exec(detail)?.[0]?.toUpperCase();

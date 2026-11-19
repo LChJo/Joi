@@ -1,5 +1,29 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { getCurrentSystemPrompt, getCurrentTools, normalizeContext, type Api, type Context, type Model, type SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { DomainError } from "../../domain/errors.js";
+
+export const PI_REQUEST_CAPACITY_ERROR = "model_context_budget_exhausted";
+
+/** The SDK sends compaction through the same model stream as ordinary inference. */
+export function assertPiRequestCapacity(model: Model<Api>, context: Context, options?: SimpleStreamOptions): void {
+  const { messages } = normalizeContext(context);
+  const material = JSON.stringify({
+    system: getCurrentSystemPrompt(messages),
+    tools: getCurrentTools(messages),
+    messages: messages.filter((message) => message.role !== "system"),
+  }, (_key, value: unknown) => {
+    const block = value as { type?: string; data?: string } | null;
+    if (block?.type === "image" && typeof block.data === "string") return { type: "image", estimatedTokens: 4096 };
+    return value;
+  });
+  const ascii = material.replace(/\P{ASCII}/gu, "").length;
+  const images = messages.reduce((count, message) => count + (Array.isArray(message.content)
+    ? message.content.filter((block) => block.type === "image").length : 0), 0);
+  const estimatedTokens = Math.ceil(ascii / 3) + material.length - ascii + images * 4096;
+  const window = model.contextWindow > 0 ? model.contextWindow : 120_000;
+  const reserve = Math.min(options?.maxTokens ?? model.maxTokens, model.maxTokens);
+  if (estimatedTokens + reserve > window) throw new DomainError(PI_REQUEST_CAPACITY_ERROR, PI_REQUEST_CAPACITY_ERROR);
+}
 
 /** Counts refreshed prompts and tool definitions once, after all request-only transformations. */
 export function finalRequestChars(messages: readonly AgentMessage[],tools: readonly unknown[]): number {

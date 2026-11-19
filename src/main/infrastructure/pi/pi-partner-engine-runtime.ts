@@ -37,6 +37,10 @@ import { PiSessionUsage } from "./pi-session-usage.js";
 import type { PiNativeSessionStore } from "./pi-native-session-store.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
 import { trackPiModels } from "./pi-usage.js";
+import type { HistoricalMemoryReader } from "../../application/ports/historical-memory.js";
+import { renderHistoricalContext } from "../../domain/work/historical-context.js";
+import { historicalMemoryTools } from "./pi-historical-memory-tools.js";
+import { PI_REQUEST_CAPACITY_ERROR } from "./pi-model-budget.js";
 import { PiLatency } from "./pi-latency.js";
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
@@ -189,6 +193,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     sources: Pick<ReasoningSourceSelector, "selectInitial"> & Partial<Pick<ReasoningSourceSelector, "reportRunFailure" | "selectById">>;
     tools: PiCodingToolFactory;
     nativeSessions?: PiNativeSessionStore;
+    memory?: HistoricalMemoryReader;
     sessionSettings?: () => SettingsManager;
     runIdleTimeoutMillis?: number; toolTimeoutMillis?: number;
     progress?: { now?: () => number; thresholds?: RunProgressThresholds };
@@ -204,7 +209,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const identities = request.conversationId === undefined || request.subagentChild === true
       ? [...(input.instanceId === undefined ? [] : [["partner", request.workbenchId, revision.partnerId, input.instanceId]]), ["partner", request.workbenchId, revision.partnerId, `local_pi_ephemeral:${request.actionId}`]]
       : [["conversation", request.workbenchId, request.conversationId,...(request.conversationSegmentId === undefined ? [] : [request.conversationSegmentId])]];
-    for (const identity of identities) {
+    const candidates = request.conversationId === undefined ? [...identities.map(identity => [...identity,request.workId]),...identities] : identities;
+    for (const identity of candidates) {
       const result = await this.dependencies.nativeSessions.readSettledResult(identity, request.actionId);
       if (result !== null) return result;
     }
@@ -254,7 +260,24 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const configuredPrompt = await this.#configuredPrompt(revision);
     const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi:${request.actionId}`);
     const resolved = await this.dependencies.resolver.resolve(pin);
-    const previous = input.sessionState ?? this.#warm.get(input.instanceId);
+    const workScoped = request.conversationId === undefined;
+    const saved = input.sessionState ?? this.#warm.get(input.instanceId);
+    const previous = !workScoped || saved?.executionWorkId === request.workId ? saved : undefined;
+    const partnerIdentity = ["partner",request.workbenchId,revision.partnerId,input.instanceId];
+    const legacy = workScoped && previous === undefined ? await this.dependencies.nativeSessions?.readContext(partnerIdentity) : undefined;
+    const legacyBranch = legacy?.manager.getBranch() ?? [];
+    let legacyWork: unknown;
+    const legacyCurrent = legacyBranch.filter(entry => {
+      if (entry.type === "custom" && entry.customType === "joi.work_started") legacyWork = (entry.data as { workId?: unknown } | null)?.workId;
+      return legacyWork === request.workId;
+    });
+    if (legacyCurrent.some(entry => entry.type === "custom" && entry.customType === "joi.work_started"
+      && (entry.data as { actionId?: unknown } | null)?.actionId === request.actionId)) {
+      const settled = await this.dependencies.nativeSessions?.readSettledResult(partnerIdentity,request.actionId);
+      if (settled !== null && settled !== undefined) return settled;
+      throw wrapPartnerRunFailure({ code: "pi_execution_interrupted" }, { phase: "RECOVERY",sideEffectState: "UNKNOWN" });
+    }
+    const experience = renderHistoricalContext("partner",this.dependencies.memory?.entries("partner",revision.partnerId) ?? []).text;
     const names = this.#toolNames(revision).filter(name => request.workspaceExecution?.accessCeiling !== "READ" || classifyLocalToolEffect(name) === "READ");
     const extensions = await createConversationPiExtensions({ selected: request.piExtensions ?? [], allowedTools: names, ...(execution.workspacePath === undefined ? {} : { cwd: execution.workspacePath }) });
     const children = this.#subagents === undefined || request.conversationId === undefined || request.subagentChild === true || request.subagentsEnabled === false ? undefined
@@ -266,6 +289,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       ...this.dependencies.tools.create(execution.workspacePath ?? process.cwd(), selected, { environmentKeys: input.skillEnvironmentKeys }).filter(tool => selected.includes(tool.name)),
       createAskUserTool({ current: tracker }),
       ...(request.conversationId === undefined ? [createWorkHandoffTool(tracker)] : []),
+      ...(this.dependencies.memory === undefined ? [] : historicalMemoryTools(this.dependencies.memory,request.workbenchId,workScoped)),
       createContextHistoryTool(input.readHistory ?? (() => {
         const entries = session?.sessionManager.getEntries() ?? [];
         const boundary = request.conversationId === undefined ? entries.findLastIndex(entry => entry.type === "custom" && entry.customType === "joi.usage_context"
@@ -287,10 +311,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       sourceRevisionId: pin.sourceRevisionId, modelRevisionId: pin.modelRevisionId, partnerRevisionId: revision.partnerRevisionId, actionId: request.actionId,
       ...(resolved.sourceName === undefined ? {} : { sourceName: resolved.sourceName }) };
     const models = trackPiModels(resolved.models, undefined, () => usageContext, this.dependencies.diagnostics);
-    const restored = previous === undefined ? input.restoredMessages as AgentMessage[] | null : undefined;
+    const restored = previous !== undefined ? undefined : workScoped
+      ? legacyCurrent.flatMap(entry => entry.type === "message" ? [entry.message] : [])
+      : input.restoredMessages as AgentMessage[] | null;
     try {
       const native = await this.dependencies.nativeSessions?.open({ identity: request.conversationId === undefined || request.subagentChild === true
-        ? ["partner", request.workbenchId, revision.partnerId, input.instanceId] : ["conversation", request.workbenchId, request.conversationId,...(request.conversationSegmentId === undefined ? [] : [request.conversationSegmentId])],
+        ? (workScoped ? [...partnerIdentity,request.workId] : partnerIdentity) : ["conversation", request.workbenchId, request.conversationId,...(request.conversationSegmentId === undefined ? [] : [request.conversationSegmentId])],
         cwd: execution.workspacePath ?? process.cwd(), state: previous ?? { engine: "pi-core", messages: restored ?? conversationSeedMessages(request) } });
       nativeReference = native?.reference;
       session = await createJoiPiSession({ state: { model: resolved.model, thinkingLevel: resolved.thinkingLevel, tools,
@@ -299,7 +325,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       } }, models, execution.workspacePath ?? process.cwd(), {
         promptRules: this.#promptRules(input, tools, execution.workspacePath !== undefined),
         backgroundContext: [`Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`, request.requiredContext,
-          execution.promptSection, input.knowledgeSection, (input.skillPaths?.length ?? 0) > 0 ? undefined : input.skillSection].filter(Boolean).join("\n\n"),
+          execution.promptSection, experience, input.knowledgeSection, (input.skillPaths?.length ?? 0) > 0 ? undefined : input.skillSection].filter(Boolean).join("\n\n"),
         ...(resolved.compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent: resolved.compactionThresholdPercent }),
         ...(this.dependencies.sessionSettings === undefined ? {} : { settingsManager: this.dependencies.sessionSettings() }),
         ...(previous !== undefined && previous.engine !== "pi-core" ? { importedMessages: previous.messages } : {}),
@@ -322,9 +348,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const sessionQueue = new PiObservationQueue(() => emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.pi.projection_degraded", { workId: request.workId }));
     let pendingSnapshot: PartnerSessionState | undefined;
     let saving = false;
-    const snapshot = (): PartnerSessionState => nativeReference === undefined
-      ? { engine: "pi-core", messages: structuredClone(active.sessionManager.buildSessionContext().messages), piSession: snapshotJoiPiSession(active) }
-      : { engine: "pi-core", messages: structuredClone(active.sessionManager.buildSessionContext().messages), piNativeSession: nativeReference() };
+    const snapshot = (): PartnerSessionState => ({ engine: "pi-core",
+      ...(workScoped ? { executionWorkId: request.workId } : {}),
+      messages: structuredClone(active.sessionManager.buildSessionContext().messages),
+      ...(nativeReference === undefined ? { piSession: snapshotJoiPiSession(active) } : { piNativeSession: nativeReference() }),
+    });
     const save = () => {
       if (!isCurrent()) return;
       const state = snapshot();
@@ -514,6 +542,7 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     if (message.role !== "assistant" || message.stopReason !== "error") continue;
     const raw = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
     if (raw === undefined) return codedProviderError("assistant_error");
+    if (raw === PI_REQUEST_CAPACITY_ERROR) return codedProviderError("context_too_large");
     const detail = raw.slice(0, ERROR_DETAIL_CHARS);
     const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
     const status = statusText === undefined ? undefined : Number(statusText);

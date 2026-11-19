@@ -15,6 +15,8 @@ import { ConversationHandoff } from "../../src/main/infrastructure/pi/conversati
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
 import type { NativeAgentEvent } from "../../src/main/application/ports/native-agent-events.js";
+import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
+import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-11-17T00:00:00Z", displayName: "Helper", kind: "local-pi", partnerId: "p", partnerRevisionId: "r", registryRevision: 1, skills: [], tools: [], toolPolicyMode: "CUSTOM" });
 const request = { actionId: "a", workbenchId: "wb", workId: "w", contextSnapshotId: "context", taskProjection: "Deliver the result" };
@@ -135,6 +137,135 @@ it("PI-SESSION-02 delegates automatic compaction to the SDK by default", async (
     await session.waitForIdle();
     expect(session.messages.some(message => message.role === "assistant")).toBe(true);
   } finally { session.dispose(); }
+});
+
+it("HIST-05 keeps both oversized compaction and its ordinary fallback off the provider", async () => {
+  const faux = fauxProvider({ provider: "historic-capacity", models: [{ id: "m", contextWindow: 1_000_000, maxTokens: 16_384 }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  faux.setResponses(Array.from({ length: 8 }, () => fauxAssistantMessage([], {
+    stopReason: "error", errorMessage: "400 maximum context length exceeded",
+  })));
+  const manager = SessionManager.inMemory();
+  const oldInput = "旧归档资料".repeat(500_000);
+  for (let index = 0; index < 6; index += 1) {
+    manager.appendMessage({ role: "user", content: oldInput, timestamp: index * 2 + 1 });
+    manager.appendMessage(fauxAssistantMessage("Old result", { timestamp: index * 2 + 2 }));
+  }
+  const session = await createJoiPiSession({ state: { model: faux.getModel(), systemPrompt: "Policy", thinkingLevel: "off", tools: [], messages: [] } }, models, process.cwd(), {
+    sessionManager: manager,
+    settingsManager: SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } }),
+  });
+  try {
+    await session.prompt("Review current requirements", { expandPromptTemplates: false });
+    await session.waitForIdle();
+    expect(faux.state.callCount).toBe(0);
+    const last = session.messages.at(-1);
+    if (last?.role !== "assistant") throw new Error("Missing assistant failure");
+    expect(last.stopReason).toBe("error");
+    expect(last.errorMessage).toContain("model_context_budget_exhausted");
+  } finally { session.dispose(); }
+});
+
+it("HIST-05/06 opens a new Joi execution from an existing summary and keeps originals behind its history tool", async () => {
+  const faux = fauxProvider({ provider: "historic-primary" }), models = createModels();
+  models.setProvider(faux.provider);
+  const sessionId = "joi_session:wb:goal";
+  const stored = {
+    sessionId, workbenchId: "wb", updatedAt: "2026-11-19T00:00:00Z", sourceRevisionId: "sr", modelRevisionId: "mr", systemPrompt: "Prior policy",
+    archivedMessages: [{ role: "user", content: "ARCHIVED_ORIGINAL", timestamp: 1 }],
+    messages: [{ role: "user", content: "PREVIOUS_EXECUTION_BODY", timestamp: 2 }],
+    compaction: { summary: "RETAINED_SUMMARY " + "reference ".repeat(450) + "SUMMARY_FINAL_QUALIFICATION",
+      compactedMessages: 1, count: 1, lastCompactedAt: "2026-11-19T00:00:00Z" },
+  };
+  const sent: string[] = [];
+  faux.setResponses([
+    context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage([fauxToolCall("context_read_history", {})], { stopReason: "toolUse" }); },
+    context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("Current outcome"); },
+  ]);
+  const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, thinkingLevel: "off", tools: [],
+    sessionStore: { load: id => Promise.resolve(id === sessionId ? stored : null), save: () => Promise.resolve() },
+  });
+  await runtime.startTurn({ sessionId, executionScope: "turn", turnId: "review", workbenchId: "wb", goalInputId: "goal", inputId: "review-input",
+    sourceId: "s", sourceRevisionId: "sr", modelId: "m", modelRevisionId: "mr", systemPrompt: "Current policy", prompt: "Review current requirements" });
+  expect(sent[0]).toContain("RETAINED_SUMMARY");
+  expect(sent[0]).toContain("SUMMARY_FINAL_QUALIFICATION");
+  expect(sent[0]).not.toContain("ARCHIVED_ORIGINAL");
+  expect(sent[0]).not.toContain("PREVIOUS_EXECUTION_BODY");
+  expect(sent[1]).toContain("ARCHIVED_ORIGINAL");
+});
+
+it("HIST-06 reads one selected earlier Turn through the same goal and Workbench after restart", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const workbench = await fixture.workbenchRegistry.create({ name: "Primary",personaSummary: "Test",projectLabel: "Test",scopeSummary: "Test" });
+    const other = await fixture.workbenchRegistry.create({ name: "Other",personaSummary: "Test",projectLabel: "Test",scopeSummary: "Test" });
+    const workbenchId = workbench.workbenchId, sessionId = "goal-session", at = fixture.clock.now().toISOString();
+    for (const [turnId,bench,session] of [
+      ["earlier",workbenchId,sessionId],["different-goal",workbenchId,"other-goal"],
+      ["different-workbench",other.workbenchId,sessionId],["current",workbenchId,sessionId],["later",workbenchId,sessionId],
+    ] as const) {
+      fixture.database.transaction(db => {
+        db.prepare(`INSERT INTO joi_inbox_messages(input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES (?,?,?,'ROUTED',?,?,?)`).run(turnId,turnId,"Test",bench,at,at);
+        db.prepare(`INSERT INTO joi_turns(turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES (?,?,?,?,'COMPLETED',?,?)`).run(turnId,turnId,bench,session,at,at);
+      });
+    }
+    const sessions = new PiNativeSessionStore(path.join(fixture.root,"native"));
+    const faux = fauxProvider({ provider: "isolated-primary-history" }),models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = () => new PiReasoningRuntime({ model: faux.getModel(),models,thinkingLevel: "off",tools: [],
+      sessionStore: new SqlitePiReasoningSessionStore(fixture.database),nativeSessions: sessions });
+    const input = { workbenchId,sessionId,executionScope: "turn" as const,sourceId: "s",sourceRevisionId: "sr",
+      modelId: "m",modelRevisionId: "mr",systemPrompt: "Policy",prompt: "Review" };
+    faux.setResponses([fauxAssistantMessage("EARLIER_TURN_FACT")]);
+    await runtime().startTurn({ ...input,inputId: "earlier",turnId: "earlier" });
+    const seen: string[] = [];
+    const read = (args: Record<string,string>) => (context: Context) => {
+      seen.push(JSON.stringify(context));
+      return fauxAssistantMessage([fauxToolCall("context_read_history",args)],{ stopReason: "toolUse" });
+    };
+    faux.setResponses([read({}),read({ turnId: "different-goal" }),read({ turnId: "different-workbench" }),read({ turnId: "later" }),
+      read({ turnId: "earlier" }),context => { seen.push(JSON.stringify(context));return fauxAssistantMessage("Done"); }]);
+    await runtime().startTurn({ ...input,inputId: "current",turnId: "current" });
+    expect(seen[0]).not.toContain("EARLIER_TURN_FACT");
+    expect(seen[1]).toContain("earlier");
+    expect(seen[1]).not.toMatch(/different-goal|different-workbench|later/u);
+    expect(seen[4]?.match(/context_history_turn_unavailable/gu)).toHaveLength(3);
+    expect(seen[5]).toContain("EARLIER_TURN_FACT");
+  } finally { await fixture.close(); }
+});
+
+it("HIST-03/06 starts a distinct Work on a resident partner without replaying its previous Work", async () => {
+  const { faux,runtime } = partnerRuntime("resident-history-boundary");
+  const sent: string[] = [];
+  faux.setResponses([0,1].map(() => (context: Context) => {
+    sent.push(JSON.stringify(context));
+    return fauxAssistantMessage("Completed");
+  }));
+  const input = { instanceId: "resident",revision,restoredMessages: null,knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [] };
+  await runtime.runResidentTurn({ ...input,request: { ...request,taskProjection: "PRIOR_WORK_INPUT" } });
+  await runtime.runResidentTurn({ ...input,request: { ...request,workId: "new-work",actionId: "new-action",taskProjection: "CURRENT_WORK_INPUT" } });
+  expect(sent[1]).toContain("CURRENT_WORK_INPUT");
+  expect(sent[1]).not.toContain("PRIOR_WORK_INPUT");
+});
+
+it("HIST-07 reads Workbench raw evidence on request and omits it from the next conversation turn", async () => {
+  const { faux,runtime } = partnerRuntime("workbench-evidence-boundary", undefined, { memory: {
+    entries: () => [],readEvidence: (_workbench,source) => source === "history:fixture" ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
+  } });
+  const sent: string[] = [];
+  faux.setResponses([
+    () => fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture" })],{ stopReason: "toolUse" }),
+    context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("Evidence checked"); },
+    context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("New response"); },
+  ]);
+  const input = { instanceId: "chat-memory",revision,restoredMessages: null,knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [] };
+  await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat" } });
+  await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat",actionId: "next",workId: "next" } });
+  expect(sent[0]).toContain("PRIVATE_EVIDENCE_BODY");
+  expect(sent[1]).not.toContain("PRIVATE_EVIDENCE_BODY");
 });
 
 it("PI-SESSION-02/21 reports an oversized single-message handoff explicitly when SDK recovery cannot compact it",async () => {
@@ -264,7 +395,28 @@ it("PI-SESSION-21 gives A2 a fresh official session and the latest durable hando
   } finally { runtime.evictFromMemory("i1");runtime.evictFromMemory("i2");await rm(root,{ recursive: true,force: true }); }
 });
 
-it("PI-SESSION-21 carries long native tool history without duplicating display projections in the handoff", async () => {
+it("PI-SESSION-21/HIST-06 compacts older turn details and keeps the complete latest turn past the handoff threshold", async () => {
+  const config = { partnerId: "p",partnerName: "P",networkId: "n",networkName: "N",modelName: "M",skills: [],attachmentIds: ["attachment-latest"] };
+  const result = await new ConversationHandoff().build({ conversationId: "chat",workbenchId: "wb",
+    source: { segmentId: "source",partnerId: "p",engine: "pi-core",capabilityKey: "c" },
+    history: [{ turnId: "earlier",text: "Older source detail " + "x".repeat(5000),status: "COMPLETED",entries: [],
+      config: { ...config,attachmentIds: ["attachment-earlier"] } },
+    { turnId: "latest",text: "A long request " + "x".repeat(9000) + " IMPORTANT_FINAL_CLAUSE",status: "INTERRUPTED",
+      entries: [{ kind: "ERROR",role: "SYSTEM",entryId: "error",sequence: 1,createdAt: "2026-11-19",text: "Latest failure" }],
+      config }],
+  });
+  const sent = JSON.stringify(result.messages);
+  expect(sent).toContain("attachment-earlier");
+  expect(sent).toContain("COMPLETED");
+  expect(sent).not.toContain("Older source detail");
+  expect(sent).toContain("attachment-latest");
+  expect(sent).toContain("INTERRUPTED");
+  expect(sent).toContain("Latest failure");
+  expect(sent).toContain("A long request");
+  expect(sent).toContain("IMPORTANT_FINAL_CLAUSE");
+});
+
+it("PI-SESSION-21/HIST-06 preserves concise handoff facts when a native tool exchange exceeds the handoff budget", async () => {
   const { faux, runtime } = partnerRuntime("handoff-native-history-once");
   const command = `CANONICAL_COMMAND ${"argument ".repeat(2500)}`;
   const result = "CANONICAL_RESULT";
@@ -288,7 +440,7 @@ it("PI-SESSION-21 carries long native tool history without duplicating display p
   faux.setResponses([context => {
     const sent = JSON.stringify(context);
     expect(sent.length).toBeLessThan(40_000);
-    expect(sent.match(/CANONICAL_COMMAND/gu)).toHaveLength(1);
+    expect(sent).not.toContain("CANONICAL_COMMAND");
     expect(sent).toContain(result); expect(sent).toContain("CONFIRMED_DECISION");
     expect(sent).toContain("INTERRUPTED"); expect(sent).toContain("attachment-1");
     expect(sent).not.toContain("DISPLAY_ONLY");

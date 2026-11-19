@@ -280,6 +280,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       await conversationStack.emergencyStop();
       joiStack.evolution.emergencyStop();
       partnerStack.partnerMemory.emergencyStop();
+      runtimeStack.stopHistoricalMemory();
       modelSourceStack.recovery.stop();
       void runtimeStack.modelRecoveryDispatcher.close().catch(() => undefined);
       void runtimeStack.memoryRefreshDispatcher.close().catch(() => undefined);

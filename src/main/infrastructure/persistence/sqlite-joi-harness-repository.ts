@@ -1,4 +1,5 @@
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
+import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements-repository.js";
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
@@ -1153,6 +1154,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       connection.prepare(`
         UPDATE workbenches SET task_summary = ?, updated_at = ? WHERE workbench_id = ? AND status = 'ACTIVE'`)
         .run(next, input.now, input.workbenchId);
+      enqueueHistoricalMemory(connection,{ workbenchId: input.workbenchId,kind: "goal",subjectId: input.goalInputId,now: input.now });
       return true;
     });
   }

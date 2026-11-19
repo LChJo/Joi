@@ -3,8 +3,148 @@ import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persis
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { enqueueHistoricalMemory, SqliteHistoricalMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-historical-memory-store";
+import { HistoricalMemoryService } from "../../src/main/application/joi/historical-memory-service";
+import { HISTORICAL_MEMORY_KIND } from "../../src/main/application/ports/historical-memory";
 
 const NOW = "2026-08-06T10:00:00.000Z";
+
+async function completeHistorySource(fixture: RuntimeFixture, inputId: string, body: string, workbenchId?: string) {
+  const seeded = seedGoal(fixture,{ goalInputId: inputId,turn: true,turnStatus: "RUNNING",
+    ...(workbenchId === undefined ? {} : { workbenchId }) });
+  fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET body=?,created_at=? WHERE input_id=?")
+    .run(body,fixture.clock.now().toISOString(),inputId));
+  await new SqliteJoiInboxRepository(fixture.database,fixture.clock)
+    .completeInput(inputId,`turn-${inputId}`,{ outcome: "DIRECT_ANSWER",completionSummary: body });
+  const source = fixture.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").get(inputId));
+  return { ...seeded,sourceId: String(source?.source_id) };
+}
+
+function historyJob(sourceId: string, scope: "joi" | "workbench") {
+  return { kind: HISTORICAL_MEMORY_KIND,outboxId: `${sourceId}:${scope}`,payload: { sourceId,scope },
+    availableAt: NOW,createdAt: NOW,attemptCount: 1,status: "CLAIMED" as const };
+}
+
+it.each([false,true])("HIST-01 compacts old facts once before appending the complete new fact (compaction fails: %s)", async fails => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const old = await completeHistorySource(fixture,"old-facts","First conclusion");
+    const next = await completeHistorySource(fixture,"new-facts","Next conclusion",old.workbenchId);
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const previous = history.loadUpdate(old.sourceId,"workbench");
+    if (previous === null) throw new Error("Missing previous source");
+    const longText = "OLD_START " + "𠮷".repeat(19_000);
+    const newText = "NEW_START " + "新".repeat(2000) + " NEW_END";
+    expect(history.commit(previous,[{ section: "conclusions",text: longText,source: old.sourceId }])).toBe(true);
+    const compact = vi.fn((_update: unknown,entries: readonly { text: string }[]) => {
+      expect(entries.map(entry => entry.text)).toEqual([longText]);
+      return fails ? Promise.reject(new Error("model unavailable")) : Promise.resolve(new Map([[0,"Old verified conclusion"]]));
+    });
+    const service = new HistoricalMemoryService(history,{
+      organize: () => Promise.resolve([{ section: "conclusions",text: newText }]),
+      compact,
+    });
+    await service.handle(historyJob(next.sourceId,"workbench"));
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(history.entries("workbench",old.workbenchId).filter(entry => entry.section === "conclusions")).toEqual([
+      { section: "conclusions",text: newText,source: next.sourceId },
+      expect.objectContaining({ section: "conclusions",text: fails ? longText : "Old verified conclusion",source: old.sourceId }),
+    ]);
+    fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='old-facts'").run(NOW));
+    expect(history.entries("workbench",old.workbenchId).filter(entry => entry.section === "conclusions"))
+      .toEqual([{ section: "conclusions",text: newText,source: next.sourceId }]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-04 does not change the source of a previously retained fact", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const first = await completeHistorySource(fixture,"first","First conclusion");
+    const second = await completeHistorySource(fixture,"second","Second conclusion",first.workbenchId);
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const service = new HistoricalMemoryService(history,{ organize: update => Promise.resolve([
+      ...update.entries.filter(entry => entry.section === "conclusions").map(entry => ({ section: entry.section,text: entry.text })),
+      { section: "conclusions",text: update.facts.conclusion ?? "" },
+    ]) });
+    await service.handle(historyJob(first.sourceId,"workbench"));
+    await service.handle(historyJob(second.sourceId,"workbench"));
+    fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='first'").run(NOW));
+    expect(history.entries("workbench",first.workbenchId).filter(entry => entry.section === "conclusions"))
+      .toEqual([{ section: "conclusions",text: "Second conclusion",source: second.sourceId }]);
+  } finally { await fixture.close(); }
+});
+
+it.each([false,true])("HIST-04 never reapplies an older keyed preference after a correction (source invalidated: %s)", async invalidated => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const old = await completeHistorySource(fixture,"earlier","global preference[verbosity]: detailed");
+    fixture.clock.advance(1);
+    const latest = await completeHistorySource(fixture,"correction","global preference[verbosity]: concise");
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    await new HistoricalMemoryService(history,{ organize: () => Promise.resolve([]) }).handle(historyJob(latest.sourceId,"joi"));
+    if (invalidated) {
+      fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='correction'").run(NOW));
+    }
+    await new HistoricalMemoryService(new SqliteHistoricalMemoryStore(fixture.database),{ organize: () => Promise.resolve([]) })
+      .handle(historyJob(old.sourceId,"joi"));
+    expect(history.entries("joi","local").map(entry => entry.text)).toEqual(invalidated ? [] : ["concise"]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-02/04/07 indexes direct answers only after completion and scopes reads to their owner", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const goalInputId = "memory-goal";
+    const { workbenchId } = seedGoal(fixture,{ goalInputId,turn: true,turnStatus: "RUNNING" });
+    const repository = new SqliteJoiInboxRepository(fixture.database,fixture.clock);
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const sources = () => fixture.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources").all());
+    expect(sources()).toHaveLength(0);
+    await repository.completeInput(goalInputId,`turn-${goalInputId}`,{ outcome: "DIRECT_ANSWER",completionSummary: "Verified conclusion" });
+    expect(sources()).toHaveLength(1);
+    const sourceId = String(sources()[0]?.source_id);
+    const update = history.loadUpdate(sourceId,"workbench");
+    if (update?.index === undefined) throw new Error("Missing evidence index");
+    history.commit(update,[update.index]);
+    history.commit(update,[update.index]);
+    expect(history.entries("workbench",workbenchId)).toEqual([update.index]);
+    expect(history.readEvidence(workbenchId,sourceId,0,4)).toEqual({ text: "goal",total: 9 });
+    expect(history.readEvidence(workbenchId,sourceId,0,8,"conclusion")).toEqual({ text: "Verified",total: 19 });
+    expect(history.readEvidence("unrelated",sourceId,0,4)).toBeNull();
+    fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id=?").run("2099-01-01T00:00:00.000Z",goalInputId));
+    expect(history.readEvidence(workbenchId,sourceId,0,4)).toBeNull();
+    expect(history.entries("workbench",workbenchId)).toEqual([]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-03 verifies eligible experience from different Workbenches against one Partner revision", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const partner = await fixture.partners.add({ displayName: "History",kind: "local-pi",capabilities: [],skills: [],tools: [] });
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    for (const goalInputId of ["history-a","history-b"]) {
+      const { workbenchId } = seedGoal(fixture,{ goalInputId,turn: true });
+      seedCompletedWorkWithResult(fixture,{ goalInputId,workId: goalInputId,absorbed: false,partnerRevisionId: partner.partnerRevisionId });
+      const sourceId = fixture.database.transaction(db => {
+        const subjectId = `result-${goalInputId}`;
+        db.prepare("INSERT INTO work_result_verifications (result_id,status,created_at) VALUES (?,'PASSED',?)").run(subjectId,NOW);
+        enqueueHistoricalMemory(db,{ workbenchId,kind: "partner",subjectId,now: NOW });
+        enqueueHistoricalMemory(db,{ workbenchId,kind: "partner",subjectId,now: NOW });
+        expect(db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").all(subjectId)).toHaveLength(1);
+        return String(db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").get(subjectId)?.source_id);
+      });
+      const update = history.loadUpdate(sourceId,"partner");
+      if (update === null) throw new Error("Missing Partner update");
+      expect(update.ownerId).toBe(partner.partnerId);
+      expect(history.commit(update,[{ section: "verification",text: `Verified method ${goalInputId}`,source: sourceId }])).toBe(true);
+      expect(history.commit(update,[])).toBe(false);
+      expect(history.entries("workbench",workbenchId)).toEqual([]);
+    }
+    expect(history.entries("partner",partner.partnerId)).toHaveLength(2);
+    const revisions = fixture.database.transaction(db => db.prepare("SELECT partner_revision_id FROM partner_revisions WHERE partner_id=?").all(partner.partnerId));
+    expect(revisions).toHaveLength(1);
+  } finally { await fixture.close(); }
+});
 
 interface GoalSeedOptions {
   workbenchId?: string;

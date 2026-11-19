@@ -10,6 +10,7 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
+import { enqueueHistoricalMemory, SqliteHistoricalMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-historical-memory-store.js";
 import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -32,6 +33,47 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
 
 describe("JOI-01 non-destructive migration", () => {
+  it("HIST-04 preserves the preference order when upgrading existing historical memory", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),"joi-preference-upgrade-"));
+    const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");
+    try {
+      await copyMigrationsThrough(previousMigrations,104);
+      const previous = await openRuntimeDatabase({ databasePath,migrationsDirectory: previousMigrations });
+      let oldSourceId: string;
+      try {
+        oldSourceId = previous.transaction(db => {
+          db.exec(`INSERT INTO workbenches
+            (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+            VALUES ('wb','W','p','','','','m','ACTIVE','2026-11-01','2026-11-01')`);
+          const addSource = (id: string, at: string, text: string) => {
+            db.prepare(`INSERT INTO joi_inbox_messages
+              (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,?,'CONSUMED','wb',?,?)`)
+              .run(id,id,`global preference[verbosity]: ${text}`,at,at);
+            db.prepare(`INSERT INTO joi_turns(turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+              VALUES (?,?,'wb','session','COMPLETED',?,?)`).run(id,id,at,at);
+            db.prepare(`INSERT INTO joi_turn_completions(input_id,turn_id,outcome_kind,completion_summary,completed_at,updated_at)
+              VALUES (?,?,'DIRECT_ANSWER',?,?,?)`).run(id,id,text,at,at);
+            enqueueHistoricalMemory(db,{ kind: "direct",subjectId: id,workbenchId: "wb",now: at });
+            return String(db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").get(id)?.source_id);
+          };
+          const oldest = addSource("old","2026-11-01","detailed");
+          const latest = addSource("new","2026-11-02","concise");
+          db.prepare("INSERT INTO historical_memories VALUES ('joi','local',1,?)")
+            .run(JSON.stringify([{ section: "preferences",key: "verbosity",text: "concise",source: latest }]));
+          return oldest;
+        });
+      } finally { previous.close(); }
+      const upgraded = await openRuntimeDatabase({ databasePath,migrationsDirectory: path.resolve("resources/migrations") });
+      try {
+        const history = new SqliteHistoricalMemoryStore(upgraded);
+        const older = history.loadUpdate(oldSourceId,"joi");
+        if (older?.explicitPreferences === undefined) throw new Error("Missing pending preference");
+        expect(history.commit(older,older.explicitPreferences)).toBe(true);
+        expect(history.entries("joi","local").map(entry => entry.text)).toEqual(["concise"]);
+      } finally { upgraded.close(); }
+    } finally { await rm(root,{ recursive: true,force: true }); }
+  });
+
   it("preserves the ordering and identity of existing queued writers during the admission upgrade", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(),"joi-admission-upgrade-"));
     const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");

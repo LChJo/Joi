@@ -968,10 +968,12 @@ describe("Pi partner engine runtime", () => {
     expect(first.status).toBe("COMPLETED");
     expect(first.externalSessionRef).toBe("partner_instance_messages:instance_1");
 
+    let checkpoint: PartnerSessionState | undefined;
     const second = await runtime.runResidentTurn({
       instanceId: "instance_1", knowledgeSection: "KB_SECTION",
       request: { ...request, actionId: "action_2", taskProjection: "second task" },
       restoredMessages: first.messages ?? null,
+      saveSession: (state) => { checkpoint = state; return Promise.resolve(); },
       revision,
       skillEnvironmentKeys: [],
       skillSection: "",
@@ -986,10 +988,12 @@ describe("Pi partner engine runtime", () => {
     expect(ephemeral).toMatchObject({ externalRunId: "local_pi:action_3", output: { body: "ephemeral answer" }, status: "COMPLETED" });
 
     runtime.evictFromMemory("instance_1");
+    if (checkpoint === undefined) throw new Error("Missing Work checkpoint");
     const rebuilt = await runtime.runResidentTurn({
       instanceId: "instance_1", knowledgeSection: "KB_SECTION",
       request: { ...request, actionId: "action_4", taskProjection: "after eviction" },
       restoredMessages: second.messages ?? null,
+      sessionState: checkpoint,
       revision,
       skillEnvironmentKeys: [],
       skillSection: "",
@@ -1047,3 +1051,4 @@ describe("Pi partner engine runtime", () => {
     expect(firstSystemPrompt).not.toContain("only place your file tools will write");
   });
 });
+import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
