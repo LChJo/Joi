@@ -1,3 +1,4 @@
+import { hasCurrentGoalSynthesisCoverage } from "./sqlite-goal-synthesis-state.js";
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
 import type { DatabaseSync } from "node:sqlite";
 import { harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
@@ -67,7 +68,7 @@ export function closeHistoricalReviewInTransaction(connection: DatabaseSync, inp
        AND (r.input_id IS NULL OR r.status IN ('PENDING', 'FAILED', 'CONSUMED', 'ROUTED', 'CLARIFICATION_REQUIRED'))
        AND NOT EXISTS (SELECT 1 FROM joi_turns t
                         WHERE t.input_id = r.input_id AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))`).get(inputId) as Row | undefined;
-  if (gate === undefined) return null;
+  if (gate === undefined || !hasCurrentGoalSynthesisCoverage(connection,inputId)) return null;
   connection.prepare(`UPDATE joi_harness_maps
     SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
     WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, inputId);

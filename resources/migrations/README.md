@@ -102,3 +102,5 @@ Migration 103 保存对话分支的来源、初始配置和私有交接，以及
 Migration 104 保存 Joi、工作台和搭档的有界分节历史、带版本的来源引用及去重回执。历史从升级后的合格结算增量生成，原始依据经来源引用按权限读取。见 [HIST-01–07](../../docs/historical-context-policy-spec.md)。
 
 Migration 105 为每个已记录的全局偏好主题保存最后采纳的输入顺序，并从现有条目初始化。该顺序在来源失效后仍保留，避免延迟整理恢复已被纠正的偏好。见 [HIST-04](../../docs/historical-context-policy-spec.md)。
+
+Migration 106 添加主 Joi 取证回执，记录授权目标、结果与需求版本、来源引用及实际返回的正文区间。回执按 Turn 和工具调用去重，供恢复和结案核对。见 [REV-04–07](../../docs/joi-review-evidence-spec.md)。

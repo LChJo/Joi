@@ -8,7 +8,7 @@ import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.js";
 import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
-import { buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
+import { assertGoalSynthesisCoverage, hasCurrentGoalSynthesisCoverage, buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
 import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
@@ -17,11 +17,12 @@ import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-f
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-closure.js";
 import { prepareHistoricalReviewRecovery } from "./sqlite-joi-historical-review.js";
-import { harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
+import { harnessReviewInputIdSql, harnessReviewResultRevision } from "./sqlite-joi-harness-review-identity.js";
+import { composeReviewBody } from "../../application/joi/joi-harness-review-body.js";
 import { consumeSupersededGoalSynthesis, enqueueGoalResultSynthesis } from "./sqlite-goal-result-synthesis.js";
 import { consumeSatisfiedRequirementsReviews, enqueueGoalRequirementsReview } from "./sqlite-goal-requirements-review.js";
 import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
-import { goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goal-result-synthesis.js";
+import { coverageSynthesisSql, goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goal-result-synthesis.js";
 import { appendGoalRequirementSource, assertGoalRequirementsReady, goalRequirementsCurrentSql } from "./sqlite-goal-requirements-repository.js";
 import { clearJoiTurnRetryState, joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
 import { settleInterruptedJoiPlanning } from "./sqlite-joi-planning-failure.js";
@@ -126,9 +127,8 @@ function clearRevokedGoalMap(connection: DatabaseSync, goalInputId: string, now:
  * or left an unresolved path behind.
  */
 function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, turnId: string, now: string): boolean {
-  return connection.prepare(`
-    UPDATE joi_harness_maps AS m
-       SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
+  const eligible = connection.prepare(`
+    SELECT 1 FROM joi_harness_maps AS m
      WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
        AND EXISTS (
          SELECT 1 FROM joi_turns t
@@ -157,7 +157,10 @@ function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, 
             AND ${goalRequirementsCurrentSql('m.goal_input_id', 'm.reviewed_requirements_revision')}
             AND o.disposition = 'COMPLETED'
             AND o.completed_at >= COALESCE(goal.reopened_at, goal.created_at)
-       )`).run(now, now, goalInputId, turnId).changes > 0;
+       )`).get(goalInputId, turnId);
+  if (eligible === undefined || !hasCurrentGoalSynthesisCoverage(connection,goalInputId)) return false;
+  return connection.prepare(`UPDATE joi_harness_maps SET status='CLEARED',cleared_at=?,revision=revision+1,updated_at=?
+    WHERE goal_input_id=? AND status='ACTIVE'`).run(now,now,goalInputId).changes === 1;
 }
 
 function mapRow(row: Row): JoiInboxRecord {
@@ -446,7 +449,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const retried = connection.prepare(`UPDATE joi_inbox_messages AS synth SET status = 'PENDING',
           failed_at = NULL, failure_reason_code = NULL, failure_count = NULL, updated_at = ?
           WHERE input_id = (SELECT rs.synthetic_input_id FROM joi_goal_result_sets rs
-            WHERE rs.original_input_id = ? AND rs.revision > rs.synthesized_revision)
+            WHERE rs.original_input_id = ? AND (rs.revision > rs.synthesized_revision OR
+              (${coverageSynthesisSql("rs.synthetic_input_id")} AND EXISTS (
+                SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id=rs.original_input_id AND m.status='ACTIVE'
+              ))))
             AND status = 'CONSUMED' AND failed_at IS NOT NULL
             AND result_revision = (SELECT revision FROM joi_goal_result_sets WHERE original_input_id = ?)
             AND ${goalRequirementsCurrentSql("synth.goal_input_id", "synth.requirements_revision")}
@@ -459,8 +465,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         if (retried.changes === 1) {
           const synthesis=connection.prepare("SELECT synthetic_input_id FROM joi_goal_result_sets WHERE original_input_id=?").get(inputId);
           if(typeof synthesis?.synthetic_input_id==="string") clearJoiTurnRetryState(connection,synthesis.synthetic_input_id,true);
-          connection.prepare(`UPDATE joi_inbox_messages SET archived_at = NULL, updated_at = ?, last_opened_at = ?, reopened_at = ?
-            WHERE input_id = ?`).run(now, now, now, inputId);
+          connection.prepare(`UPDATE joi_inbox_messages SET archived_at=NULL,updated_at=?,last_opened_at=?,
+            reopened_at=CASE WHEN ? THEN reopened_at ELSE ? END WHERE input_id=?`)
+            .run(now,now,typeof synthesis?.synthetic_input_id === "string" && synthesis.synthetic_input_id.endsWith(":coverage") ? 1 : 0,now,inputId);
           const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row;
           return mapRow(updated);
         }
@@ -603,7 +610,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async loadInput(inputId: string): Promise<JoiPendingInput | null> {
     const row = this.database.transaction((connection) => connection.prepare(
-      `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
+      `SELECT i.input_id, CASE WHEN i.goal_input_id IS NOT NULL AND
+          (i.input_id LIKE 'joi_harness_review:goal:%' OR i.result_revision IS NOT NULL) THEN '' ELSE i.body END AS body,
+        i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
         i.continuation_prompt, i.reopened_at, i.requirements_revision,
         i.turn_failure_count,i.turn_failed_at,i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
         (SELECT run.run_id FROM joi_automation_runs run WHERE run.input_id = i.input_id AND run.routine_id = i.automation_routine_id
@@ -642,11 +651,20 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       return own;
     });
-    const isSynthesis = typeof row.goal_input_id === "string" && typeof row.result_revision === "number";
+    const goalId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
+    const reviewRevision = harnessReviewResultRevision(inputId,goalId);
+    const isSynthesis = reviewRevision === undefined && typeof row.goal_input_id === "string" && typeof row.result_revision === "number";
+    const reviewBody = reviewRevision === undefined ? undefined : this.database.transaction(db => {
+      const disposition = db.prepare(`SELECT o.disposition FROM joi_current_goal_outcomes o
+        JOIN joi_inbox_messages g ON g.input_id=o.input_id
+        WHERE o.input_id=? AND o.result_revision=? AND g.workbench_id=?`).get(goalId,reviewRevision,row.workbench_id as string)?.disposition;
+      return composeReviewBody({ goalInputId: goalId,resultRevision: reviewRevision,
+        ...(disposition === "CONTINUE" ? { continuationRequested: true } : {}) });
+    });
     const synthesisContext = isSynthesis && typeof row.workbench_id === "string"
       ? this.database.transaction(connection => loadGoalSynthesisContext(connection, String(row.goal_input_id), String(row.workbench_id), Number(row.result_revision), Number(row.requirements_revision ?? 0)))
       : undefined;
-    const goalContext = !isSynthesis && typeof row.workbench_id === "string"
+    const goalContext = !isSynthesis && reviewRevision === undefined && typeof row.workbench_id === "string"
       ? this.database.transaction((connection) => loadJoiGoalContext(connection,
         typeof row.goal_input_id === "string" ? row.goal_input_id : inputId, row.workbench_id as string))
       : undefined;
@@ -667,7 +685,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           || typeof attachment.mime_type !== "string" || typeof attachment.size !== "number") throw new Error("joi_attachment_record_invalid");
         return { attachmentId: attachment.attachment_id, filename: attachment.filename, mimeType: attachment.mime_type, size: attachment.size };
       }) }),
-      body: isSynthesis ? goalSynthesisInstruction(String(row.goal_input_id), Number(row.result_revision), Number(row.requirements_revision ?? 0)) : row.body,
+      body: reviewBody ?? (isSynthesis ? goalSynthesisInstruction(goalId, Number(row.result_revision), Number(row.requirements_revision ?? 0)) : row.body),
       ...(synthesisContext === undefined ? {} : { synthesisContext }),
       ...(typeof row.requirements_revision === "number" ? { requirementsRevision: row.requirements_revision } : {}),
       ...(goalContext === undefined ? {} : { goalContext }),
@@ -676,7 +694,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           ? { continuationPrompt: "Continue from the established results and complete the remaining work for this goal." } : {}),
       ...(typeof row.goal_input_id === "string" ? { goalInputId: row.goal_input_id } : {}),
       inputId: row.input_id,
-      ...(typeof row.result_revision === "number" ? { resultRevision: row.result_revision } : {}),
+      ...(isSynthesis && typeof row.result_revision === "number" ? { resultRevision: row.result_revision } : {}),
       ...(typeof row.resolved_action_id === "string" && typeof row.resolved_work_id === "string" && row.resolved_decision === "RESUME" ? {
         resolvedAction: { actionId: row.resolved_action_id, decision: "RESUME" as const, workId: row.resolved_work_id },
       } : {}),
@@ -896,16 +914,17 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     });
   }
 
-  async validateSynthesisState(inputId: string, draft?: GoalSynthesisDraft): Promise<void> {
+  async validateSynthesisState(inputId: string, draft?: GoalSynthesisDraft, completing?: boolean): Promise<void> {
     this.database.transaction(connection => {
       const input = connection.prepare(`SELECT goal_input_id,workbench_id,result_revision,requirements_revision
         FROM joi_inbox_messages WHERE input_id=? AND input_id LIKE 'joi_result_input:goal:%'`).get(inputId);
       if (typeof input?.goal_input_id !== "string" || typeof input.workbench_id !== "string" || typeof input.result_revision !== "number") {
         throw new DomainError("goal_synthesis_state_invalid", "Synthesis requires a versioned goal input.");
       }
-      buildGoalSynthesisState(connection, { goalInputId: input.goal_input_id, workbenchId: input.workbench_id,
+      const state = buildGoalSynthesisState(connection, { goalInputId: input.goal_input_id, workbenchId: input.workbench_id,
         resultRevision: input.result_revision, requirementsRevision: Number(input.requirements_revision ?? 0),
         ...(draft === undefined ? {} : { draft }) });
+      if (completing === true) assertGoalSynthesisCoverage(connection,input.goal_input_id,state);
     });
   }
 
@@ -944,7 +963,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         }
         return undefined;
       }
-      const checkpoint = connection.prepare(`SELECT COALESCE(i.goal_input_id, i.input_id) AS goal_input_id, t.requirements_revision
+      const checkpoint = connection.prepare(`SELECT COALESCE(i.goal_input_id, i.input_id) AS goal_input_id, t.requirements_revision, t.status
         FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id WHERE t.turn_id = ? AND t.input_id = ?`).get(turnId, inputId);
       const requirements = typeof checkpoint?.goal_input_id === "string"
         ? assertGoalRequirementsReady(connection, checkpoint.goal_input_id, typeof checkpoint.requirements_revision === "number" ? checkpoint.requirements_revision : undefined) : null;
@@ -1044,7 +1063,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const reopenedAt = typeof currentCommit?.reopened_at === "string" ? currentCommit.reopened_at : undefined;
         const explicitResume = reopenedAt !== undefined && inputId.endsWith(`:resume:${String(Date.parse(reopenedAt))}`)
           && typeof currentCommit?.completed_at === "string" && reopenedAt > currentCommit.completed_at;
-        if (existingCommit !== undefined && !explicitResume) {
+        const coverageRefresh = inputId.endsWith(":coverage") && currentCommit !== undefined
+          && (checkpoint?.status === "RUNNING" || checkpoint?.status === "WAITING");
+        if (existingCommit !== undefined && !explicitResume && !coverageRefresh) {
           connection.prepare("UPDATE joi_inbox_messages SET status='CONSUMED',updated_at=? WHERE input_id=? AND status<>'CLARIFICATION_REQUIRED'").run(now,inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
@@ -1057,6 +1078,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED"
           : completion.outcome === "RESULT_CONTINUE" ? "CONTINUE" : "BLOCKED";
         if (disposition === "COMPLETED") {
+          assertGoalSynthesisCoverage(connection,synthesis.goal_input_id,synthesisState);
           const completedWork = connection.prepare(`SELECT 1 FROM work_items
             WHERE input_id = ? AND status = 'COMPLETED' LIMIT 1`).get(synthesis.goal_input_id);
           if (completedWork === undefined) {
@@ -1082,6 +1104,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE original_input_id = ? AND revision = ?`).run(
           synthesis.result_revision, requirements?.revision ?? null, now, synthesis.goal_input_id, synthesis.result_revision,
         );
+        if (coverageRefresh) {
+          connection.prepare(`UPDATE joi_harness_maps SET review_recovery_epoch=?,revision=revision+1,updated_at=?
+            WHERE goal_input_id=? AND status='ACTIVE'`).run(`coverage:${turnId}`,now,synthesis.goal_input_id);
+        }
         connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
           WHERE goal_input_id = ? AND result_revision = ? AND requirements_revision IS ?
             AND input_id LIKE 'joi_result_input:%' AND status = 'PENDING'`).run(now, synthesis.goal_input_id, synthesis.result_revision, requirements?.revision ?? null);

@@ -138,15 +138,8 @@ describe("joi actor tick over persisted facts", () => {
 
     const digest: HarnessReviewDigest = {
       workbenchId: "workbench_h",
-      completionSummary: "一层完成",
-      decisionCount: 0,
-      decisions: [],
-      destination: "目的地",
-      fogNotes: [],
       goalInputId: "input_goal",
-      openPaths: [],
       resultRevision: 1,
-      results: [],
     };
     let digestPending = true;
     const handled: string[] = [];
@@ -277,15 +270,8 @@ describe("joi actor tick over persisted facts", () => {
       action: "REQUEUE",
       digest: {
         workbenchId: "workbench_h",
-        completionSummary: "一层完成",
-        decisionCount: 0,
-        decisions: [],
-        destination: "目的地",
-        fogNotes: [],
         goalInputId: "input_goal",
-        openPaths: [],
         resultRevision: 1,
-        results: [],
       },
       reasonCode: "review_turn_failed_without_side_effect",
     };

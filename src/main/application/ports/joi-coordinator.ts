@@ -1,8 +1,8 @@
 import type { WorkbenchSummary } from "./workbench-context.js";
 import type { WorkbenchProposalDto } from "../../../shared/joi.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
-import type { GoalSynthesisDraft, GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
-import type { GoalEvidenceChange, GoalEvidenceChangesQuery } from "./goal-evidence.js";
+import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+import type { GoalEvidenceChangesQuery } from "./goal-evidence.js";
 import type { JoiTurnRetryState } from "./joi-task.js";
 
 /** Private persisted evidence for one goal; never a display or diagnostics projection. */
@@ -30,15 +30,11 @@ export interface JoiPendingInput {
     originalRequest: string;
     resultRevision: number;
     requirementsRevision: number;
-    previous?: { resultRevision: number; requirementsRevision?: number; disposition: string; summary: string; state?: GoalSynthesisState; stateOmitted?: boolean; stateRef?: string };
-    changedResults: ({ resultId: string; workId: string; status: string; verification: string; summary: string; isLate: boolean; isAuthoritative: boolean }
-      & Partial<Pick<GoalEvidenceChange, "revision" | "handoff" | "handoffStatus" | "handoffCharacters" | "handoffOmitted" | "handoffRef" | "handoffReadHint">>)[];
-    changesRead?: Omit<GoalEvidenceChangesQuery, "goalInputId" | "workbenchId" | "cursor">;
-    nextChangesCursor?: string;
-    totalChanges?: number;
+    previous?: { disposition: string; stateRef: string };
+    changesRead: Omit<GoalEvidenceChangesQuery, "goalInputId" | "workbenchId" | "cursor">;
+    totalChanges: number;
     totalResults: number;
     gapCount: number;
-    omittedChanges: number;
   };
   requirementsRevision?: number;
   automationRoutineId?: string;
@@ -67,7 +63,7 @@ export interface JoiInputCompletion {
 }
 
 export interface JoiCoordinatorStore {
-  validateSynthesisState?(inputId: string, draft?: GoalSynthesisDraft): Promise<void>;
+  validateSynthesisState?(inputId: string, draft?: GoalSynthesisDraft, completing?: boolean): Promise<void>;
   completeResolvedAction?(input: { actionId: string; inputId: string; turnId: string }): Promise<void>;
   completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion): Promise<unknown>;
   createTurn(input: {

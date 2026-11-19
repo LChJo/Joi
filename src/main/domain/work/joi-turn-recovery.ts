@@ -3,7 +3,7 @@ export const JOI_TURN_RETRY_BASE_MILLIS = 30_000;
 export const JOI_TURN_RETRY_MAX_MILLIS = 10 * 60_000;
 
 const SYNTHESIS_OUTPUT_FAILURES = new Set([
-  "goal_synthesis_reference_invalid", "goal_synthesis_state_invalid", "goal_synthesis_correction_exhausted",
+  "goal_synthesis_reference_invalid", "goal_synthesis_state_invalid", "goal_synthesis_coverage_incomplete", "goal_synthesis_correction_exhausted",
   "joi_turn_outcome_uncommitted", "joi_goal_synthesis_outcome_uncommitted", "joi_turn_completion_empty",
   "joi_goal_synthesis_summary_empty", "joi_model_toolcall_leak", "custom_model_tool_capability_unverified",
 ]);
@@ -13,11 +13,12 @@ export function isSynthesisOutputFailure(reasonCode: string): boolean {
 }
 
 export function isSynthesisStateCorrection(reasonCode: string): boolean {
-  return reasonCode === "goal_synthesis_reference_invalid" || reasonCode === "goal_synthesis_state_invalid";
+  return reasonCode === "goal_synthesis_reference_invalid" || reasonCode === "goal_synthesis_state_invalid" || reasonCode === "goal_synthesis_coverage_incomplete";
 }
 
 export function isTerminalTurnFailure(reasonCode: string): boolean {
-  return ["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal", "source_content_refusal", "model_context_budget_exhausted"].includes(reasonCode);
+  return ["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal", "source_content_refusal",
+    "model_context_budget_exhausted", "goal_evidence_turn_inactive"].includes(reasonCode);
 }
 
 export function joiTurnRetryDelay(failureCount: number): number {

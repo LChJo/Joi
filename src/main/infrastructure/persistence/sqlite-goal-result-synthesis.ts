@@ -2,19 +2,24 @@ import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
 import type { JoiPendingInput } from "../../application/ports/joi-coordinator.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements.js";
-import { loadGoalEvidenceChanges } from "./sqlite-goal-evidence-repository.js";
-import { readStoredSynthesisState } from "./sqlite-goal-synthesis-state.js";
+import { countGoalEvidenceChanges } from "./sqlite-goal-evidence-repository.js";
+
+/** The expression is a repository-owned SQL identifier. */
+export function coverageSynthesisSql(inputId: string): string {
+  return `(${inputId} LIKE 'joi_result_input:goal:%' AND substr(${inputId},-9)=':coverage')`;
+}
 
 /** Only the instruction and version identity belong in the persisted user message. */
 export function goalSynthesisInstruction(goalInputId: string, resultRevision: number, requirementsRevision: number): string {
   return [
     "All currently planned work for one original user goal is terminal and ready for synthesis.",
     `goalInputId=${goalInputId} resultRevision=${String(resultRevision)} requirementsRevision=${String(requirementsRevision)}`,
-    "Use the current required context and the refreshed private synthesis snapshot. Read work_read_evidence for the goal-scoped paginated index and work_read_result for complete evidence pages. Unlisted evidence still exists.",
+    "Use the current requirements and start with work_read_evidence(mode=roadmap). Read work_read_evidence for the goal-scoped paginated index and work_read_result for complete evidence pages. Unlisted evidence still exists.",
     "Only COMPLETED results with verification=PASSED are verified evidence. A COMPLETED result with verification=NOT_REQUIRED is an unverified self-report. Missing acceptance is UNVERIFIED. FAILED/UNKNOWN, late, non-authoritative results or verification=FAILED are coverage gaps, not successful evidence.",
     "If the evidence answers the goal, deliver the complete answer and call turn_complete with RESULT_SYNTHESIZED. Do not repeat completed Work or dump raw per-Agent output.",
+    "For each claim covering a mandatory requirement, read a relevant page from every result linked to that claim, or reuse its valid read receipt. A PASSED body-presence check alone cannot establish that a feature works; report any missing functional evidence.",
     "Your final visible message must be the complete deliverable itself, with material evidence gaps. Do the reasoning through tool calls and then write the deliverable in full.",
-    "With turn_complete, provide synthesisState={version:1,claims:[{statement,requirementIds,resultIds}],unresolved:[{description,requirementIds,resultIds}],conflicts:[{description,resultIds}]}. Preserve established findings and unresolved conflicts; reference only actual requirement and result identifiers. This state is private and does not replace the complete visible deliverable.",
+    "With turn_complete, provide private synthesisState with version=1, claims, unresolved and conflicts. Link conflicts to affected requirementIds (use [] for issues outside acceptance). Retain resolved conflicts with resolution={rationale,resultIds} referencing current read evidence in the supporting claims. Use only actual requirement and result identifiers.",
     "If a concrete next evidence layer can run without a user decision, credentials or broader permission, describe the bounded gap and call turn_complete with RESULT_CONTINUE; Wayfinder will arrange that layer.",
     "Only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer another suitable available partner; switch the current partner's model only when none is available.",
     "For an essential auth, balance, configuration, skill or safety failure, required user judgment or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the gap and call turn_complete with RESULT_BLOCKED.",
@@ -22,12 +27,12 @@ export function goalSynthesisInstruction(goalInputId: string, resultRevision: nu
 }
 
 export function loadGoalSynthesisContext(connection: DatabaseSync, goalInputId: string, workbenchId: string, resultRevision: number, requirementsRevision: number): JoiPendingInput["synthesisContext"] {
-  const goal = connection.prepare(`SELECT body FROM joi_inbox_messages i WHERE input_id=?
+  const goal = connection.prepare(`SELECT CASE WHEN length(body)<=8000 THEN body ELSE NULL END AS body FROM joi_inbox_messages i WHERE input_id=?
     AND (workbench_id=? OR (workbench_id IS NULL AND EXISTS (
       SELECT 1 FROM work_items w WHERE w.input_id=i.input_id AND w.workbench_id=?
     )))`).get(goalInputId, workbenchId, workbenchId);
-  if (typeof goal?.body !== "string") return undefined;
-  const previous = connection.prepare(`SELECT result_revision, requirements_revision, disposition, completion_summary, updated_at, synthesis_state_json
+  if (goal === undefined) return undefined;
+  const previous = connection.prepare(`SELECT result_revision, requirements_revision, disposition, updated_at
     FROM joi_goal_outcomes WHERE input_id=? AND result_revision<=?`).get(goalInputId, resultRevision);
   const counts = connection.prepare(`SELECT COUNT(DISTINCT r.result_id) AS total,
     COUNT(DISTINCT CASE WHEN r.status<>'COMPLETED' OR r.is_late=1 OR r.is_authoritative=0 OR v.status IS NULL OR v.status<>'PASSED' THEN r.result_id END) AS gaps
@@ -38,21 +43,15 @@ export function loadGoalSynthesisContext(connection: DatabaseSync, goalInputId: 
     WHERE m.original_input_id=? AND m.revision<=? AND w.workbench_id=?`).get(goalInputId, resultRevision, workbenchId);
   const changesRead = { resultRevision, requirementsRevision, afterResultRevision: Number(previous?.result_revision ?? 0),
     ...(previous === undefined ? {} : { afterUpdatedAt: String(previous.updated_at) }) };
-  const changes = loadGoalEvidenceChanges(connection, { goalInputId, workbenchId, ...changesRead });
-  const state = readStoredSynthesisState(previous?.synthesis_state_json);
-  const archived = previous === undefined || connection.prepare("SELECT 1 FROM sqlite_master WHERE name='joi_goal_outcome_history' AND type='table'").get() === undefined
-    ? undefined : connection.prepare(`SELECT completion_summary,disposition,synthesis_state_json FROM joi_goal_outcome_history
-      WHERE goal_input_id=? AND result_revision=? AND requirements_revision=?`).get(goalInputId, Number(previous.result_revision), Number(previous.requirements_revision ?? 0));
-  const currentSuffix = archived !== undefined && (archived.completion_summary !== previous?.completion_summary
-    || archived.disposition !== previous?.disposition || archived.synthesis_state_json !== previous?.synthesis_state_json) ? ":current" : "";
   return {
-    originalRequest: goal.body, resultRevision, requirementsRevision,
-    ...(previous === undefined ? {} : { previous: { resultRevision: Number(previous.result_revision), requirementsRevision: Number(previous.requirements_revision ?? 0),
-      disposition: String(previous.disposition), summary: String(previous.completion_summary), stateRef: `r${String(previous.result_revision)}:q${String(previous.requirements_revision ?? 0)}${currentSuffix}`,
-      ...(state === undefined ? {} : { state }) } }),
-    changesRead, ...(changes.nextCursor === undefined ? {} : { nextChangesCursor: changes.nextCursor }), totalChanges: changes.totalChanges,
-    totalResults: Number(counts?.total ?? 0), gapCount: Number(counts?.gaps ?? 0), omittedChanges: Math.max(0, changes.totalChanges - changes.changedResults.length),
-    changedResults: changes.changedResults,
+    originalRequest: typeof goal.body === "string" ? goal.body : "Read the original user requirements through goal_read_inputs.",
+    resultRevision,requirementsRevision,
+    ...(previous === undefined ? {} : { previous: {
+      disposition: String(previous.disposition),
+      stateRef: `r${String(previous.result_revision)}:q${String(previous.requirements_revision ?? 0)}:current`,
+    } }),
+    changesRead,totalChanges: countGoalEvidenceChanges(connection,{ goalInputId,workbenchId,...changesRead }),
+    totalResults: Number(counts?.total ?? 0),gapCount: Number(counts?.gaps ?? 0),
   };
 }
 
@@ -70,9 +69,9 @@ export function consumeSupersededGoalSynthesis(connection: DatabaseSync, inputId
 }
 
 /** Enqueues current evidence once per revision pair and explicit retry epoch. */
-export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId: string, workbenchId: string, now: string, recoveryEpoch?: string): string | null {
-  const source = connection.prepare("SELECT body AS goal_body,reopened_at,status FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NULL AND dismissed_at IS NULL AND failed_at IS NULL").get(goalInputId);
-  if (typeof source?.goal_body !== "string") return null;
+export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId: string, workbenchId: string, now: string, recoveryEpoch?: string, coverageRefresh = false): string | null {
+  const source = connection.prepare("SELECT reopened_at,status FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NULL AND dismissed_at IS NULL AND failed_at IS NULL").get(goalInputId);
+  if (source === undefined) return null;
   const gate = connection.prepare("SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goalInputId);
   if (gate !== undefined && gate.status !== "OPEN") return null;
   const resultSet = connection.prepare(`SELECT revision, synthesized_revision, synthesized_requirements_revision FROM joi_goal_result_sets
@@ -82,17 +81,40 @@ export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId
   const contract = loadGoalRequirements(connection, goalInputId);
   if (contract?.status === "DIRTY") return null;
   const current = connection.prepare("SELECT result_revision,requirements_revision,disposition,completed_at FROM joi_goal_outcomes WHERE input_id=?").get(goalInputId);
+  if (coverageRefresh && (contract === null || (source.status !== "CONSUMED" && source.status !== "ROUTED") || current?.disposition !== "COMPLETED"
+    || current.result_revision !== resultSet.revision || Number(current.requirements_revision ?? 0) !== contract.revision)) return null;
   const resumeEpoch = source.status === "CONSUMED" && typeof source.reopened_at === "string" && current?.result_revision === resultSet.revision
     && Number(current.requirements_revision ?? 0) === (contract?.revision ?? 0)
     && (current.disposition === "BLOCKED" || current.disposition === "CONTINUE" || recoveryEpoch === source.reopened_at)
     && typeof current.completed_at === "string" && source.reopened_at > current.completed_at ? source.reopened_at : undefined;
   if (resultSet.synthesized_revision >= resultSet.revision &&
-    (contract === null || resultSet.synthesized_requirements_revision === contract.revision) && resumeEpoch === undefined) return null;
+    (contract === null || resultSet.synthesized_requirements_revision === contract.revision) && resumeEpoch === undefined && !coverageRefresh) return null;
   const active = connection.prepare(`SELECT 1 FROM work_items
     WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(goalInputId);
   if (active !== undefined) return null;
-  const resumeSuffix = resumeEpoch === undefined ? "" : `:resume:${String(Date.parse(resumeEpoch))}`;
+  if (coverageRefresh && source.status === "ROUTED") {
+    const settled = connection.prepare(`UPDATE joi_inbox_messages AS goal SET status='CONSUMED',updated_at=?
+      WHERE goal.input_id=? AND goal.status='ROUTED' AND goal.clarification_reason_code IS NULL
+        AND EXISTS (SELECT 1 FROM joi_goal_outcomes o WHERE o.input_id=goal.input_id
+          AND o.completed_at>=COALESCE(goal.reopened_at,goal.created_at))
+        AND NOT EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id=t.input_id
+          WHERE COALESCE(i.goal_input_id,i.input_id)=goal.input_id AND t.status IN ('PENDING','RUNNING','WAITING'))
+        AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages i WHERE i.goal_input_id=goal.input_id
+          AND i.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED'))
+        AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests a WHERE a.input_id=goal.input_id AND a.status='OPEN')`)
+      .run(now,goalInputId);
+    if (settled.changes !== 1) return null;
+  }
+  const resumeSuffix = coverageRefresh ? ":coverage" : resumeEpoch === undefined ? "" : `:resume:${String(Date.parse(resumeEpoch))}`;
   const inputId = (contract === null ? `joi_result_input:goal:${goalInputId}` : `joi_result_input:goal:${goalInputId}:r${String(resultSet.revision)}:q${String(contract.revision)}`) + resumeSuffix;
+  if (coverageRefresh && connection.prepare("SELECT 1 FROM joi_inbox_messages WHERE input_id=?").get(inputId) !== undefined) {
+    connection.prepare(`UPDATE joi_inbox_messages SET failed_at=?, failure_reason_code='goal_synthesis_coverage_incomplete',
+        failure_count=MAX(COALESCE(failure_count,0),1),updated_at=?
+      WHERE input_id=? AND status='CONSUMED' AND failed_at IS NULL
+        AND EXISTS (SELECT 1 FROM joi_goal_result_sets rs WHERE rs.synthetic_input_id=joi_inbox_messages.input_id)`)
+      .run(now,now,inputId);
+    return null;
+  }
   const body = goalSynthesisInstruction(goalInputId, resultSet.revision, contract?.revision ?? 0);
   connection.prepare(`INSERT INTO joi_inbox_messages
     (input_id, idempotency_key, body, status, workbench_id, goal_input_id, result_revision, requirements_revision, created_at, updated_at)

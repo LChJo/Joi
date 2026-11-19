@@ -1,3 +1,4 @@
+import { loadGoalEvidenceChanges } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { DatabaseSync } from "node:sqlite";
 import { loadGoalSynthesisContext } from "../../src/main/infrastructure/persistence/sqlite-goal-result-synthesis.js";
 
@@ -22,9 +23,17 @@ describe("synthesis delta evidence identity", () => {
         INSERT INTO joi_goal_result_members VALUES ('goal','event-old',1),('goal','event-new',2);
       `);
       const snapshot = loadGoalSynthesisContext(db, "goal", "bench", 2, 1);
-      expect(snapshot?.changedResults.find(result => result.resultId === "new")).toMatchObject({ verification: "UNVERIFIED" });
-      expect(snapshot?.changedResults.find(result => result.resultId === "old")).toMatchObject({ isAuthoritative: false });
-      expect(snapshot?.gapCount).toBe(2);
+      if (snapshot === undefined) throw new Error("Missing snapshot");
+      const evidence = loadGoalEvidenceChanges(db,{ goalInputId: "goal",workbenchId: "bench",...snapshot.changesRead });
+      expect(evidence.changedResults.find(result => result.resultId === "new")).toMatchObject({ verification: "UNVERIFIED" });
+      expect(evidence.changedResults.find(result => result.resultId === "old")).toMatchObject({ isAuthoritative: false });
+      expect(snapshot.gapCount).toBe(2);
+      for (const length of [7_999, 8_000, 8_001]) {
+        const original = "😀".repeat(length);
+        db.prepare("UPDATE joi_inbox_messages SET body=? WHERE input_id='goal'").run(original);
+        expect(loadGoalSynthesisContext(db,"goal","bench",2,1)?.originalRequest)
+          .toBe(length <= 8_000 ? original : "Read the original user requirements through goal_read_inputs.");
+      }
       expect(loadGoalSynthesisContext(db, "goal", "other-bench", 2, 1)).toBeUndefined();
     } finally { db.close(); }
   });

@@ -163,7 +163,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       const stateId = isolated ? JSON.stringify([input.sessionId,input.turnId]) : input.sessionId;
       const cached = previous?.metadata ?? this.#snapshots.get(input.sessionId);
       const stored = cached?.sessionId === stateId ? cached : await this.options.sessionStore.load(stateId);
-      const legacy = isolated && stored === null ? await this.options.sessionStore.load(input.sessionId) : null;
+      const evidenceTurn = /^(?:joi_harness_review|joi_result_input):goal:/u.test(input.inputId);
+      const legacy = isolated && stored === null && !evidenceTurn ? await this.options.sessionStore.load(input.sessionId) : null;
       if (this.#canceledStartup.has(input.sessionId)) return;
       if ([stored,legacy].some(snapshot => snapshot !== null && snapshot.workbenchId !== input.workbenchId)) throw new Error("reasoning_session_workbench_mismatch");
       previous?.session.dispose();

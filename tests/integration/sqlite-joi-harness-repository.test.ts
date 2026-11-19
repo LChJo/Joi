@@ -936,7 +936,7 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("review enqueue gates", () => {
-    it("reviews the newest completed evidence after more than eight results without crossing goals", async () => {
+    it("REV-01 starts a review without replaying the result digest or a legacy queued body", async () => {
       const goalInputId = "goal-review-latest-evidence";
       const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId, now: NOW });
@@ -959,16 +959,18 @@ describe("SqliteJoiHarnessRepository", () => {
 
       const [digest] = await repository.listReviewDigests();
       if (digest === undefined) throw new Error("review digest missing");
-      expect(digest.results).toHaveLength(8);
-      expect(digest.results.map((result) => result.resultId)).toEqual(
-        Array.from({ length: 8 }, (_, index) => `result-evidence-${String(index + 3).padStart(2, "0")}`),
-      );
-      expect(digest.results.at(-1)).toMatchObject({ resultId: "result-evidence-10", summary: "已补齐关键缺口" });
       const inputId = await repository.enqueueReview({ digest, now: NOW });
       const review = fixture.database.transaction((db) => db.prepare("SELECT body FROM joi_inbox_messages WHERE input_id = ?").get(inputId)) as { body: string };
-      expect(review.body).toContain("resultId=result-evidence-10");
-      expect(review.body).not.toContain("result-evidence-01");
-      expect(review.body).not.toContain("other-evidence");
+      expect(review.body).toContain("roadmap");
+      expect(review.body).not.toContain("已补齐关键缺口");
+      fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET body=? WHERE input_id=?")
+        .run("LEGACY_REVIEW_REPORT ".repeat(50_000),inputId));
+      const inbox = new SqliteJoiInboxRepository(fixture.database,fixture.clock);
+      const input = await inbox.loadInput(inputId ?? "");
+      expect(input?.body).not.toContain("LEGACY_REVIEW_REPORT");
+      expect(input?.body).toContain("resultRevision=10");
+      expect(input?.goalContext).toBeUndefined();
+      expect(input?.resultRevision).toBeUndefined();
     });
 
     it("posts exactly one review input per completed result layer", async () => {
@@ -981,8 +983,6 @@ describe("SqliteJoiHarnessRepository", () => {
       if (firstDigest === undefined) throw new Error("review digest missing");
       expect(firstDigest).toMatchObject({
         workbenchId,
-        completionSummary: "一层完成",
-        destination: null,
         goalInputId: "goal-review",
         resultRevision: 1,
       });

@@ -1,3 +1,5 @@
+import { hasCurrentGoalSynthesisCoverage } from "./sqlite-goal-synthesis-state.js";
+import { enqueueGoalResultSynthesis } from "./sqlite-goal-result-synthesis.js";
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
 import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-turn-recovery.js";
@@ -130,84 +132,20 @@ function numberValue(row: Row, key: string): number {
   return value;
 }
 
-function decisionKind(value: unknown): HarnessDecisionKind {
-  if (typeof value === "string" && (DECISION_KINDS as readonly string[]).includes(value)) {
-    return value as HarnessDecisionKind;
-  }
-  throw new Error("joi_harness_row_invalid");
-}
-
 function requireText(value: string, limit: number, code: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > limit) throw new DomainError(code, "Harness map entry is out of bounds.");
   return trimmed;
 }
 
-function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
-  const goalInputId = textValue(row, "goal_input_id");
-  const decisions = (connection.prepare(`
-    SELECT kind, summary FROM joi_harness_decisions
-     WHERE goal_input_id = ?
-     ORDER BY created_at DESC, decision_id DESC LIMIT 8`).all(goalInputId) as Row[])
-    .map((decisionRow) => ({ kind: decisionKind(decisionRow.kind), summary: textValue(decisionRow, "summary") }))
-    .reverse();
-  const decisionCount = numberValue(connection.prepare(`
-    SELECT COUNT(*) AS n FROM joi_harness_decisions WHERE goal_input_id = ?`).get(goalInputId) as Row, "n");
-  const fogNotes = (connection.prepare(`
-    SELECT note FROM joi_harness_fog
-     WHERE goal_input_id = ? AND status = 'ACTIVE'
-     ORDER BY created_at, fog_id LIMIT 6`).all(goalInputId) as Row[])
-    .map((fogRow) => textValue(fogRow, "note"));
-  const openPaths = (connection.prepare(`
-    SELECT path_id, layer, title FROM joi_harness_paths
-     WHERE goal_input_id = ? AND status = 'OPEN'
-     ORDER BY layer, created_at, path_id LIMIT 6`).all(goalInputId) as Row[])
-    .map((pathRow) => ({
-      layer: numberValue(pathRow, "layer"),
-      pathId: textValue(pathRow, "path_id"),
-      title: textValue(pathRow, "title"),
-    }));
-  // Mirror the synthesis input's result lines: a review that must arrange the next
-  // layer needs the resultIds/workIds to read persisted evidence or reuse it verbatim.
-  const results = (connection.prepare(`
-    SELECT r.result_id, r.work_id, r.status, r.summary, w.title,
-           v.status AS verification_status, v.reason_code AS verification_reason
-      FROM joi_goal_result_members m
-      JOIN partner_result_events e ON e.event_id = m.event_id
-      JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status AND r.is_authoritative = 1
-      JOIN work_items w ON w.work_id = r.work_id
-      LEFT JOIN work_result_verifications v ON v.result_id = r.result_id
-     WHERE m.original_input_id = ? AND m.revision <= ?
-     ORDER BY m.revision DESC, m.event_id DESC LIMIT 8`).all(
-    goalInputId, numberValue(row, "result_revision"),
-  ) as Row[])
-    .map((resultRow) => {
-      const verificationReason = optionalText(resultRow, "verification_reason");
-      const verificationStatus = optionalText(resultRow, "verification_status");
-      return {
-        resultId: textValue(resultRow, "result_id"),
-        workId: textValue(resultRow, "work_id"),
-        title: textValue(resultRow, "title").slice(0, 240),
-        status: textValue(resultRow, "status"),
-        verification: verificationStatus === "PASSED" ? "PASSED"
-          : verificationStatus === "FAILED" ? `FAILED(${verificationReason === null || verificationReason === "" ? "verification_failed" : verificationReason})`
-            : "NOT_REQUIRED",
-        summary: optionalText(resultRow, "summary") ?? "",
-      };
-    }).reverse();
+function reviewDigest(row: Row): HarnessReviewDigest {
+  const recoveryEpoch = optionalText(row, "review_recovery_epoch");
   return {
-    ...(typeof row.review_recovery_epoch === "string" ? { recoveryEpoch: row.review_recovery_epoch } : {}),
-    ...(optionalText(row, "outcome_disposition") === "CONTINUE" ? { continuationRequested: true as const } : {}),
+    ...(recoveryEpoch === null ? {} : { recoveryEpoch }),
+    ...(row.outcome_disposition === "CONTINUE" ? { continuationRequested: true as const } : {}),
     workbenchId: textValue(row, "workbench_id"),
-    completionSummary: optionalText(row, "completion_summary") ?? "",
-    decisionCount,
-    decisions,
-    destination: optionalText(row, "destination"),
-    fogNotes,
-    goalInputId,
-    openPaths,
+    goalInputId: textValue(row, "goal_input_id"),
     resultRevision: numberValue(row, "result_revision"),
-    results,
   };
 }
 
@@ -303,7 +241,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const candidates = connection.prepare(`
         SELECT m.goal_input_id, m.workbench_id, m.destination, m.review_recovery_epoch, rs.revision AS result_revision,
-               o.completion_summary, o.disposition AS outcome_disposition
+               o.disposition AS outcome_disposition
           FROM joi_harness_maps m
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
@@ -325,7 +263,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
          ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all() as Row[];
-      return candidates.map((row) => reviewDigest(connection, row));
+      return candidates.map((row) => reviewDigest(row));
     });
   }
 
@@ -464,7 +402,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       // failure that will never occur or replaying the completed review.
       const candidates = connection.prepare(`
         SELECT m.goal_input_id, m.workbench_id, m.destination, m.review_recovery_epoch, rs.revision AS result_revision,
-               o.completion_summary, o.disposition AS outcome_disposition, r.input_id AS review_input_id,
+               o.disposition AS outcome_disposition, r.input_id AS review_input_id,
                (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id) AS review_turn_count,
                (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1
                  AND COALESCE(t.review_replay_safe, 0) <> 1) AS side_effect_turn_count,
@@ -570,7 +508,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                 : wastedTurns > 0
                   ? "review_completed_without_side_effect"
                   : "review_turn_failed_without_side_effect";
-        return { action, digest: reviewDigest(connection, row), reasonCode };
+        return { action, digest: reviewDigest(row), reasonCode };
       });
     });
   }
@@ -675,7 +613,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const { digest, now } = input;
       const gate = connection.prepare(`
-        SELECT rs.revision AS result_revision
+        SELECT rs.revision AS result_revision,o.disposition
           FROM joi_harness_maps m
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
@@ -707,6 +645,10 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         .get(digest.goalInputId) as Row | undefined;
       if (goal === undefined) return null;
       if (goal.canceled_at !== null || goal.dismissed_at !== null) return null;
+      if (gate.disposition === "COMPLETED" && !hasCurrentGoalSynthesisCoverage(connection,digest.goalInputId)) {
+        enqueueGoalResultSynthesis(connection,digest.goalInputId,digest.workbenchId,now,undefined,true);
+        return null;
+      }
       const requirementRevision = loadGoalRequirements(connection, digest.goalInputId)?.revision;
       const inputId = reviewInputId(digest.goalInputId, resultRevision, requirementRevision, digest.recoveryEpoch);
       connection.prepare(`
@@ -1063,6 +1005,10 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
 
       if (candidate.action === "AUTO_CLEAR") {
         if (optionalText(current, "outcome_disposition") !== "COMPLETED") return null;
+        if (!hasCurrentGoalSynthesisCoverage(connection,goalInputId)) {
+          if (current.map_status === "ACTIVE") enqueueGoalResultSynthesis(connection,goalInputId,candidate.digest.workbenchId,now,undefined,true);
+          return null;
+        }
         const safe = connection.prepare(`
           SELECT 1
             FROM joi_harness_maps m
@@ -1335,10 +1281,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
 
   async clearMap(input: { goalInputId: string; turnId: string }): Promise<boolean> {
     return this.database.transaction((connection) => {
-      const now = new Date().toISOString();
-      return connection.prepare(`
-        UPDATE joi_harness_maps AS m
-           SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
+      const eligible = connection.prepare(`
+        SELECT 1 FROM joi_harness_maps AS m
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
            AND ${REVIEW_GATE_OPEN_SQL}
            AND EXISTS (
@@ -1370,7 +1314,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                 AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
                 AND ${SYNTHESIS_IDLE_SQL}
            )`)
-        .run(now, now, input.goalInputId, input.turnId).changes > 0;
+        .get(input.goalInputId, input.turnId);
+      if (eligible === undefined || !hasCurrentGoalSynthesisCoverage(connection,input.goalInputId)) return false;
+      const now = new Date().toISOString();
+      return connection.prepare(`UPDATE joi_harness_maps SET status='CLEARED',cleared_at=?,revision=revision+1,updated_at=?
+        WHERE goal_input_id=? AND status='ACTIVE'`).run(now,now,input.goalInputId).changes === 1;
     });
   }
 

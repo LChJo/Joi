@@ -90,17 +90,38 @@ export function mergeGoalRequirements(current: GoalRequirements, update: Require
 }
 
 /** Private rendering omits provenance bodies and replaces one transient request section. */
-export function renderGoalRequirements(contract: GoalRequirements, selectedIds?: readonly string[], all = true): string {
+export function renderGoalRequirements(contract: GoalRequirements, selectedIds?: readonly string[], all = true, maxCharacters?: number): string {
   if (selectedIds?.some(id => !contract.requirements.some(item => item.id === id))) {
     throw new DomainError("goal_requirements_selection_invalid", "Select requirement identifiers from the current contract.");
   }
   const requirements = all ? contract.requirements : contract.requirements.filter(item =>
     (item.scope === "GLOBAL" && item.mandatory) || selectedIds?.includes(item.id));
-  return [
+  const header = [
     "Effective user requirements (user scope; runtime permissions remain authoritative):",
     `requirementsRevision=${String(contract.revision)} sourceRevision=${String(contract.sourceRevision)} processedSourceRevision=${String(contract.processedSourceRevision)} status=${contract.status}`,
     ...(contract.nextUnreadSource === undefined ? [] : [`nextUnreadSource=${JSON.stringify(contract.nextUnreadSource)}`]),
-    ...requirements.map(item => JSON.stringify({ id: item.id, kind: item.kind, mandatory: item.mandatory, scope: item.scope, text: item.text })),
-    ...(contract.status === "DIRTY" ? ["Before dispatch, resume or completion: page through all unprocessed goal_read_inputs sources, merge goal_update_requirements, preserve every unmentioned requirement. Only an explicit user correction may replace or retire one. Read pages sequentially; checkpoint newly extracted requirements from each page while keeping processedSourceRevision unchanged until that entire source is read. Acknowledge even inputs that do not change requirements."] : []),
-  ].join("\n");
+  ];
+  const guidance = contract.status === "DIRTY" ? ["Before dispatch, resume or completion: page through all unprocessed goal_read_inputs sources, merge goal_update_requirements, preserve every unmentioned requirement. Only an explicit user correction may replace or retire one. Read pages sequentially; checkpoint newly extracted requirements from each page while keeping processedSourceRevision unchanged until that entire source is read. Acknowledge even inputs that do not change requirements."] : [];
+  const lines = requirements.map(item => ({ priority: item.mandatory ? item.kind === "CONSTRAINT" ? 0 : 1 : 2,
+    text: JSON.stringify({ id: item.id, kind: item.kind, mandatory: item.mandatory, scope: item.scope, text: item.text }) }));
+  const rendered = [...header, ...lines.map(line => line.text), ...guidance].join("\n");
+  if (maxCharacters === undefined || characterCount(rendered) <= maxCharacters) return rendered;
+  const omission = (count: number) => `omittedRequirements=${String(count)}. Read work_read_evidence(mode=roadmap,section=requirements) to enumerate all requirements and goal_read_inputs for their complete source text.`;
+  let remaining = maxCharacters - characterCount([...header, omission(lines.length), ...guidance].join("\n"));
+  const included: string[] = [];
+  for (const line of lines.sort((a, b) => a.priority - b.priority)) {
+    const size = characterCount(line.text) + 1;
+    if (size > remaining) continue;
+    included.push(line.text);
+    remaining -= size;
+  }
+  return [...header, ...included, omission(lines.length - included.length), ...guidance].join("\n");
+}
+
+function characterCount(text: string): number {
+  let count = 0;
+  for (let offset = 0; offset < text.length; count++) {
+    offset += (text.codePointAt(offset) ?? 0) > 0xffff ? 2 : 1;
+  }
+  return count;
 }

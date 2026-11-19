@@ -3,6 +3,14 @@ export function harnessReviewInputId(goalInputId: string, resultRevision: number
   return `joi_harness_review:goal:${goalInputId}:r${String(resultRevision)}${requirementsRevision === undefined ? "" : `:q${String(requirementsRevision)}`}${recoveryEpoch === undefined ? "" : `:resume:${recoveryEpoch}`}`;
 }
 
+export function harnessReviewResultRevision(inputId: string, goalInputId: string): number | undefined {
+  const prefix = `joi_harness_review:goal:${goalInputId}:r`;
+  if (!inputId.startsWith(prefix)) return undefined;
+  const match = /^(0|[1-9]\d*)(?::q\d+)?(?::resume:.+)?$/u.exec(inputId.slice(prefix.length));
+  const revision = Number(match?.[1]);
+  return Number.isSafeInteger(revision) ? revision : undefined;
+}
+
 /** Expressions are repository-owned SQL identifiers, never request parameters. */
 export function harnessReviewInputIdSql(goalExpression: string, resultRevisionExpression: string): string {
   return `'joi_harness_review:goal:' || ${goalExpression} || ':r' || ${resultRevisionExpression}

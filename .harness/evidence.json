@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "8503105e81e22cb68d1fa9f34c108f9484374e934306e2a63f43be8ced274c7e",
-      "observedAt": "2026-11-19T05:05:27.952Z",
+      "hash": "e7cbb76b778fcf4a378f2e8c90b99db08c1999e290a41341e409166a126c05d8",
+      "observedAt": "2026-11-19T06:09:21.825Z",
       "range": {
         "startLine": 1,
-        "endLine": 746
+        "endLine": 750
       }
     },
     {
@@ -1068,15 +1068,15 @@
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary Pi isolates business Turns and loads a complete legacy summary if it fits the model window, with scoped history available on demand.",
+      "claim": "Primary Pi isolates business Turns. Evidence Turns load legacy history only through scoped explicit reads; other Turns may retain a legacy summary.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "899a28035b4c696e147928556773d900115b362bce73fb402624130ef050f800",
-      "observedAt": "2026-11-19T02:28:56.932Z",
+      "hash": "f94dd28aeb974824639605452e16fd3c59b65b953cc240dcd7fc0031c566b419",
+      "observedAt": "2026-11-19T06:09:21.825Z",
       "range": {
         "startLine": 1,
-        "endLine": 423
+        "endLine": 424
       }
     },
     {
@@ -2076,15 +2076,15 @@
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Primary business tools preserve application dispatch/DAG validation and bounded correction while describing upfront Pi WRITE admission and native demand-driven upgrade accurately.",
+      "claim": "Primary Joi navigates the goal-scoped roadmap and receipt-backed evidence. Result reads separate unavailable, inactive and stale ownership. Coverage refresh uses only evidence, requirement and completion tools.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "5ac63f553b3d87bdb05e8b6bf7cd9351c9d615e5b466d8749fdd067d43ac8b36",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "988045b6442d39690618f93fb42760cf480088e5cd591da35d9bbcc39f5c1836",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 1108
+        "endLine": 1137
       }
     },
     {
@@ -2122,11 +2122,11 @@
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "9858730516bf3d5fe2a536a48a67064de791ade42d9164663c5433738060db7f",
-      "observedAt": "2026-11-17T07:38:02.782Z",
+      "hash": "f7f63a92db251515a857c09b4eac603c7ac42b20d178f00431bb280bc83710df",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 1119
+        "endLine": 1131
       }
     },
     {
@@ -2384,15 +2384,15 @@
     {
       "id": "3fe19ae5-307a-42df-a06c-51a4f22df5f0",
       "kind": "source-code",
-      "claim": "Work-linked charting reuses stable path identity, derives terminal state, and reopens recovered paths while preserving decisions, exclusions and cleared maps.",
+      "claim": "Harness scans do not copy Work evidence. Clearance checks live execution and map eligibility before current coverage. An active legacy conclusion can trigger a versioned coverage-only review.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "cca2525a5a0cb7878d2ba68f0a417c44a60dd96e812008ec0211b2969c8e55c5",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "65456344d316db15cacd5c09b92b34d70134e50809fbfe7e0d9573521262f56f",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 1405
+        "endLine": 1353
       }
     },
     {
@@ -2430,8 +2430,8 @@
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "f7c72b13a1433eb83dce98b4485b09e26617ef29a78ca6cb5b9dfaf55fad936e",
-      "observedAt": "2026-11-19T02:28:56.933Z",
+      "hash": "3d98662ce1e6b0db96e6baaf5ee0953c1fb426da284d7553c5fbf5fe9177d4a0",
+      "observedAt": "2026-11-19T06:09:21.825Z",
       "range": {
         "startLine": 1,
         "endLine": 2215
@@ -2650,15 +2650,15 @@
     {
       "id": "f28b28ea-c8d1-4aca-a65d-383bebe86300",
       "kind": "source-code",
-      "claim": "Shared synthesis recovery distinguishes bounded output correction, terminal source failures, replay proof and durable failure budgets.",
+      "claim": "Shared synthesis recovery distinguishes output correction, terminal source failures, inactive evidence owners, replay proof and durable failure budgets.",
       "location": {
         "path": "src/main/domain/work/joi-turn-recovery.ts"
       },
-      "hash": "7a389b4f7bdca1f40e8b1fcb1b881e1147cabd7e34e9e7936b57ecfa29170325",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "f5d375f74176e36dbc68c0823653f0d5eda6a144dd9f29603359c60967de75f4",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 31
+        "endLine": 32
       }
     },
     {
@@ -2678,15 +2678,15 @@
     {
       "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
       "kind": "source-code",
-      "claim": "Synthesis completion is a safe declaration, validates references before atomic commit, corrects once without external replay, and replaces uncommitted drafts through eligible fallback. Final answer accumulation has no arbitrary character cap.",
+      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Bounded requirements retain mandatory entries and trusted input guidance; inactive evidence turns stop without redispatch.",
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "a2e1ee0ff22d9875a2ab772916646d4c45f2e46e4806c302867974bb616d2212",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "9e6fc8acddce4e297cc99087539db8896a3107ab95f7da98a004a29b85c46ebf",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 882
+        "endLine": 888
       }
     },
     {
@@ -2706,29 +2706,29 @@
     {
       "id": "bb2f305f-a3a8-48f8-8374-aa0117dcad93",
       "kind": "source-code",
-      "claim": "Current synthesis projection distinguishes queued work, persisted retry deadline, active execution and unsafe or terminal failure without writing state.",
+      "claim": "Home feed exposes current coverage refresh queue and failure even while a prior same-version conclusion remains. Stale requirements, live execution, cleared maps and user gates constrain the projection.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.ts"
       },
-      "hash": "aaab6eee5d5f541606b311726332ddc67b53fc438d58f228847e09f5970a9657",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "59614d0c90d3e049d172ad1de833db6a51c04d0a31a400dc3e3a56352de78f53",
+      "observedAt": "2026-11-19T06:57:37.296Z",
       "range": {
         "startLine": 1,
-        "endLine": 551
+        "endLine": 557
       }
     },
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "Read-only synthesis preflight uses the same evidence validation as the authoritative outcome transaction. Goal cancellation revokes child inputs. Explicit retry after settlement atomically retires legacy child state, opens the old review gate and requeues only the original goal. Boot settlement uses exact completion receipts, keeps committed plans and unknown effects out of automatic replay, and preserves existing retry limits.",
+      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "4f268df95a3b8a4eeed3937c9f0f41bf154a02bf4a36b27ab63adc109dd688f9",
-      "observedAt": "2026-11-19T05:05:27.952Z",
+      "hash": "56b08c8839256da088e614b1e5452dc71e5e4d99142411fd5f50ebb459313861",
+      "observedAt": "2026-11-19T06:56:47.075Z",
       "range": {
         "startLine": 1,
-        "endLine": 1532
+        "endLine": 1558
       }
     },
     {
@@ -2752,11 +2752,11 @@
       "location": {
         "path": "tests/integration/semantic-synthesis-state.test.ts"
       },
-      "hash": "0ae67c75eaf7b60e6bfd9df56a185aa216bf50195d54b50afcc77b6a1480bd7f",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "5dcea317a398d8663a9c10b42a1837c20e1d1366647f7a532ea98bd1221903f0",
+      "observedAt": "2026-11-19T06:09:21.825Z",
       "range": {
         "startLine": 1,
-        "endLine": 113
+        "endLine": 115
       }
     },
     {
@@ -3284,11 +3284,11 @@
         "path": "resources/migrations/README.md"
       },
       "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering.",
-      "hash": "7a2d91975b3c67b8ea3ce7ef9865d2b7625b788f6b2c27c260593f5960b0a5c1",
-      "observedAt": "2026-11-19T02:11:41.595Z",
+      "hash": "0d75d95db25b7428dd466f4c6628136ce7ae0b1233800530f395419791639516",
+      "observedAt": "2026-11-19T06:09:21.825Z",
       "range": {
         "startLine": 1,
-        "endLine": 104
+        "endLine": 106
       }
     },
     {
@@ -3961,6 +3961,90 @@
       "range": {
         "startLine": 1,
         "endLine": 14
+      }
+    },
+    {
+      "id": "bea80827-175f-4aaa-b665-1bfb96a0caa1",
+      "kind": "document",
+      "claim": "REV-01 through REV-08 define roadmap evidence. Sections 8 and 9 record implementation stages, coverage and recovery behavior, evidence units and remaining work.",
+      "location": {
+        "path": "docs/joi-review-evidence-spec.md"
+      },
+      "hash": "b5f32332d10fed541d586c62d7dc7aed5589e350cfbf51b89abca11179fb48f1",
+      "observedAt": "2026-11-19T06:56:47.075Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 113
+      }
+    },
+    {
+      "id": "9b0e0c6e-1862-4553-bd04-2426a446641d",
+      "kind": "source-code",
+      "claim": "Scoped page navigation relates paths to Work, Runs and evidence references without loading raw reports.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-goal-review-roadmap.ts"
+      },
+      "hash": "182d93033b9e0fd00dd1a39673764da41145dde70f23b31330aae827cfd90130",
+      "observedAt": "2026-11-19T06:09:21.825Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 155
+      }
+    },
+    {
+      "id": "77c5461c-3696-438d-9759-08c77be8511d",
+      "kind": "source-code",
+      "claim": "Receipts retain scoped report references and returned codepoint ranges for coverage and subsequent lookup.",
+      "location": {
+        "path": "resources/migrations/106_goal_evidence_reads.sql"
+      },
+      "hash": "68c984748338e3c9735c25f2089a71231ead35b1c1c340360c9a703f135cb881",
+      "observedAt": "2026-11-19T06:09:21.825Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 14
+      }
+    },
+    {
+      "id": "b07645af-27aa-4934-aa33-38152d841901",
+      "kind": "source-code",
+      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement.",
+      "location": {
+        "path": "tests/integration/joi-review-coverage.test.ts"
+      },
+      "hash": "a18a015a6d03023dce86da9ad5f252f3dadf053537d53ae31e88112d92a896e3",
+      "observedAt": "2026-11-19T06:59:46.486Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 224
+      }
+    },
+    {
+      "id": "c4ddeb5a-c30e-4b69-9dda-5fec4c0fcde1",
+      "kind": "source-code",
+      "claim": "SQLite denies access to reports, previews and handoffs during synthesis startup under a 15 million character fixture.",
+      "location": {
+        "path": "tests/integration/synthesis-context-snapshot.test.ts"
+      },
+      "hash": "9d2fb81a28fee7f24f58f470e87b43a0874c22104c8547e147438629118e4d40",
+      "observedAt": "2026-11-19T06:09:21.825Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 91
+      }
+    },
+    {
+      "id": "46193bc6-5f95-4df0-9533-52b4cdcd1751",
+      "kind": "source-code",
+      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-goal-synthesis-state.ts"
+      },
+      "hash": "ae16398e0c10bb5e97d7265a081fddfcced7d5381d66d6c623e458c9b7621286",
+      "observedAt": "2026-11-19T06:59:46.486Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 150
       }
     }
   ]

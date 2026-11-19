@@ -1,4 +1,4 @@
-import type { GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope } from "../ports/goal-evidence.js";
+import type { GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope,GoalRoadmapQuery } from "../ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import type { WorkResultRepository, WorkVerificationProjection } from "../ports/work-results.js";
 
@@ -6,6 +6,11 @@ const CHUNK_SIZE = 8_000;
 
 export class WorkResultService {
   constructor(private readonly repository: WorkResultRepository, private readonly evidence?: GoalEvidenceRepository) {}
+
+  async readRoadmap(input: GoalRoadmapQuery) {
+    if (this.evidence?.readRoadmap === undefined) throw new DomainError("work_evidence_unavailable", "Goal roadmap is unavailable.");
+    return this.evidence.readRoadmap(input);
+  }
 
   async index(input: GoalEvidenceScope & { cursor?: string }) {
     if (this.evidence === undefined) throw new DomainError("work_evidence_unavailable", "Evidence indexing is unavailable.");
@@ -32,7 +37,7 @@ export class WorkResultService {
     return this.evidence.readState(input);
   }
 
-  async read(input: { goalInputId?: string; workbenchId: string; cursor?: string; resultId: string }): Promise<{
+  async read(input: { goalInputId?: string; workbenchId: string; cursor?: string; resultId: string; receipt?: { turnId: string; toolCallId: string } }): Promise<{
     content: string;
     identity?: { status: string; isLate: boolean; isAuthoritative: boolean };
     nextCursor?: string;
@@ -53,6 +58,10 @@ export class WorkResultService {
     const identity = offset !== 0 || input.goalInputId === undefined ? null : await this.evidence?.readIdentity?.({ goalInputId: input.goalInputId,workbenchId: input.workbenchId,resultId: input.resultId });
     // SQLite cursors and totals count codepoints, including supplementary characters once.
     const next = offset + Array.from(row.body).length;
+    if (input.receipt !== undefined && input.goalInputId !== undefined && next > offset) {
+      await this.evidence?.recordResultRead?.({ ...input.receipt,goalInputId: input.goalInputId,workbenchId: input.workbenchId,
+        resultId: input.resultId,start: offset,end: next });
+    }
     return {
       content: row.body,
       ...(identity == null ? {} : { identity }),

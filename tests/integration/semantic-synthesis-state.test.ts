@@ -84,7 +84,9 @@ describe("semantic incremental synthesis state", () => {
       expect(String(row?.handoff_json)).toContain("SEMANTIC_CONCLUSION");
       expect(String(row?.summary)).not.toContain("SEMANTIC_CONCLUSION");
       const loaded = await fixture.inbox.loadInput(fixture.inputId);
-      expect(JSON.stringify(loaded?.synthesisContext)).toContain("SEMANTIC_CONCLUSION");
+      expect(JSON.stringify(loaded?.synthesisContext)).not.toContain("SEMANTIC_CONCLUSION");
+      const page = await new SqliteGoalEvidenceRepository(fixture.database).readHandoff({ goalInputId: "goal",workbenchId: fixture.workbenchId,resultId: "result-1" });
+      expect(page.content).toContain("SEMANTIC_CONCLUSION");
       await fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", { completionSummary: "The deliverable preserves the unresolved conflict.",
         outcome: "RESULT_CONTINUE", synthesisState: state });
       const saved = fixture.database.transaction(db => db.prepare("SELECT synthesis_state_json FROM joi_goal_outcomes WHERE input_id='goal'").get());
