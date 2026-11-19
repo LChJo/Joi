@@ -438,12 +438,12 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "2c655f72949e385ca9589ffa88e7d143072be96316997c8d8d9a51ef7948ff95",
-      "observedAt": "2026-11-18T09:09:34.871Z",
+      "hash": "382722a8510e8c107ddc4377d862987fc28d55fe789ba50676e482dda3dd7519",
+      "observedAt": "2026-11-19T03:02:51.557Z",
       "range": {
         "startLine": 1,
         "endLine": 49
@@ -1236,15 +1236,15 @@
     {
       "id": "d3ce4801-6708-4041-a84e-7a5fa383272a",
       "kind": "source-code",
-      "claim": "The synthetic Pi SDK exposes lifecycle and timing for readable, empty, whitespace, long and redacted thinking without publishing private text or signatures.",
+      "claim": "The synthetic Pi SDK exposes lifecycle and timing for readable, empty, whitespace, long and redacted thinking without publishing private text or signatures. WRITE resume tests cover preserved current instructions and attachment references in a fitting model window and explicit pre-provider overflow with retained session history.",
       "location": {
         "path": "tests/contract/conversation-pi-session.test.ts"
       },
-      "hash": "6859d269ac9a4ad577c676507d87e92295d4516a82b7576a27ade54f0159303f",
-      "observedAt": "2026-11-18T01:03:46.936Z",
+      "hash": "b1bde76998a885e33544dc82d84884e483bb96fe341fdfb5e51d88b59e15f3de",
+      "observedAt": "2026-11-19T03:02:51.557Z",
       "range": {
         "startLine": 1,
-        "endLine": 260
+        "endLine": 270
       }
     },
     {

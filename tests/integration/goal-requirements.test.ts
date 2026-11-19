@@ -34,6 +34,7 @@ describe("effective goal requirements", () => {
       ].map(message => context => { requests.push(JSON.stringify(context.messages)); return message; }));
       const models = createModels(); models.setProvider(faux.provider);
       const snapshots = new Map<string, JoiReasoningSessionSnapshot>();
+      const turns: { sessionId: string; turnId: string }[] = [];
       const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: 200000 }, models, thinkingLevel: "off",
         sessionStore: { load: id => Promise.resolve(snapshots.get(id) ?? null), save: next => { snapshots.set(next.sessionId, structuredClone(next)); return Promise.resolve(); } },
         tools: turn => withGoalRequirementsTools([{ name: "turn_complete", label: "Complete", description: "Complete", parameters: Type.Object({ outcome: Type.String() }),
@@ -44,8 +45,11 @@ describe("effective goal requirements", () => {
       });
       const coordinator = new JoiCoordinator({ requirements, clock: fixture.clock, ids: fixture.ids, runtime, workbenches: fixture.workbenches,
         store: { loadInput: id => inbox.loadInput(id),
-          createTurn: input => inbox.createTurn({ inputId: input.inputId, turnId: input.turnId, sessionId: input.sessionId, workbenchId: input.workbenchId, createdAt: input.createdAt,
-            ...(input.requirementsRevision === undefined ? {} : { requirementsRevision: input.requirementsRevision }) }),
+          createTurn: ({ inputId, turnId, sessionId, workbenchId, createdAt, requirementsRevision }) => {
+            turns.push({ sessionId, turnId });
+            return inbox.createTurn({ inputId, turnId, sessionId, workbenchId, createdAt,
+              ...(requirementsRevision === undefined ? {} : { requirementsRevision }) });
+          },
           completeInput: (id, turnId, completion) => inbox.completeInput(id, turnId, completion),
           requireClarification: (id, reason, prompt) => inbox.requireClarification(id, reason, prompt),
           failTurn: (id, turnId) => inbox.failTurn(id, turnId),
@@ -59,12 +63,19 @@ describe("effective goal requirements", () => {
       expect((await requirements.load("goal", wb.workbenchId))?.requirements[0]?.text).toBe(rule);
       expect(requests.at(-1)).toContain("requirementsRevision=1");
       expect(requests.at(-1)).toContain(rule);
-      const snapshot = snapshots.get(`joi_session:${wb.workbenchId}:goal`);
-      expect(snapshot).toBeDefined();
-      expect(JSON.stringify(snapshot).includes("Effective user requirements (user scope")).toBe(false);
-      const receipts = (snapshot?.messages ?? []).filter(message => (message as { role?: string; toolName?: string }).role === "toolResult" && (message as { toolName?: string }).toolName === "goal_update_requirements");
-      expect(JSON.stringify(receipts)).toContain("requirementCount");
-      expect(JSON.stringify(receipts)).not.toContain(rule);
+      expect(turns).toHaveLength(2);
+      const sessionKeys = turns.map(({ sessionId, turnId }) => JSON.stringify([sessionId, turnId]));
+      expect([...snapshots.keys()]).toEqual(sessionKeys);
+      for (const snapshot of snapshots.values()) {
+        expect(JSON.stringify(snapshot)).not.toContain("Effective user requirements (user scope");
+        const receipts = snapshot.messages.filter(message => {
+          const { role, toolName } = message as { role?: string; toolName?: string };
+          return role === "toolResult" && toolName === "goal_update_requirements";
+        });
+        expect(receipts).toHaveLength(1);
+        expect(JSON.stringify(receipts)).toContain("requirementCount");
+        expect(JSON.stringify(receipts)).not.toContain(rule);
+      }
     } finally { await fixture.close(); }
   });
   it("can checkpoint requirements from a source page while execution stays blocked until the entire source is read", async () => {
