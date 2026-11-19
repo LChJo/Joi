@@ -12,11 +12,17 @@ describe("RemoteJoiApp", () => {
     const question: UserQuestionDto = { questionId: "q1", version: 2, scope: { kind: "GOAL", id: "goal" }, ownerId: "work", sourceName: "Partner", question: "Active goal question", kind: "QUESTION", options: [], multiSelect: false, allowCustom: true, defaultAnswer: "Default", defaultOptionIds: [], status: "ACTIVE", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 1800000).toISOString(), delivery: "PENDING" };
     const invoke = vi.fn().mockResolvedValue({ ...question, status: "ANSWERED" });
     const connection: RemoteJoiConnection = { capabilities: () => ["questions.v1"], command: <T,>(command: RemoteCommand) => invoke(command) as Promise<T>, sendMessage: vi.fn(), status: () => "connected", feed: vi.fn().mockResolvedValue({
-      goals: [{ goalId: "goal", title: "Goal", status: "NEEDS_ATTENTION", clarification: { reasonCode: "question_required", prompt: "Active goal question" }, workbench: { name: "Test", workbenchId: "wb" }, work: { active: 1, completed: 0, failed: 0, total: 1 }, questions: [question, { ...question, questionId: "q2", status: "QUEUED", question: "Next goal question" }] }], thinking: [], unassignedActions: [],
+      goals: [{ goalId: "goal", title: "Goal", status: "NEEDS_ATTENTION", clarification: { reasonCode: "question_required", prompt: "Active goal question" }, workbench: { name: "Test", workbenchId: "wb" }, work: { active: 1, completed: 0, failed: 0, total: 1 }, questions: [
+        { ...question, questionId: "prior", status: "ANSWERED", question: "Previous goal question", delivery: "DELIVERED", answer: { text: "Previous answer", selectedOptionIds: [], source: "USER", answeredAt: question.createdAt } },
+        question, { ...question, questionId: "q2", status: "QUEUED", question: "Next goal question" },
+      ] }], thinking: [], unassignedActions: [],
     }) };
     render(<RemoteJoiApp connection={connection} />);
     const answer = await screen.findByRole("button", { name: "采用推荐并继续" });
     expect(screen.getByText("Next goal question")).toBeInTheDocument();
+    expect(screen.getByText("Previous answer")).not.toBeVisible();
+    fireEvent.click(screen.getByText("问答记录", { selector: "summary" }));
+    expect(screen.getByText("Previous answer")).toBeVisible();
     fireEvent.click(answer);
     await waitFor(() => expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ kind: "question.answer", scopeKind: "GOAL", scopeId: "goal", questionId: "q1", input: { version: 2, useDefault: true } })));
   });

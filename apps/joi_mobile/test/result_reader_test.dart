@@ -46,6 +46,44 @@ const goal = RemoteGoalCard(
 );
 
 void main() {
+  testWidgets('goal result shows its question history only when expanded', (
+    tester,
+  ) async {
+    final controller = ReaderController();
+    addTearDown(controller.dispose);
+    final goalWithAnswer = RemoteGoalCard.fromJson({
+      'goalId': 'goal',
+      'status': 'COMPLETED',
+      'questions': [
+        {
+          'questionId': 'depth',
+          'question': '请选择评估深度',
+          'status': 'ANSWERED',
+          'delivery': 'DELIVERED',
+          'answer': {'text': '已保存的评估要求', 'source': 'USER'},
+        },
+      ],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ResultReaderPage(controller: controller, goal: goalWithAnswer),
+      ),
+    );
+    controller.result.complete({
+      'goal': {'completionSummary': '评估结果'},
+    });
+    await tester.pumpAndSettle();
+    final history = find.text('问答记录');
+    expect(history, findsOneWidget);
+    expect(find.text('已保存的评估要求'), findsNothing);
+    await tester.tap(history);
+    await tester.pumpAndSettle();
+    expect(find.text('已保存的评估要求'), findsOneWidget);
+    await tester.tap(history);
+    await tester.pumpAndSettle();
+    expect(find.text('已保存的评估要求'), findsNothing);
+  });
+
   testWidgets(
     'reads the identified completed snapshot instead of the mutable goal',
     (tester) async {

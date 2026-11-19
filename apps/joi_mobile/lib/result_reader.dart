@@ -6,6 +6,7 @@ import 'connection_diagnostics_view.dart';
 import 'message_body.dart';
 import 'result_export.dart';
 import 'result_history.dart';
+import 'user_question_card.dart';
 
 class ResultReaderPage extends StatefulWidget {
   const ResultReaderPage({
@@ -193,6 +194,8 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
                   const LinearProgressIndicator()
                 else
                   MessageBody(_body!),
+                if (!widget.fromHistory)
+                  GoalQuestionHistory(questions: widget.goal.questions),
               ],
             ),
             if (_menu)

@@ -104,7 +104,7 @@ export function ConversationOutput({ entries,status,context,children,onCancel,re
       const question = pendingQuestions.shift();
       if (question === undefined) break;
       flush();
-      output.push(<UserQuestionCard key={`question:${question.questionId}:${String(question.version)}`} question={question} {...(onResumeQuestion === undefined || !["INTERRUPTED","FAILED","STOPPED"].includes(status) ? {} : {onResume: () => onResumeQuestion(question.questionId)})} onAnswer={input => onAnswerQuestion?.(question.questionId,input) ?? Promise.reject(new Error("question_unavailable"))} />);
+      output.push(<UserQuestionCard compact key={`question:${question.questionId}:${String(question.version)}`} question={question} {...(onResumeQuestion === undefined || !["INTERRUPTED","FAILED","STOPPED"].includes(status) ? {} : {onResume: () => onResumeQuestion(question.questionId)})} onAnswer={input => onAnswerQuestion?.(question.questionId,input) ?? Promise.reject(new Error("question_unavailable"))} />);
       groupKey = `activity-after-question:${question.questionId}`;
     }
   };

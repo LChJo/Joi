@@ -752,6 +752,7 @@ class _ConversationScreenState extends State<ConversationScreen>
           for (final question in RemoteUserQuestion.list(turn['questions']))
             UserQuestionCard(
               key: ValueKey(question.identity),
+              compact: true,
               question: question,
               supported:
                   widget.controller is QuestionRemoteController &&

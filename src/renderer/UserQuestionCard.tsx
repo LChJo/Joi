@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 import type { AnswerUserQuestionInput, UserQuestionDto } from "../shared/user-questions.js";
 import { t, useI18n } from "./i18n.js";
 import "./user-questions.css";
@@ -7,6 +8,7 @@ export interface UserQuestionCardProps {
   question: UserQuestionDto;
   onAnswer: (input: AnswerUserQuestionInput) => Promise<unknown>;
   onResume?: () => Promise<unknown>;
+  compact?: boolean;
 }
 
 function questionKey(question: UserQuestionDto): string {
@@ -29,7 +31,8 @@ function formatTimestamp(value: string, locale: string): string {
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date) : value;
 }
 
-function DefaultAnswer({ question }: { question: UserQuestionDto }) {
+function DefaultAnswer({ question, compact = false }: { question: UserQuestionDto; compact?: boolean }) {
+  if (compact) return <p className="user-question-inline-default"><strong>{t("chat.questionDefaultLabel")} · </strong>{question.defaultAnswer}</p>;
   const defaults = question.options.filter(option => question.defaultOptionIds.includes(option.id));
   return <div className="user-question-default">
     <strong>{t("chat.questionDefaultLabel")}</strong>
@@ -38,7 +41,7 @@ function DefaultAnswer({ question }: { question: UserQuestionDto }) {
   </div>;
 }
 
-function ActiveQuestion({ question, onAnswer }: UserQuestionCardProps) {
+function ActiveQuestion({ question, onAnswer, compact = false }: UserQuestionCardProps) {
   const { locale } = useI18n();
   const id = useId();
   const [text, setText] = useState("");
@@ -124,21 +127,25 @@ function ActiveQuestion({ question, onAnswer }: UserQuestionCardProps) {
         </label>)}
       </div> : null}
       {question.allowCustom ? <label className="user-question-custom">
-        <span id={`${id}-custom-label`}>{t("chat.questionCustomAnswer")}</span>
-        <textarea value={text} maxLength={8000} rows={3} aria-labelledby={`${id}-custom-label`} aria-describedby={`${id}-keyboard`}
+        <span className="user-question-input-label" id={`${id}-custom-label`}>{t("chat.questionCustomAnswer")}</span>
+        <textarea value={text} maxLength={8000} rows={compact ? 2 : 3} aria-labelledby={`${id}-custom-label`} aria-describedby={`${id}-keyboard`}
+          placeholder={compact ? t("chat.questionCustomAnswer") : undefined} title={compact ? t("chat.questionKeyboardHint") : undefined}
           onChange={event => { setText(event.target.value); }} onKeyDown={onKeyDown}
           onCompositionStart={() => { composing.current = true; }} onCompositionEnd={() => { composing.current = false; }} />
-        <span className="user-question-hint" id={`${id}-keyboard`}>{t("chat.questionKeyboardHint")}</span>
+        <span className="user-question-hint user-question-shortcut" id={`${id}-keyboard`}>{t("chat.questionKeyboardHint")}</span>
       </label> : null}
     </fieldset>
     <div className="user-question-timing">
       {hasDeadline ? <>
-        <span className="user-question-countdown" role="timer" aria-live="off">{t("chat.questionCountdown", { remaining })}</span>
+        <span className="user-question-countdown" role="timer" aria-live="off"
+          title={compact ? t("chat.questionDeadline", { time: formatTimestamp(question.expiresAt ?? "", locale) }) : undefined}>
+          {t("chat.questionCountdown", { remaining })}
+        </span>
         <time dateTime={question.expiresAt}>{t("chat.questionDeadline", { time: formatTimestamp(question.expiresAt ?? "", locale) })}</time>
       </> : null}
       <p className="user-question-hint">{t("chat.questionTimeoutPolicy")}</p>
     </div>
-    <DefaultAnswer question={question} />
+    <DefaultAnswer question={question} compact={compact} />
     <div className="user-question-actions">
       <button className="user-question-button user-question-button-default" type="button" disabled={locked} onClick={() => { void send(true); }}>{t("chat.questionUseDefault")}</button>
       <button className="user-question-button user-question-button-submit" type="submit" disabled={locked || !hasAnswer}>{t("chat.questionSubmit")}</button>
@@ -150,7 +157,7 @@ function ActiveQuestion({ question, onAnswer }: UserQuestionCardProps) {
   </form>;
 }
 
-function RecordedAnswer({ question }: { question: UserQuestionDto }) {
+function RecordedAnswer({ question, compact = false }: { question: UserQuestionDto; compact?: boolean }) {
   const { locale } = useI18n();
   if (question.answer === undefined) return null;
   const answer = question.answer;
@@ -161,12 +168,28 @@ function RecordedAnswer({ question }: { question: UserQuestionDto }) {
       <time dateTime={answer.answeredAt}>{formatTimestamp(answer.answeredAt, locale)}</time>
     </div>
     <p>{answer.text}</p>
-    {selected.length > 0 ? <ul className="user-question-selected">{selected.map(option => <li key={option.id}>{option.label}</li>)}</ul> : null}
+    {!compact && selected.length > 0 ? <ul className="user-question-selected">{selected.map(option => <li key={option.id}>{option.label}</li>)}</ul> : null}
     {question.delivery !== "INTERRUPTED" ? <p className="user-question-hint">{question.delivery === "DELIVERED" ? t("chat.questionDeliveryDelivered") : t("chat.questionDeliveryPending")}</p> : null}
   </div>;
 }
 
-function QuestionCard({ question, onAnswer, onResume }: UserQuestionCardProps) {
+function QuestionHeader({ question }: { question: UserQuestionDto }) {
+  return <header className="user-question-header">
+    <span className="user-question-status" role="status" aria-live="polite">{statusLabel(question)}</span>
+    <span className="user-question-source">{t("chat.questionSource", { name: question.sourceName })}</span>
+  </header>;
+}
+
+function QuestionResolution({ question, compact = false }: { question: UserQuestionDto; compact?: boolean }) {
+  return <>
+    <RecordedAnswer question={question} compact={compact} />
+    {question.status === "CANCELED" ? <p className="user-question-hint">{t("chat.questionCanceledHint")}</p> : null}
+    {question.status === "SUPERSEDED" ? <p className="user-question-hint">{t("chat.questionSupersededHint")}</p> : null}
+    {question.delivery === "INTERRUPTED" ? <p className="user-question-notice">{t("chat.questionInterruptedHint")}</p> : null}
+  </>;
+}
+
+function QuestionCard({ question, onAnswer, onResume, compact = false }: UserQuestionCardProps) {
   useI18n();
   const [resuming,setResuming] = useState(false);
   const [resumeError,setResumeError] = useState(false);
@@ -179,21 +202,34 @@ function QuestionCard({ question, onAnswer, onResume }: UserQuestionCardProps) {
   };
   const interrupted = question.delivery === "INTERRUPTED";
   const active = question.status === "ACTIVE" && !interrupted;
-  return <article className={`user-question-card${active ? " user-question-card-active" : ""}`} aria-label={question.question} data-status={question.status}>
-    <header className="user-question-header">
-      <span className="user-question-status" role="status" aria-live="polite">{statusLabel(question)}</span>
-      <span className="user-question-source">{t("chat.questionSource", { name: question.sourceName })}</span>
-    </header>
-    {active ? <ActiveQuestion question={question} onAnswer={onAnswer} /> : <>
+  const className = `user-question-card${compact ? " user-question-card-compact" : ""}${active ? " user-question-card-active" : ""}`;
+  if (compact && !interrupted && question.status === "ANSWERED" && question.answer !== undefined) {
+    return <article className={`${className} user-question-card-summary`} aria-label={question.question} data-status={question.status}>
+      <details>
+        <summary className="user-question-summary">
+          <span className="user-question-status" title={question.delivery === "PENDING" ? t("chat.questionDeliveryPending") : undefined}>{statusLabel(question)}</span>
+          <span className="user-question-summary-prompt">{question.question}</span>
+          <span aria-hidden="true">·</span>
+          <span className="user-question-summary-reply">{question.answer.text}</span>
+          <CaretDownIcon aria-hidden="true" size={14} />
+        </summary>
+        <div className="user-question-summary-details">
+          <span className="user-question-source">{t("chat.questionSource", { name: question.sourceName })}</span>
+          <h3 className="user-question-title">{question.question}</h3>
+          <RecordedAnswer question={question} compact />
+        </div>
+      </details>
+    </article>;
+  }
+  return <article className={className} aria-label={question.question} data-status={question.status}>
+    <QuestionHeader question={question} />
+    {active ? <ActiveQuestion question={question} onAnswer={onAnswer} compact={compact} /> : <>
       {question.status === "QUEUED" && !interrupted ? <>
-        <details className="user-question-preview"><summary>{question.question}</summary><DefaultAnswer question={question} /></details>
+        <details className="user-question-preview"><summary>{question.question}</summary><DefaultAnswer question={question} compact={compact} /></details>
         <p className="user-question-hint">{t("chat.questionQueuedHint")}</p>
       </> : <h3 className="user-question-title">{question.question}</h3>}
-      <RecordedAnswer question={question} />
-      {question.status === "CANCELED" ? <p className="user-question-hint">{t("chat.questionCanceledHint")}</p> : null}
-      {question.status === "SUPERSEDED" ? <p className="user-question-hint">{t("chat.questionSupersededHint")}</p> : null}
-      {interrupted ? <p className="user-question-notice">{t("chat.questionInterruptedHint")}</p> : null}
-      {interrupted && question.answer === undefined ? <DefaultAnswer question={question} /> : null}
+      <QuestionResolution question={question} compact={compact} />
+      {interrupted && question.answer === undefined ? <DefaultAnswer question={question} compact={compact} /> : null}
       {interrupted && question.status !== "CANCELED" && question.status !== "SUPERSEDED" && onResume !== undefined ? <button className="user-question-button user-question-button-submit" type="button" disabled={resuming} onClick={() => void resume()}>{resuming ? t("chat.questionSubmitting") : question.answer === undefined ? t("chat.questionResumeDefault") : t("chat.questionResumeSaved")}</button> : null}
       {resumeError ? <p className="user-question-error" role="alert">{t("chat.questionSubmitFailed")}</p> : null}
     </>}
@@ -205,13 +241,34 @@ export function UserQuestionCard(props: UserQuestionCardProps) {
   return <QuestionCard key={questionKey(props.question)} {...props} />;
 }
 
+function isPendingQuestion(question: UserQuestionDto): boolean {
+  return question.status === "ACTIVE" || question.status === "QUEUED";
+}
+
 export function QuestionQueue({ questions, onAnswer }: {
   questions: readonly UserQuestionDto[];
   onAnswer: (id: string, input: AnswerUserQuestionInput) => Promise<unknown>;
 }) {
   useI18n();
-  if (questions.length === 0) return null;
+  const pending = questions.filter(isPendingQuestion);
+  if (pending.length === 0) return null;
   return <ol className="user-question-queue" aria-label={t("chat.questionQueueLabel")}>
-    {questions.map(question => <li key={questionKey(question)}><UserQuestionCard question={question} onAnswer={input => onAnswer(question.questionId, input)} /></li>)}
+    {pending.map(question => <li key={questionKey(question)}><UserQuestionCard compact question={question} onAnswer={input => onAnswer(question.questionId, input)} /></li>)}
   </ol>;
+}
+
+export function GoalQuestionHistory({ questions }: { questions?: UserQuestionDto[] | undefined }) {
+  useI18n();
+  const history = questions?.filter(question => !isPendingQuestion(question)) ?? [];
+  if (history.length === 0) return null;
+  return <details className="goal-question-history">
+    <summary><CaretDownIcon aria-hidden="true" size={14} />{t("chat.goalQuestionHistory")}</summary>
+    <ol className="user-question-queue">
+      {history.map(question => <li key={questionKey(question)}><article className="user-question-card user-question-card-compact" aria-label={question.question} data-status={question.status}>
+        <QuestionHeader question={question} />
+        <h3 className="user-question-title">{question.question}</h3>
+        <QuestionResolution question={question} />
+      </article></li>)}
+    </ol>
+  </details>;
 }

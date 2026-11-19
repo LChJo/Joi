@@ -300,7 +300,7 @@ it("distinguishes recorded-but-pending delivery from interrupted delivery and fo
   expect(screen.queryByRole("timer")).not.toBeInTheDocument();
 });
 
-it("keeps history in input order and binds each answer to the right queue item", async () => {
+it("keeps pending questions in input order and binds each answer to the right queue item", async () => {
   const onAnswer = vi.fn().mockResolvedValue(undefined);
   render(<QuestionQueue questions={[
     question({ questionId: "old", status: "CANCELED", question: "Old question" }),
@@ -308,11 +308,11 @@ it("keeps history in input order and binds each answer to the right queue item",
     question({ questionId: "next", status: "QUEUED", question: "Next question" }),
   ]} onAnswer={onAnswer} />);
   const cards = screen.getAllByRole("article");
-  expect(cards).toHaveLength(3);
-  expect(cards[0]).toHaveTextContent("Old question");
-  expect(cards[1]).toHaveTextContent("Current question");
-  expect(cards[2]).toHaveTextContent("Next question");
-  const current = cards[1];
+  expect(cards).toHaveLength(2);
+  expect(cards[0]).toHaveTextContent("Current question");
+  expect(cards[1]).toHaveTextContent("Next question");
+  expect(screen.queryByText("Old question")).not.toBeInTheDocument();
+  const current = cards[0];
   if (current === undefined) throw new Error("Missing current question");
   await settle(() => { fireEvent.click(within(current).getByRole("button", { name: "采用推荐并继续" })); });
   expect(onAnswer).toHaveBeenCalledExactlyOnceWith("current", { version: 1, useDefault: true });

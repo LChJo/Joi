@@ -238,6 +238,19 @@ void main() {
       expect(find.byType(UserQuestionCard), findsNWidgets(3));
       expect(find.text('Next question'), findsOneWidget);
       expect(find.text('Recorded reply'), findsOneWidget);
+      expect(find.text(tr(Msg.chatQuestionAnswerUser)), findsNothing);
+      final answeredTile = find.widgetWithText(
+        ExpansionTile,
+        'Previous question',
+      );
+      await Scrollable.ensureVisible(
+        tester.element(answeredTile),
+        alignment: .5,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Previous question'));
+      await tester.pumpAndSettle();
+      expect(find.text(tr(Msg.chatQuestionAnswerUser)), findsOneWidget);
       final button = find.text(tr(Msg.chatQuestionUseDefault));
       await Scrollable.ensureVisible(tester.element(button), alignment: .5);
       await tester.pump();

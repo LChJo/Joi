@@ -17,7 +17,7 @@ import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
 import { submitComposerOnEnter } from "./composer-keyboard";
 import { ConversationOutput } from "./ConversationOutput";
-import { QuestionQueue } from "./UserQuestionCard";
+import { GoalQuestionHistory, QuestionQueue } from "./UserQuestionCard";
 import "./conversations.css";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -1422,6 +1422,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         <GoalRecoveryNotice goal={goal} />
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} key={artifactVersion} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} key={artifactVersion} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
+        <GoalQuestionHistory questions={goal.questions} />
         {(goal.questions?.length ?? 0) > 0 && (goal.clarification === undefined || goal.clarification.reasonCode === "question_required") ? <QuestionQueue questions={goal.questions ?? []} onAnswer={async (id,input) => { const saved = await api.answerQuestion({kind:"GOAL",id:goal.goalId},id,input); onResolved(); return saved; }} /> : goal.clarification === undefined ? null : <ClarificationActions key={`${goal.clarification.questionId ?? "legacy"}:${String(goal.clarification.questionVersion)}`} api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
@@ -1482,6 +1483,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
       </header>
       <div className="joi-goal-drawer-body">
         <article className="joi-goal-result"><h2>{resultLabel}</h2><div className="joi-md"><Markdown>{body}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>
+        <GoalQuestionHistory questions={goal.questions} />
         <GoalAgentWarning goal={goal} onOpen={() => onOpenDetail("FAILED")} />
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
       </div>

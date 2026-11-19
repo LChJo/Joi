@@ -5,6 +5,7 @@ import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { AgentMessageStream, ArchivedGoals, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
 import type { ThinkingEffort, WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
+import type { UserQuestionDto } from "../../src/shared/user-questions.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -71,6 +72,62 @@ function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归�
   openGoalMenu(title);
   fireEvent.click(goalMenuItem(name));
 }
+
+it("ASK-09 keeps the home question compact, then moves its receipt to collapsed goal views", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+  vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+  const question: UserQuestionDto = {
+    questionId: "depth", version: 1, scope: { kind: "GOAL", id: "goal-ask" }, ownerId: "work",
+    sourceName: "Joi", question: "请选择评估深度", kind: "QUESTION", options: [], allowCustom: true,
+    multiSelect: false, defaultAnswer: "代码级评估", defaultOptionIds: [], status: "ACTIVE", delivery: "PENDING",
+    createdAt: "2026-11-19T10:00:00Z", expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const answered: UserQuestionDto = {
+    ...question, status: "ANSWERED", delivery: "DELIVERED",
+    answer: { text: "只读评估并给出建议", source: "USER", selectedOptionIds: [], answeredAt: "2026-11-19T10:01:00Z" },
+  };
+  const base = {
+    agentCount: 0, canDelete: false, goalId: "goal-ask", title: "架构评估", updatedAt: question.createdAt,
+    workbench: { workbenchId: "wb-ask", name: "软件工程" }, work: { active: 0, completed: 0, failed: 0, total: 0 },
+  };
+  const feed = vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+    goals: [{ ...base, status: "NEEDS_ATTENTION", clarification: { reasonCode: "question_required" }, questions: [question] }],
+    thinking: [], unassignedActions: [],
+  });
+  const answer = vi.spyOn(api, "answerQuestion").mockImplementation(async () => {
+    await Promise.resolve();
+    feed.mockResolvedValue({
+      goals: [{ ...base, status: "COMPLETED", completionSummary: "评估结果", questions: [answered] }],
+      thinking: [], unassignedActions: [],
+    });
+    return answered;
+  });
+  render(<JoiHome api={api} />);
+  const input = await screen.findByRole("textbox", { name: "自定义回答或补充" });
+  expect(input).toHaveAttribute("rows", "2");
+  fireEvent.change(input, { target: { value: answered.answer?.text } });
+  fireEvent.click(screen.getByRole("button", { name: "提交并继续" }));
+  await waitFor(() => expect(answer).toHaveBeenCalledWith({ kind: "GOAL", id: base.goalId }, question.questionId, {
+    version: 1, selectedOptionIds: [], text: "只读评估并给出建议",
+  }));
+  const result = await screen.findByRole("button", { name: "打开「架构评估」的最终结果全文" });
+  expect(screen.queryByText(question.question)).not.toBeInTheDocument();
+  expect(screen.queryByText("问答记录")).not.toBeInTheDocument();
+  fireEvent.click(result);
+  const drawer = screen.getByRole("dialog");
+  const toggle = within(drawer).getByText("问答记录", { selector: "summary" });
+  expect(within(drawer).getByText("只读评估并给出建议")).not.toBeVisible();
+  fireEvent.click(toggle);
+  expect(within(drawer).getByText("只读评估并给出建议")).toBeVisible();
+  fireEvent.click(toggle);
+  expect(within(drawer).getByText("只读评估并给出建议")).not.toBeVisible();
+  fireEvent.click(within(drawer).getByRole("button", { name: "查看详情" }));
+  const detail = screen.getByRole("dialog");
+  expect(within(detail).getByText("只读评估并给出建议")).not.toBeVisible();
+  fireEvent.click(within(detail).getByText("问答记录", { selector: "summary" }));
+  expect(within(detail).getByText("回答已交付。")).toBeVisible();
+});
 
 describe("Workbench context center", () => {
   it("blocks duplicate removal and dismissal while saving, then allows escape after a network failure", async () => {

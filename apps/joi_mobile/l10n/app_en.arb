@@ -882,6 +882,11 @@
     "description": "chat.questionQueueLabel",
     "placeholders": {}
   },
+  "chatGoalQuestionHistory": "Question history",
+  "@chatGoalQuestionHistory": {
+    "description": "chat.goalQuestionHistory",
+    "placeholders": {}
+  },
   "chatQuestionRemoteUnavailable": "This host does not support remote question answers. Update the host or answer on the desktop.",
   "@chatQuestionRemoteUnavailable": {
     "description": "chat.questionRemoteUnavailable",

@@ -3,8 +3,36 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { ConversationOutput } from "../../src/renderer/ConversationOutput";
 import type { AgentConversationEntryDto } from "../../src/shared/joi";
 import type { ConversationEntryDto } from "../../src/shared/conversations";
+import type { UserQuestionDto } from "../../src/shared/user-questions";
 
 const thinking = (id: string,summary?: string): ConversationEntryDto => ({ entryId: id,kind: "ACTIVITY",role: "SYSTEM",sequence: 1,createdAt: "2026-11-12",activity: { type: "THINKING",thinking: { phaseId: id,state: "COMPLETED",durationMs: 1250,...(summary === undefined ? {} : { summary }) } } });
+
+it("ASK-09 compacts the active question and defaults to a single answered summary with expandable details", () => {
+  const question: UserQuestionDto = {
+    questionId: "ask-model", version: 1, scope: { kind: "CONVERSATION", id: "chat" }, ownerId: "turn",
+    sourceName: "joi", question: "Which model should we test first?", kind: "QUESTION",
+    options: [{ id: "qwen", label: "Qwen4-Max", recommended: true }], multiSelect: false, allowCustom: true,
+    defaultAnswer: "Qwen4-Max", defaultOptionIds: ["qwen"], status: "ACTIVE", delivery: "PENDING",
+    createdAt: "2026-11-19T10:01:00.000Z", expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const view = render(<ConversationOutput entries={[]} questions={[question]} status="RUNNING" />);
+  expect(screen.getByRole("textbox")).toHaveAttribute("rows", "2");
+  expect(screen.getByRole("timer")).toBeVisible();
+  expect(screen.getByRole("button", { name: "采用推荐并继续" })).toBeEnabled();
+  view.rerender(<ConversationOutput entries={[]} status="COMPLETED" questions={[{ ...question, status: "ANSWERED", delivery: "DELIVERED",
+    answer: { text: "Qwen4-Max", selectedOptionIds: ["qwen"], source: "USER_DEFAULT", answeredAt: "2026-11-19T10:02:00.000Z" },
+  }]} />);
+  const summary = view.container.querySelector("summary");
+  expect(summary).toHaveTextContent("Which model should we test first?");
+  expect(summary).toHaveTextContent("Qwen4-Max");
+  expect(summary?.parentElement).not.toHaveAttribute("open");
+  expect(screen.getByText("回答已交付。")).not.toBeVisible();
+  if (summary === null) throw new Error("Missing question summary");
+  fireEvent.click(summary);
+  expect(screen.getByText("来自 joi")).toBeVisible();
+  expect(screen.getByText("你采用了推荐回答")).toBeVisible();
+  expect(screen.getByText("回答已交付。")).toBeVisible();
+});
 
 it("CHAT-36 shows only the last thinking phase across prose and tool groups, with expandable details",() => {
   const entries: ConversationEntryDto[] = [thinking("old","Earlier summary"),tool("read","read","TOOL_CALL","1"),tool("done","read","TOOL_RESULT","1"),{ entryId: "answer",kind: "MARKDOWN",role: "AGENT",text: "Progress answer",sequence: 2,createdAt: "2026-11-12" },thinking("latest","Latest public summary")];

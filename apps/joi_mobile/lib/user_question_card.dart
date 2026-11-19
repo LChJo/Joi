@@ -12,9 +12,11 @@ class UserQuestionCard extends StatelessWidget {
     required this.supported,
     required this.onAnswer,
     this.onResume,
+    this.compact = false,
   });
   final RemoteUserQuestion question;
   final bool supported;
+  final bool compact;
   final Future<void> Function()? onResume;
   final Future<void> Function(Map<String, Object?> input) onAnswer;
   @override
@@ -22,6 +24,7 @@ class UserQuestionCard extends StatelessWidget {
     key: ValueKey(question.identity),
     question: question,
     supported: supported,
+    compact: compact,
     onAnswer: onAnswer,
     onResume: onResume,
   );
@@ -32,13 +35,15 @@ class _QuestionCard extends StatefulWidget {
     super.key,
     required this.question,
     required this.supported,
-    required this.onAnswer,
+    required this.compact,
+    this.onAnswer,
     this.onResume,
   });
   final RemoteUserQuestion question;
   final bool supported;
+  final bool compact;
   final Future<void> Function()? onResume;
-  final Future<void> Function(Map<String, Object?>) onAnswer;
+  final Future<void> Function(Map<String, Object?>)? onAnswer;
   @override
   State<_QuestionCard> createState() => _QuestionCardState();
 }
@@ -104,7 +109,8 @@ class _QuestionCardState extends State<_QuestionCard> {
   }
 
   Future<void> _send(bool useDefault) async {
-    if (_locked || (!useDefault && !_hasAnswer)) return;
+    final onAnswer = widget.onAnswer;
+    if (onAnswer == null || _locked || (!useDefault && !_hasAnswer)) return;
     setState(() {
       _busy = true;
       _failed = false;
@@ -122,7 +128,7 @@ class _QuestionCardState extends State<_QuestionCard> {
         'text': _draft.text.trim(),
     };
     try {
-      await widget.onAnswer(input);
+      await onAnswer(input);
       if (mounted && q.active) {
         setState(() {
           _submitted = true;
@@ -141,10 +147,7 @@ class _QuestionCardState extends State<_QuestionCard> {
 
   Future<void> _resume() async {
     final resume = widget.onResume;
-    if (resume == null ||
-        !widget.supported ||
-        !_recoverable ||
-        _busy) {
+    if (resume == null || !widget.supported || !_recoverable || _busy) {
       return;
     }
     setState(() {
@@ -209,11 +212,86 @@ class _QuestionCardState extends State<_QuestionCard> {
     child: Semantics(liveRegion: true, child: Text(text)),
   );
 
+  List<Widget> _recordedAnswer(
+    ColorScheme colors,
+    Map<String, dynamic> answer,
+  ) => [
+    const Divider(),
+    Text(
+      tr(switch (answer['source']) {
+        'USER' => Msg.chatQuestionAnswerUser,
+        'USER_DEFAULT' => Msg.chatQuestionAnswerUserDefault,
+        _ => Msg.chatQuestionAnswerTimeout,
+      }),
+    ),
+    Text(
+      _timestamp(answer['answeredAt'] as String? ?? ''),
+      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
+    ),
+    SelectableText(answer['text'] as String? ?? ''),
+    if (!widget.compact)
+      for (final option in q.options.where(
+        (o) => (answer['selectedOptionIds'] as List? ?? const []).contains(
+          o['id'],
+        ),
+      ))
+        Text(option['label'] as String? ?? ''),
+    if (q.delivery != 'INTERRUPTED')
+      Text(
+        tr(
+          q.delivery == 'DELIVERED'
+              ? Msg.chatQuestionDeliveryDelivered
+              : Msg.chatQuestionDeliveryPending,
+        ),
+      ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     dependOnUiLocale(context);
     final colors = Theme.of(context).colorScheme;
     final answer = q.answer;
+    final compact = widget.compact;
+    final summary =
+        compact &&
+        q.status == 'ANSWERED' &&
+        q.delivery != 'INTERRUPTED' &&
+        answer != null;
+    final metaStyle = TextStyle(color: colors.onSurfaceVariant, fontSize: 12);
+    final source = Text(
+      tr(Msg.chatQuestionSource, {'name': q.sourceName}),
+      style: metaStyle,
+    );
+    final status = Semantics(
+      liveRegion: true,
+      child: Text(
+        _status(),
+        style: TextStyle(
+          color: colors.primary,
+          fontWeight: FontWeight.w600,
+          fontSize: compact ? 12 : null,
+        ),
+      ),
+    );
+    final recommendedAction = FilledButton(
+      style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
+      onPressed: _locked ? null : () => _send(true),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: compact ? 0 : 8),
+        child: Text(
+          tr(Msg.chatQuestionUseDefault),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+    final answerAction = OutlinedButton(
+      style: OutlinedButton.styleFrom(minimumSize: const Size(44, 48)),
+      onPressed: _locked || !_hasAnswer ? null : () => _send(false),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: compact ? 0 : 8),
+        child: Text(tr(Msg.chatQuestionSubmit), textAlign: TextAlign.center),
+      ),
+    );
     final seconds = q.expiresAt == null
         ? 0
         : ((q.expiresAt!.difference(DateTime.now()).inMilliseconds / 1000)
@@ -221,34 +299,60 @@ class _QuestionCardState extends State<_QuestionCard> {
               .clamp(0, 1800);
     final remaining =
         '${(seconds ~/ 60).toString().padLeft(2, '0')}:${(seconds % 60).toString().padLeft(2, '0')}';
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: q.active ? colors.primary : colors.outlineVariant,
+    if (summary) {
+      return _panel(
+        colors,
+        flush: true,
+        child: ExpansionTile(
+          dense: true,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          title: Row(
+            children: [
+              status,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  q.question,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text('·'),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  answer['text'] as String? ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            source,
+            SelectableText(q.question),
+            ..._recordedAnswer(colors, answer),
+          ],
         ),
-      ),
+      );
+    }
+    return _panel(
+      colors,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Semantics(
-            liveRegion: true,
-            child: Text(
-              _status(),
-              style: TextStyle(
-                color: colors.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            tr(Msg.chatQuestionSource, {'name': q.sourceName}),
-            style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
-          ),
-          const SizedBox(height: 10),
+          if (compact)
+            Wrap(spacing: 8, children: [status, source])
+          else ...[
+            status,
+            source,
+          ],
+          SizedBox(height: compact ? 4 : 10),
           if (q.status == 'QUEUED' && q.delivery != 'INTERRUPTED') ...[
             ExpansionTile(
               tilePadding: EdgeInsets.zero,
@@ -291,6 +395,7 @@ class _QuestionCardState extends State<_QuestionCard> {
                       q.multiSelect
                           ? CheckboxListTile(
                               contentPadding: EdgeInsets.zero,
+                              dense: compact,
                               controlAffinity: ListTileControlAffinity.leading,
                               value: _selected.contains(option['id']),
                               title: Text(option['label'] as String? ?? ''),
@@ -307,6 +412,7 @@ class _QuestionCardState extends State<_QuestionCard> {
                             )
                           : RadioListTile<String>(
                               contentPadding: EdgeInsets.zero,
+                              dense: compact,
                               value: option['id'] as String? ?? '',
                               enabled: !_locked,
                               title: Text(option['label'] as String? ?? ''),
@@ -337,68 +443,88 @@ class _QuestionCardState extends State<_QuestionCard> {
                 child: TextField(
                   controller: _draft,
                   enabled: !_locked,
-                  minLines: 3,
+                  minLines: compact ? 2 : 3,
                   maxLines: 8,
                   maxLength: 8000,
                   keyboardType: TextInputType.multiline,
                   textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
                     labelText: tr(Msg.chatQuestionCustomAnswer),
+                    isDense: compact,
+                    counterText: compact ? '' : null,
                     alignLabelWithHint: true,
                     border: const OutlineInputBorder(),
                   ),
                 ),
               ),
+              if (!compact)
+                Text(
+                  tr(Msg.chatQuestionKeyboardHint),
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+            ],
+            SizedBox(height: compact ? 6 : 12),
+            if (compact) ...[
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (q.expiresAt != null)
+                    Tooltip(
+                      message: tr(Msg.chatQuestionDeadline, {
+                        'time': _timestamp(q.expiresAt!.toIso8601String()),
+                      }),
+                      child: Text(
+                        tr(Msg.chatQuestionCountdown, {'remaining': remaining}),
+                        style: metaStyle,
+                      ),
+                    ),
+                  Text(tr(Msg.chatQuestionTimeoutPolicy), style: metaStyle),
+                ],
+              ),
+              SelectableText.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '${tr(Msg.chatQuestionDefaultLabel)} · ',
+                      style: metaStyle,
+                    ),
+                    TextSpan(text: q.defaultAnswer),
+                  ],
+                ),
+              ),
+              Wrap(spacing: 8, children: [recommendedAction, answerAction]),
+            ] else ...[
+              if (q.expiresAt != null) ...[
+                Semantics(
+                  liveRegion: false,
+                  child: Text(
+                    tr(Msg.chatQuestionCountdown, {'remaining': remaining}),
+                  ),
+                ),
+                Text(
+                  tr(Msg.chatQuestionDeadline, {
+                    'time': _timestamp(q.expiresAt!.toIso8601String()),
+                  }),
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
               Text(
-                tr(Msg.chatQuestionKeyboardHint),
+                tr(Msg.chatQuestionTimeoutPolicy),
                 style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
               ),
+              const SizedBox(height: 8),
+              _default(colors),
+              const SizedBox(height: 12),
+              recommendedAction,
+              const SizedBox(height: 8),
+              answerAction,
             ],
-            const SizedBox(height: 12),
-            if (q.expiresAt != null) ...[
-              Semantics(
-                liveRegion: false,
-                child: Text(
-                  tr(Msg.chatQuestionCountdown, {'remaining': remaining}),
-                ),
-              ),
-              Text(
-                tr(Msg.chatQuestionDeadline, {
-                  'time': _timestamp(q.expiresAt!.toIso8601String()),
-                }),
-                style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
-              ),
-            ],
-            Text(
-              tr(Msg.chatQuestionTimeoutPolicy),
-              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            _default(colors),
-            const SizedBox(height: 12),
-            FilledButton(
-              style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
-              onPressed: _locked ? null : () => _send(true),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  tr(Msg.chatQuestionUseDefault),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(44, 48)),
-              onPressed: _locked || !_hasAnswer ? null : () => _send(false),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  tr(Msg.chatQuestionSubmit),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
             if (_busy)
               _notice(tr(Msg.chatQuestionSubmitting))
             else if (_submitted)
@@ -409,34 +535,7 @@ class _QuestionCardState extends State<_QuestionCard> {
               _notice(tr(Msg.chatQuestionTimingPending)),
             if (_failed) _notice(tr(Msg.chatQuestionSubmitFailed)),
           ],
-          if (answer != null) ...[
-            const Divider(),
-            Text(
-              tr(switch (answer['source']) {
-                'USER' => Msg.chatQuestionAnswerUser,
-                'USER_DEFAULT' => Msg.chatQuestionAnswerUserDefault,
-                _ => Msg.chatQuestionAnswerTimeout,
-              }),
-            ),
-            Text(
-              _timestamp(answer['answeredAt'] as String? ?? ''),
-              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 12),
-            ),
-            SelectableText(answer['text'] as String? ?? ''),
-            for (final option in q.options.where(
-              (o) => (answer['selectedOptionIds'] as List? ?? const [])
-                  .contains(o['id']),
-            ))
-              Text(option['label'] as String? ?? ''),
-            if (q.delivery != 'INTERRUPTED')
-              Text(
-                tr(
-                  q.delivery == 'DELIVERED'
-                      ? Msg.chatQuestionDeliveryDelivered
-                      : Msg.chatQuestionDeliveryPending,
-                ),
-              ),
-          ],
+          if (answer != null) ..._recordedAnswer(colors, answer),
           if (q.status == 'CANCELED') Text(tr(Msg.chatQuestionCanceledHint)),
           if (q.status == 'SUPERSEDED')
             Text(tr(Msg.chatQuestionSupersededHint)),
@@ -467,11 +566,65 @@ class _QuestionCardState extends State<_QuestionCard> {
     );
   }
 
+  Widget _panel(
+    ColorScheme colors, {
+    required Widget child,
+    bool flush = false,
+  }) => Container(
+    margin: EdgeInsets.symmetric(vertical: widget.compact ? 4 : 8),
+    padding: EdgeInsets.all(
+      flush
+          ? 0
+          : widget.compact
+          ? 10
+          : 14,
+    ),
+    decoration: BoxDecoration(
+      color: colors.surface,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(
+        color: q.active ? colors.primary : colors.outlineVariant,
+      ),
+    ),
+    child: child,
+  );
+
   Widget? _optionDescription(Map<String, dynamic> option) {
     final parts = [
       if (option['recommended'] == true) tr(Msg.chatQuestionRecommended),
       if (option['description'] is String) option['description'] as String,
     ];
     return parts.isEmpty ? null : Text(parts.join(' · '));
+  }
+}
+
+bool isPendingQuestion(RemoteUserQuestion question) =>
+    question.status == 'ACTIVE' || question.status == 'QUEUED';
+
+class GoalQuestionHistory extends StatelessWidget {
+  const GoalQuestionHistory({super.key, required this.questions});
+
+  final List<RemoteUserQuestion> questions;
+
+  @override
+  Widget build(BuildContext context) {
+    dependOnUiLocale(context);
+    final history = questions.where((question) => !isPendingQuestion(question));
+    if (history.isEmpty) return const SizedBox.shrink();
+    return ExpansionTile(
+      dense: true,
+      tilePadding: EdgeInsets.zero,
+      title: Text(tr(Msg.chatGoalQuestionHistory)),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final question in history)
+          _QuestionCard(
+            key: ValueKey(question.identity),
+            question: question,
+            supported: false,
+            compact: false,
+          ),
+      ],
+    );
   }
 }

@@ -1,6 +1,7 @@
 {
   "readRecovering": "正在自动重新读取进度。",
   "questionQueueLabel": "对话中的提问",
+  "goalQuestionHistory": "问答记录",
   "questionRemoteUnavailable": "当前主机不支持远程回答问题，请更新主机或在桌面端回答。",
   "questionSource": "来自 {name}",
   "questionActive": "等待你的回答",

@@ -187,6 +187,7 @@ export interface MessageParameters {
   "catalog.skillLicense": undefined;
   "chat.readRecovering": undefined;
   "chat.questionQueueLabel": undefined;
+  "chat.goalQuestionHistory": undefined;
   "chat.questionRemoteUnavailable": undefined;
   "chat.questionSource": { "name": string };
   "chat.questionActive": undefined;
@@ -2019,6 +2020,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.skillLicense": "As declared by each skill",
     "chat.readRecovering": "Progress will refresh automatically.",
     "chat.questionQueueLabel": "Questions in this conversation",
+    "chat.goalQuestionHistory": "Question history",
     "chat.questionRemoteUnavailable": "This host does not support remote question answers. Update the host or answer on the desktop.",
     "chat.questionSource": "From {name}",
     "chat.questionActive": "Awaiting your answer",
@@ -3849,6 +3851,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.skillLicense": "依各 Skill 声明",
     "chat.readRecovering": "正在自动重新读取进度。",
     "chat.questionQueueLabel": "对话中的提问",
+    "chat.goalQuestionHistory": "问答记录",
     "chat.questionRemoteUnavailable": "当前主机不支持远程回答问题，请更新主机或在桌面端回答。",
     "chat.questionSource": "来自 {name}",
     "chat.questionActive": "等待你的回答",
@@ -5848,6 +5851,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "正在自动重新读取进度。": "chat.readRecovering",
   "Questions in this conversation": "chat.questionQueueLabel",
   "对话中的提问": "chat.questionQueueLabel",
+  "Question history": "chat.goalQuestionHistory",
+  "问答记录": "chat.goalQuestionHistory",
   "This host does not support remote question answers. Update the host or answer on the desktop.": "chat.questionRemoteUnavailable",
   "当前主机不支持远程回答问题，请更新主机或在桌面端回答。": "chat.questionRemoteUnavailable",
   "Awaiting your answer": "chat.questionActive",

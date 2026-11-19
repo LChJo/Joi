@@ -9,7 +9,7 @@ import { ConversationPage } from "./ConversationPage";
 import { RemoteConversationApi, type RemoteConversationTransport } from "./RemoteConversationApi";
 import { ArchivedConversations } from "./ArchivePage";
 import { submitComposerOnEnter } from "./composer-keyboard";
-import { QuestionQueue } from "./UserQuestionCard";
+import { GoalQuestionHistory, QuestionQueue } from "./UserQuestionCard";
 
 export interface RemoteJoiConnection {
   capabilities?(): readonly string[];
@@ -123,6 +123,7 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
         <h1>{goal.title}</h1>
         <p>{workSummary(goal.work)}</p>
         {goal.completionSummary === undefined ? null : <div className="remote-goal-result"><CheckCircleIcon aria-hidden /><span>{goal.completionSummary}</span></div>}
+        <GoalQuestionHistory questions={goal.questions} />
         {goal.status !== "NEEDS_ATTENTION" || goal.clarification.reasonCode === "question_required" && (goal.questions?.length ?? 0) > 0 ? null : <div className="remote-goal-attention"><WarningCircleIcon aria-hidden /><span>{goal.clarification.prompt ?? t("remote.returnToTheDesktopToConfirmThisTask")}</span></div>}
         {(goal.questions?.length ?? 0) === 0 ? null : <fieldset disabled={connectionStatus !== "connected" || !connection.capabilities?.().includes("questions.v1")} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <QuestionQueue questions={goal.questions ?? []} onAnswer={async (questionId, input) => {

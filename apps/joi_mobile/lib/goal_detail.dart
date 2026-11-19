@@ -253,10 +253,13 @@ class _GoalActionsState extends State<GoalActions> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final queuedQuestion in goal.questions)
+            for (final queuedQuestion in goal.questions.where(
+              isPendingQuestion,
+            ))
               UserQuestionCard(
                 key: ValueKey(queuedQuestion.identity),
                 question: queuedQuestion,
+                compact: true,
                 supported:
                     widget.controller is QuestionRemoteController &&
                     (widget.controller as QuestionRemoteController)
@@ -727,6 +730,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
               nextCursor: _facts['artifactNextCursor'] as String?,
             ),
           ],
+          GoalQuestionHistory(questions: _goal.questions),
           GoalActions(
             key: ValueKey(_goal.goalId),
             controller: widget.controller,

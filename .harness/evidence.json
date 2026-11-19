@@ -550,12 +550,12 @@
     {
       "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
       "kind": "source-code",
-      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact. Completed turns show context metadata inside existing activity disclosures and omit standalone context rows. Partner records share the tool grouping and states; authorized callers can render additional per-call details without widening ordinary chat. Timestamp-ordered inline cards replace duplicate ask_user display rows without mutating persisted entries; interrupted recovery is offered only on terminal interrupted/failed/stopped turns.",
+      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact. Completed turns show context metadata inside existing activity disclosures and omit standalone context rows. Partner records share the tool grouping and states; authorized callers can render additional per-call details without widening ordinary chat. Timestamp-ordered inline cards replace duplicate ask_user display rows without mutating persisted entries; interrupted recovery is offered only on terminal interrupted/failed/stopped turns. Ordinary conversation cards opt into compact question and receipt layouts.",
       "location": {
         "path": "src/renderer/ConversationOutput.tsx"
       },
-      "hash": "d32380ff950705931e592faab334ab97a1df64d18cf453fe7e6223450169cc04",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "23905487bc873dcb2966c1b5ec8aa8a301672b5385bf538035d3c8adb0e096cc",
+      "observedAt": "2026-11-19T12:32:02.921Z",
       "range": {
         "startLine": 1,
         "endLine": 124
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the shared queue and versioned answers; independent structured confirmations retain their existing separate controls.",
-      "hash": "d1e8e03d83c3736a31d739234343a7c09984f7da958b543ea3adfcb72d48f00c",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls.",
+      "hash": "785e39a0b70f46bc4ee9384441f4bbe2277b0f6631472a0d4e4c2476551d72ba",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 1851
+        "endLine": 1853
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status.",
-      "hash": "f342413bc3cb66e67919ab5f0a87bd02bb3064ed8bed17dcfa4f240a6d1bc101",
-      "observedAt": "2026-11-18T08:01:25.768Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers.",
+      "hash": "0eb3ab016d572ac6fc642a6d8a4136adb3424107de4e059c793c0dc16eb9d15b",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 2380
+        "endLine": 2437
       }
     },
     {
@@ -1656,15 +1656,15 @@
     {
       "id": "c0f84140-afb3-44b8-8bb5-fde0e3339745",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The generated Flutter catalog includes the question history label.",
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "57557720027edd0211fdcd27a92dfddb83dccd749aa634473aac83e648977234",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "7e8549531b416b23f0d824bf073498907aff4c7c366c98bade0811b9be3622c7",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 9953
+        "endLine": 9958
       }
     },
     {
@@ -1684,15 +1684,15 @@
     {
       "id": "479d96c5-ec0c-4509-9963-e0f00febdfff",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. Shared message dispatch includes the question history label.",
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "d7cea76c20b94fa25bc2d67b8fc1ba6787ce01af9a886be4c3d2b6bfe4a46497",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "dd3c62f5e1ce2d0bb33a52ad9a7badde32f7c31f80f9353eb6e2a76dba0571a5",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 7000
+        "endLine": 7004
       }
     },
     {
@@ -1768,15 +1768,15 @@
     {
       "id": "a359d5a0-70b1-48a3-a0c3-5f9e5a741821",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The shared catalog labels the goal question history disclosure.",
       "location": {
         "path": "resources/locales/en/chat.json"
       },
-      "hash": "22eb47c79d9b4cf2f168685c1a84c85a87d1dd7794497feba4f554cf5ef3b42a",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "bdd0135d1b04cf057e4c6eeff82d070105919f1f80f1771a1d051103d0dca0bc",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 236
+        "endLine": 237
       }
     },
     {
@@ -1810,15 +1810,15 @@
     {
       "id": "3627078a-b447-432c-9b65-37a1521deadb",
       "kind": "source-code",
-      "claim": "The legacy browser fallback offers tasks, normal conversations and archived conversations using the shared React views. Task polling pauses on conversation views; connection status remains visible. This retired WebSocket gateway is not the formal native iroh/browser deployment. The remote task input uses the same Enter shortcut and send availability as its button. Shared goal question queues retain history, and answers require connected questions.v1; older hosts receive an explicit unsupported notice.",
+      "claim": "The legacy browser fallback offers tasks, normal conversations and archived conversations using the shared React views. Task polling pauses on conversation views; connection status remains visible. This retired WebSocket gateway is not the formal native iroh/browser deployment. The remote task input uses the same Enter shortcut and send availability as its button. Shared goal question queues show compact pending cards and a separate collapsed history, and answers require connected questions.v1; older hosts receive an explicit unsupported notice.",
       "location": {
         "path": "src/renderer/RemoteJoiApp.tsx"
       },
-      "hash": "0113df0540eeaf402bb5375fa6c9bf68c9a20b4acea620b8ad4b52267d3e1e40",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "861ac1b60578f02206e13f29a524fa4510fbe2f32fb351fb94b926bd5b31e612",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 145
+        "endLine": 146
       }
     },
     {
@@ -1838,15 +1838,15 @@
     {
       "id": "c56ffabe-fe5f-41d2-8e22-c0ed8e10d06f",
       "kind": "source-code",
-      "claim": "Generated desktop catalogs include automatic-compaction configuration and cache-warming messages; question states, defaults, deadlines, answer/delivery receipts and recovery messages preserve safe shared localization contracts.",
+      "claim": "Generated desktop catalogs include automatic-compaction configuration and cache-warming messages; question states, defaults, deadlines, answer/delivery receipts and recovery messages preserve safe shared localization contracts. The generated catalog exposes the shared question history label.",
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "27378a89a188ea12ed62094a39cf989cbc4410fd969e6601c805e8ea24a07920",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "aa90e42f48ec79cb1b213062e119aabad6428c172c8297a3a6cfdee036ee0acf",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 8841
+        "endLine": 8846
       }
     },
     {
@@ -1866,43 +1866,43 @@
     {
       "id": "2e1b561f-9d1a-4a52-984b-ffd491ce229c",
       "kind": "source-code",
-      "claim": "The browser fallback renders shared normal and archived conversation history, continues a selected conversation and exposes no desktop workspace or unsupported attachment controls. The browser task composer has keyboard submission and guards against offline sends. Question coverage submits a versioned default for the active goal card through negotiated transport while retaining queued history.",
+      "claim": "The browser fallback renders shared normal and archived conversation history, continues a selected conversation and exposes no desktop workspace or unsupported attachment controls. The browser task composer has keyboard submission and guards against offline sends. Question coverage submits a versioned default for the active goal card through negotiated transport while retaining queued history. Expanded paired-task history reveals saved receipts while queued and active cards stay in place.",
       "location": {
         "path": "tests/renderer/remote-joi-app.test.tsx"
       },
-      "hash": "07d1b3943a3db3f4547d7cc2f2b29143b7a359a2c497ce8662bab0d65fdd1560",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "63d426a0d5e3215ba252ed168e5e4a7089c85e0ae93c47d525683ddf2cd3e8b8",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 171
+        "endLine": 177
       }
     },
     {
       "id": "5b5e2d23-0e65-499d-999d-976a1fbe3691",
       "kind": "source-code",
-      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions. Ordinary replies render shared compact tool groups, safe text and horizontally scrollable tables. Question cards retain active/queued/answered history and waitingForUser; versioned answers and explicit terminal-turn recovery require negotiated support and selection-safe refreshes.",
+      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions. Ordinary replies render shared compact tool groups, safe text and horizontally scrollable tables. Question cards retain active/queued/answered history and waitingForUser; versioned answers and explicit terminal-turn recovery require negotiated support and selection-safe refreshes. The conversation timeline opts into compact cards.",
       "location": {
         "path": "apps/joi_mobile/lib/conversation_screen.dart"
       },
-      "hash": "592408a8bea6dccf22b97b366d5bee119115b88c2055515580c2c4402b04295f",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "55e5b81a30b3182921b6c9796deb07fa30b3eb564ec79f3e2d2fc3c5870359ea",
+      "observedAt": "2026-11-19T12:32:02.921Z",
       "range": {
         "startLine": 1,
-        "endLine": 1000
+        "endLine": 1001
       }
     },
     {
       "id": "00eddc89-bcf1-43bd-ab95-2532ceb7d32a",
       "kind": "source-code",
-      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit. Native regressions cover mixed tools, safe details, 320px tables, and expansion across partner history pages. The conversation timeline test retains active/queued/answered cards and submits only the active question identity and version.",
+      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit. Native regressions cover mixed tools, safe details, 320px tables, and expansion across partner history pages. The conversation timeline test retains active/queued/answered cards and submits only the active question identity and version. The timeline regression verifies that saved answer details are hidden until expanded.",
       "location": {
         "path": "apps/joi_mobile/test/conversation_screen_test.dart"
       },
-      "hash": "dabc76001cfbc18d2366f958ec73b2808b361f3e433a5596d9872f764fc4129d",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "fc08f06809867ae8176f25d031ebef0a86920d356c6564bbf00dc4de24a30021",
+      "observedAt": "2026-11-19T12:32:02.921Z",
       "range": {
         "startLine": 1,
-        "endLine": 533
+        "endLine": 546
       }
     },
     {
@@ -3714,15 +3714,29 @@
     {
       "id": "f38946e3-12db-45b8-898b-c8d8eb3bea6b",
       "kind": "source-code",
-      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls.",
+      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls. Goal actions show compact pending cards, and the detail page puts resolved questions behind a history disclosure.",
       "location": {
         "path": "apps/joi_mobile/lib/goal_detail.dart"
       },
-      "hash": "8b9c8565d0955d2f98508e1468eddce439cc98662cd7ea3edf6ade113ca6a267",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "cbdac04b2ba7e3e0655b15a97888ee1ba440b7eef4f1cf2f03fab3ac6ac0c705",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
-        "endLine": 972
+        "endLine": 976
+      }
+    },
+    {
+      "id": "6ceede77-3a86-45a8-82fc-595a0b99b66a",
+      "kind": "source-code",
+      "claim": "The current result reader shows resolved goal questions in a default-collapsed history disclosure while preserving result snapshot and export behavior.",
+      "location": {
+        "path": "apps/joi_mobile/lib/result_reader.dart"
+      },
+      "hash": "a27c1742b9eb3dffed4221524bf0e291a885afec5680cf9f6b1126ab79212c90",
+      "observedAt": "2026-11-19T12:43:34.997Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 276
       }
     },
     {
@@ -4123,30 +4137,30 @@
     {
       "id": "ff21dcb3-2e6a-441d-b7e9-956c4678f044",
       "kind": "source-code",
-      "claim": "React inline question cards isolate drafts by scope/id/version, lock duplicate or expired writes, preserve failed drafts and use server DTOs as authority. Native single/multiple choices, custom text, explicit defaults, queued previews and answer/delivery receipts remain distinct. Interrupted recovery differentiates saved answers from explicitly choosing the displayed default; Ctrl/Cmd+Enter respects IME. Resume locks concurrent clicks while the request is in flight and allows an explicit attempt after execution failure.",
+      "claim": "React inline question cards isolate drafts by scope/id/version, lock duplicate or expired writes, preserve failed drafts and use server DTOs as authority. Native single/multiple choices, custom text, explicit defaults, queued previews and answer/delivery receipts remain distinct. Interrupted recovery differentiates saved answers from explicitly choosing the displayed default; Ctrl/Cmd+Enter respects IME. Resume locks concurrent clicks while the request is in flight and allows an explicit attempt after execution failure. Compact conversation mode keeps active controls in a condensed form and answered receipts in an expandable one-line summary. Goal queues reuse the compact form for active or queued questions, and a read-only disclosure presents resolved cards.",
       "location": { "path": "src/renderer/UserQuestionCard.tsx" },
-      "hash": "757397a8f5165667f5386ce6e52b700b9913e154b0e92f6865f77cae159b4ebf",
-      "observedAt": "2026-11-19T11:33:21.991Z",
-      "range": { "startLine": 1, "endLine": 217 }
+      "hash": "355888e58ec1294b977b553f87ecdcc6c73aeabad7ef051748ee2a0252012eee",
+      "observedAt": "2026-11-19T12:43:34.997Z",
+      "range": { "startLine": 1, "endLine": 274 }
     },
     {
       "id": "37ab43f3-e18f-4b25-a291-fd5a5be547eb",
       "kind": "source-code",
-      "claim": "Flutter cards preserve scoped drafts, native options/custom/default input, queued previews, server deadlines and manual/automatic delivery receipts. Capability and pending guards prohibit unsupported or duplicate writes. Interrupted recovery explicitly distinguishes saved answers from the displayed default; keyboard submission respects composition. Resume locks concurrent clicks during submission and preserves an explicit retry button when recovery fails. Withdrawn and superseded cards have no retry action.",
+      "claim": "Flutter cards preserve scoped drafts, native options/custom/default input, queued previews, server deadlines and manual/automatic delivery receipts. Capability and pending guards prohibit unsupported or duplicate writes. Interrupted recovery explicitly distinguishes saved answers from the displayed default; keyboard submission respects composition. Resume locks concurrent clicks during submission and preserves an explicit retry button when recovery fails. Withdrawn and superseded cards have no retry action. Compact conversation cards condense the answer form and collapse saved receipts to one expandable line. Goal history uses one expansion tile for read-only resolved cards.",
       "location": { "path": "apps/joi_mobile/lib/user_question_card.dart" },
-      "hash": "1c797ad8a1b7e165a4d05b41003a5cd5b8c73e8220e6af6f58226872def8ee34",
-      "observedAt": "2026-11-19T11:39:00.633Z",
-      "range": { "startLine": 1, "endLine": 477 }
+      "hash": "98426f03f883e57bded0127c443892aef267a211640bad632eb0531e7fa2122d",
+      "observedAt": "2026-11-19T12:49:34.957Z",
+      "range": { "startLine": 1, "endLine": 630 }
     },
     {
       "id": "5cc8dd07-5b08-4c9e-a9da-fc71b178abaa",
       "kind": "document",
-      "claim": "ASK-01-12 defines local Pi/child and goal question FIFO/CAS, ACTIVE-only defaults, independent authorization, original-call continuation, canonical delivery proof, atomic goal gate/result writes, safe cursor/history projections and explicit private interrupted recovery across desktop/LAN/negotiated remote/Flutter. It records synthetic SDK/HTTP and widget seams without claiming live-provider quality, physical Android or public-network validation; native and arbitrary A2A question bridges are excluded. Acceptance includes deadline fencing, release of interrupted queue slots, durable retry attempts, individual Work cancellation, and stale refresh handling. Merged migration coverage includes the parent ledger and older draft Ask databases.",
+      "claim": "ASK-01-12 defines local Pi/child and goal question FIFO/CAS, ACTIVE-only defaults, independent authorization, original-call continuation, canonical delivery proof, atomic goal gate/result writes, safe cursor/history projections and explicit private interrupted recovery across desktop/LAN/negotiated remote/Flutter. It records synthetic SDK/HTTP and widget seams without claiming live-provider quality, physical Android or public-network validation; native and arbitrary A2A question bridges are excluded. Acceptance includes deadline fencing, release of interrupted queue slots, durable retry attempts, individual Work cancellation, and stale refresh handling. Merged migration coverage includes the parent ledger and older draft Ask databases. ASK-09 specifies compact pending forms and expandable one-line answered receipts in ordinary conversations. Goal questions use compact pending forms and a collapsed question history on detail and results views.",
       "location": {
         "path": "docs/user-question-acceptance.md"
       },
-      "hash": "d9e5b31fbb044b2d43ac04c8cd6414bb61fad1d0fca08ecd85e4aadfd128b934",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "8823c9705946eb7d597388569e6f039f889491750ccec0bd0d1da93c026771f2",
+      "observedAt": "2026-11-19T12:43:34.997Z",
       "range": {
         "startLine": 1,
         "endLine": 40

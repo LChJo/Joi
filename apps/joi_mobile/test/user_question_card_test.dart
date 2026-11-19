@@ -357,8 +357,7 @@ void main() {
     'unanswered interruption explicitly offers the visible default rather than claiming a saved answer',
     (tester) async {
       var resumes = 0;
-      final json = questionJson()
-        ..['delivery'] = 'INTERRUPTED';
+      final json = questionJson()..['delivery'] = 'INTERRUPTED';
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -425,6 +424,7 @@ void main() {
       );
       await renderGoal('question_required');
       expect(find.byType(TextField), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).minLines, 2);
       expect(find.text('Legacy prompt'), findsNothing);
       final button = find.text(tr(Msg.chatQuestionUseDefault));
       await tester.ensureVisible(button);
@@ -444,6 +444,32 @@ void main() {
       );
     },
   );
+
+  testWidgets('goal feed actions omit answered questions', (tester) async {
+    final peer = GoalQuestionPeer();
+    addTearDown(peer.dispose);
+    final answered = questionJson(status: 'ANSWERED')
+      ..['delivery'] = 'DELIVERED'
+      ..['answer'] = {
+        'text': 'Recorded goal answer',
+        'source': 'USER',
+        'answeredAt': '2026-11-19T00:00:00Z',
+      };
+    final goal = RemoteGoalCard.fromJson({
+      'goalId': 'goal',
+      'status': 'COMPLETED',
+      'questions': [answered],
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(controller: peer, goal: goal),
+        ),
+      ),
+    );
+    expect(find.text('Which approach?'), findsNothing);
+    expect(find.text('Recorded goal answer'), findsNothing);
+  });
 
   testWidgets('320px light and dark layouts fit without overflowing', (
     tester,

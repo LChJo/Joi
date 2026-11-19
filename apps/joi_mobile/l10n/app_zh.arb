@@ -174,6 +174,7 @@
   "catalogSkillLicense": "依各 Skill 声明",
   "chatReadRecovering": "正在自动重新读取进度。",
   "chatQuestionQueueLabel": "对话中的提问",
+  "chatGoalQuestionHistory": "问答记录",
   "chatQuestionRemoteUnavailable": "当前主机不支持远程回答问题，请更新主机或在桌面端回答。",
   "chatQuestionSource": "来自 {name}",
   "chatQuestionActive": "等待你的回答",
