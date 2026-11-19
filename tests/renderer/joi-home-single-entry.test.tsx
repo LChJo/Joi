@@ -1357,6 +1357,38 @@ describe("joi home single entry", () => {
     expect(screen.queryByText("已取消")).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["goal_synthesis_correction_exhausted", "最终汇报未通过证据或格式校验", "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。"],
+    ["goal_synthesis_reference_invalid", "最终汇报引用了无法核实的结果或需求", "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。"],
+    ["source_balance", "主模型服务余额或配额不足", "请补充额度或更换主模型来源，再继续此任务。"],
+  ])("explains %s and the next step without hiding completed work", async (reasonCode, reason, action) => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-report", "汇报工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 5,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        failure: { attempts: 1, executionStarted: true, reasonCode, suggestedAction: "RETRY_OR_EXPORT_DIAGNOSTICS" },
+        goalId: "goal-report",
+        status: "FAILED",
+        title: "整理汇报",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 5, failed: 0, total: 5 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+
+    render(<JoiHome api={api} />);
+    const failure = await screen.findByRole("alert");
+    expect(within(failure).getByText(reason)).toBeInTheDocument();
+    expect(within(failure).getByText(action)).toBeInTheDocument();
+    expect(within(failure).getByText("已保留 5 项已完成的工作。")).toBeInTheDocument();
+    expect(within(failure).getByText(new RegExp(reasonCode, "u"))).toBeInTheDocument();
+  });
+
   it("offers a unified continue action on every terminal goal card and re-dispatches with optional supplementary text", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-retry", "继续工程");

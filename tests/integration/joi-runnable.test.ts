@@ -12,7 +12,7 @@ describe("foreground runnable facts and evolution idle", () => {
     connection.exec(`
       CREATE TABLE workbenches (workbench_id TEXT PRIMARY KEY, status TEXT);
       CREATE TABLE joi_inbox_messages (input_id TEXT PRIMARY KEY, status TEXT, workbench_id TEXT,
-        goal_input_id TEXT, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT,
+        goal_input_id TEXT, result_revision INTEGER, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT,
         turn_failure_count INTEGER NOT NULL DEFAULT 0,turn_failed_at TEXT,turn_failure_reason_code TEXT,
         turn_retry_at TEXT,session_generation INTEGER NOT NULL DEFAULT 0,turn_retry_epoch INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE joi_goal_execution_gates (goal_input_id TEXT, status TEXT, resume_input_id TEXT);
@@ -36,9 +36,19 @@ describe("foreground runnable facts and evolution idle", () => {
     expect(store.idle()).toBe(true);
   });
   it("gives a valid foreground child priority over background work", async () => {
-    expect(await reader.listPendingInputs()).toEqual([{ inputId: "child", createdAt: "1", requiresModelSource: true,
+    expect(await reader.listPendingInputs()).toEqual([{ inputId: "child", goalInputId: "goal", createdAt: "1", requiresModelSource: true,
       retryState:{failureCount:0,sessionGeneration:0,epoch:0,queued:true} }]);
     expect(store.idle()).toBe(false);
+  });
+  it("includes bound syntheses even when the older ordinary queue exceeds its scan window", async () => {
+    connection.exec(`WITH RECURSIVE backlog(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM backlog WHERE n<51)
+      INSERT INTO joi_inbox_messages(input_id,status,workbench_id,created_at)
+      SELECT 'ordinary-' || n,'PENDING','bench','1' FROM backlog;
+      INSERT INTO joi_inbox_messages(input_id,status,workbench_id,goal_input_id,result_revision,created_at)
+      VALUES ('joi_result_input:goal:goal','PENDING','bench','goal',1,'2');`);
+    const pending = await reader.listPendingInputs();
+    expect(pending).toHaveLength(51);
+    expect(pending.at(-1)).toMatchObject({ inputId: "joi_result_input:goal:goal", goalInputId: "goal", synthesis: true });
   });
   it("excludes archived workbench inputs and queued Work", async () => {
     connection.exec("INSERT INTO work_items VALUES ('work','goal','bench','READY'); UPDATE workbenches SET status = 'ARCHIVED'");

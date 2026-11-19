@@ -3,7 +3,7 @@ import {
   runtimeDiagnosticErrorCode,
 } from "../../ports/runtime-diagnostics.js";
 import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime.js";
-import type { JoiTaskInbox, JoiTurnDriver, ModelSourceGate } from "../../ports/joi-task.js";
+import type { JoiTaskInbox, JoiTaskPendingInput, JoiTurnDriver, ModelSourceGate } from "../../ports/joi-task.js";
 import { isSynthesisOutputFailure, isTerminalTurnFailure, JOI_TURN_FAILURE_LIMIT, JOI_TURN_RETRY_BASE_MILLIS, JOI_TURN_RETRY_MAX_MILLIS } from "../../../domain/work/joi-turn-recovery.js";
 
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
@@ -18,28 +18,30 @@ const DEFAULT_MAX_CONSECUTIVE_FAILURES = JOI_TURN_FAILURE_LIMIT;
 // breaker measures patience in minutes, not milliseconds.
 const DEFAULT_RETRY_BACKOFF_BASE_MILLIS = JOI_TURN_RETRY_BASE_MILLIS;
 const DEFAULT_RETRY_BACKOFF_MAX_MILLIS = JOI_TURN_RETRY_MAX_MILLIS;
+const MAX_CONCURRENT_SYNTHESES = 4;
 
 interface InFlightTurn {
   abortController: AbortController;
   cancelRequested: boolean;
   errorCode?: string;
+  goalInputId: string;
   inputId: string;
   settled: "failed" | "ok" | undefined;
   startedAt: number;
+  synthesis: boolean;
   userCanceled?: boolean;
   retryEpoch?: number;
 }
 
 /**
- * Traversal-driven replacement for the notify-based input scheduler.
- * PENDING inbox rows are the scheduling truth (AC-10 single serial slot; AC-39 rerun
- * equivalence falls out of failTurn/clarify moving inputs back to PENDING).
+ * Schedules PENDING rows and reserves each goal until its driver settles.
+ * Independent syntheses share bounded capacity alongside the ordinary serial slot.
  */
 export class JoiTaskComponent implements ActorComponent {
   readonly componentName = "joi-task";
   #backoffUntil = new Map<string, number>();
   #failures = new Map<string, number>();
-  #inFlight: InFlightTurn | null = null;
+  #inFlight = new Map<string, InFlightTurn>();
   #lastOrphanScanAt = 0;
 
   constructor(private readonly dependencies: {
@@ -54,19 +56,13 @@ export class JoiTaskComponent implements ActorComponent {
     stalledTurnAfterMillis?: number;
   }) {}
 
-  get activeInputId(): string | undefined {
-    return this.#inFlight?.inputId;
-  }
-
   async update(ctx: ActorTickContext): Promise<void> {
-    await this.#converge(ctx);
-    if (this.#inFlight === null) await this.#startNext(ctx);
+    for (const turn of this.#inFlight.values()) await this.#converge(ctx, turn);
+    await this.#startPending(ctx);
     await this.#recoverOrphanTurns(ctx);
   }
 
-  async #converge(ctx: ActorTickContext): Promise<void> {
-    const turn = this.#inFlight;
-    if (turn === null) return;
+  async #converge(ctx: ActorTickContext, turn: InFlightTurn): Promise<void> {
     // A user cancel is a DB fact (canceled_at); abort the live reasoning session instead
     // of letting it run to completion. Checked every tick so the abort lands within one
     // actor cycle of the cancel request.
@@ -78,7 +74,7 @@ export class JoiTaskComponent implements ActorComponent {
         inputId: turn.inputId,
         reason: "user_canceled",
       });
-      // Keep the serial slot occupied until the driver promise settles.
+      // Keep the goal reserved until the driver promise settles.
       return;
     }
     const stalled = turn.settled === undefined
@@ -93,11 +89,10 @@ export class JoiTaskComponent implements ActorComponent {
           reason: "stalled",
         });
       }
-      // Keep the serial slot occupied until the driver promise settles. Releasing it
-      // here would let a retry overlap the still-running provider request.
+      // A retry must wait for the aborted provider request to settle.
       return;
     }
-    this.#inFlight = null;
+    this.#inFlight.delete(turn.inputId);
     const outcome = turn.settled ?? "failed";
     const errorCode = outcome === "failed" ? turn.errorCode ?? "joi_task_turn_stalled" : undefined;
     if (turn.userCanceled === true) {
@@ -169,7 +164,17 @@ export class JoiTaskComponent implements ActorComponent {
     });
   }
 
-  async #startNext(ctx: ActorTickContext): Promise<void> {
+  async #startPending(ctx: ActorTickContext): Promise<void> {
+    const activeGoals = new Set<string>();
+    let ordinaryRunning = false;
+    let synthesisCount = 0;
+    for (const turn of this.#inFlight.values()) {
+      activeGoals.add(turn.goalInputId);
+      if (turn.synthesis) synthesisCount += 1;
+      else ordinaryRunning = true;
+    }
+    if (ordinaryRunning && synthesisCount >= MAX_CONCURRENT_SYNTHESES) return;
+
     const pending = await this.dependencies.inbox.listPendingInputs();
     const now = ctx.now.getTime();
     // Cooldowns belong to the queued attempt; explicit continuation starts a fresh retry epoch.
@@ -178,6 +183,7 @@ export class JoiTaskComponent implements ActorComponent {
       if (!queued.has(inputId)) this.#backoffUntil.delete(inputId);
     }
     for (const candidate of pending) {
+      if (activeGoals.has(candidate.goalInputId ?? candidate.inputId)) continue;
       const state = candidate.retryState;
       if (state === undefined) continue;
       if (state.failureCount === 0) {
@@ -207,28 +213,37 @@ export class JoiTaskComponent implements ActorComponent {
         this.#backoffUntil.set(candidate.inputId, Date.parse(retryAt));
       }
     }
-    // An input cooling down after a failure is skipped, not blocking: later pending
-    // inputs stay claimable while it waits out its backoff.
-    const next = pending.find((candidate) => {
+    let ready: boolean | undefined;
+    for (const candidate of pending) {
+      const goalInputId = candidate.goalInputId ?? candidate.inputId;
+      if (activeGoals.has(goalInputId)) continue;
       const until = this.#backoffUntil.get(candidate.inputId);
-      return until === undefined || until <= now;
-    });
-    if (next === undefined) return;
-    if (next.requiresModelSource !== false && !(await this.dependencies.gate.hasReadySource())) return;
-    const inputId = next.inputId;
+      if (until !== undefined && until > now) continue;
+      const synthesis = candidate.synthesis === true;
+      if (synthesis ? synthesisCount >= MAX_CONCURRENT_SYNTHESES : ordinaryRunning) continue;
+      if (candidate.inputId.startsWith("evolution:") && this.#inFlight.size > 0) continue;
+      if (candidate.requiresModelSource !== false && !(ready ??= await this.dependencies.gate.hasReadySource())) continue;
+      this.#startTurn(ctx, candidate, goalInputId, synthesis);
+      activeGoals.add(goalInputId);
+      if (synthesis) synthesisCount += 1;
+      else ordinaryRunning = true;
+    }
+  }
+
+  #startTurn(ctx: ActorTickContext, candidate: JoiTaskPendingInput, goalInputId: string, synthesis: boolean): void {
+    const { inputId, retryState } = candidate;
     const startedAt = ctx.now.getTime();
     const abortController = new AbortController();
-    this.#inFlight = { abortController, cancelRequested: false, inputId, settled: undefined, startedAt,
-      ...(next.retryState === undefined ? {} : { retryEpoch: next.retryState.epoch }) };
+    const turn: InFlightTurn = { abortController, cancelRequested: false, goalInputId, inputId, settled: undefined, startedAt, synthesis,
+      ...(retryState === undefined ? {} : { retryEpoch: retryState.epoch }) };
+    this.#inFlight.set(inputId, turn);
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_started", { inputId });
     void this.dependencies.driver.handle(inputId, abortController.signal).then(() => {
-      if (this.#inFlight?.inputId !== inputId) return;
-      this.#inFlight.settled = abortController.signal.aborted ? "failed" : "ok";
-      if (abortController.signal.aborted) this.#inFlight.errorCode = "joi_task_turn_canceled";
+      turn.settled = abortController.signal.aborted ? "failed" : "ok";
+      if (abortController.signal.aborted) turn.errorCode = "joi_task_turn_canceled";
     }).catch((error: unknown) => {
-      if (this.#inFlight?.inputId !== inputId) return;
-      this.#inFlight.settled = "failed";
-      this.#inFlight.errorCode = runtimeDiagnosticErrorCode(error);
+      turn.settled = "failed";
+      turn.errorCode = runtimeDiagnosticErrorCode(error);
     });
   }
 
@@ -243,6 +258,7 @@ export class JoiTaskComponent implements ActorComponent {
     this.#lastOrphanScanAt = ctx.now.getTime();
     const olderThan = new Date(ctx.now.getTime() - (this.dependencies.staleTurnOlderThanMillis ?? DEFAULT_STALE_TURN_OLDER_THAN_MILLIS)).toISOString();
     for (const stale of await this.dependencies.inbox.listStaleRunningTurns(olderThan)) {
+      if (this.#inFlight.has(stale.inputId)) continue;
       await this.dependencies.inbox.failTurn(stale.inputId, stale.turnId);
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.orphan_turn_recovered", {
         inputId: stale.inputId,

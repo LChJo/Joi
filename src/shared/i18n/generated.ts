@@ -427,6 +427,23 @@ export interface MessageParameters {
   "common.inputAwaitingConfirmation": undefined;
   "common.previousPage": undefined;
   "common.nextPage": undefined;
+  "errors.goalSynthesisCorrectionExhausted": undefined;
+  "errors.goalSynthesisReferenceInvalid": undefined;
+  "errors.goalSynthesisStateInvalid": undefined;
+  "errors.goalSynthesisCoverageIncomplete": undefined;
+  "errors.goalSynthesisOutcomeUncommitted": undefined;
+  "errors.joiTurnOutcomeUncommitted": undefined;
+  "errors.joiTurnCompletionEmpty": undefined;
+  "errors.joiModelToolcallLeak": undefined;
+  "errors.customModelToolCapabilityUnverified": undefined;
+  "errors.sourceAuth": undefined;
+  "errors.sourceBalance": undefined;
+  "errors.sourceConfiguration": undefined;
+  "errors.sourceAccess": undefined;
+  "errors.sourceSafetyRefusal": undefined;
+  "errors.sourceContentRefusal": undefined;
+  "errors.modelContextBudgetExhausted": undefined;
+  "errors.reasoningStreamError": undefined;
   "errors.conversationTitleInvalid": undefined;
   "errors.connectionUnavailable": undefined;
   "errors.readTimedOut": undefined;
@@ -690,6 +707,10 @@ export interface MessageParameters {
   "exportState.pair": undefined;
   "exportState.resume": undefined;
   "exportState.none": undefined;
+  "home.completedWorkPreserved": { "count": number };
+  "home.retrySynthesisWithExistingWork": undefined;
+  "home.resolveModelBalance": undefined;
+  "home.reviewModelContentPolicy": undefined;
   "home.piAutomaticCompaction": undefined;
   "home.piCompactionDefault": undefined;
   "home.image": undefined;
@@ -2260,6 +2281,23 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "Input awaiting confirmation",
     "common.previousPage": "Previous page",
     "common.nextPage": "Next page",
+    "errors.goalSynthesisCorrectionExhausted": "The final report failed evidence or format validation",
+    "errors.goalSynthesisReferenceInvalid": "The final report cites results or requirements that could not be verified",
+    "errors.goalSynthesisStateInvalid": "The model submitted the final report in an invalid format",
+    "errors.goalSynthesisCoverageIncomplete": "The final report lacks verified evidence for some requirements",
+    "errors.goalSynthesisOutcomeUncommitted": "The model did not submit a valid final report",
+    "errors.joiTurnOutcomeUncommitted": "The model did not submit a valid outcome",
+    "errors.joiTurnCompletionEmpty": "The model did not provide a final answer",
+    "errors.joiModelToolcallLeak": "The model returned the tool call as plain text",
+    "errors.customModelToolCapabilityUnverified": "The model did not demonstrate structured tool calling",
+    "errors.sourceAuth": "The primary model service rejected the credentials",
+    "errors.sourceBalance": "The primary model service has insufficient balance or quota",
+    "errors.sourceConfiguration": "The primary model service rejected the connection configuration",
+    "errors.sourceAccess": "The primary model service denied access to the selected model",
+    "errors.sourceSafetyRefusal": "The primary model service declined the request under its safety policy",
+    "errors.sourceContentRefusal": "The primary model service declined the request under its content policy",
+    "errors.modelContextBudgetExhausted": "The required task context exceeds the model capacity",
+    "errors.reasoningStreamError": "The primary model service did not complete the response",
     "errors.conversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
     "errors.connectionUnavailable": "Connection interrupted. Please try again.",
     "errors.readTimedOut": "The request timed out. Please try again.",
@@ -2523,6 +2561,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "Initial pairing (pair)",
     "exportState.resume": "Resume connection (resume)",
     "exportState.none": "None",
+    "home.completedWorkPreserved": "{count, plural, one {{count} completed work item is still available.} other {{count} completed work items are still available.}}",
+    "home.retrySynthesisWithExistingWork": "Continue this task to summarize the existing results again without rerunning completed work.",
+    "home.resolveModelBalance": "Add quota or change the primary model source, then continue this task.",
+    "home.reviewModelContentPolicy": "Review the policy for the model service and adjust the task before continuing.",
     "home.piAutomaticCompaction": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.",
     "home.piCompactionDefault": "Pi defaults",
     "home.image": "[Image",
@@ -4091,6 +4133,23 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "待确认的输入",
     "common.previousPage": "上一页",
     "common.nextPage": "下一页",
+    "errors.goalSynthesisCorrectionExhausted": "最终汇报未通过证据或格式校验",
+    "errors.goalSynthesisReferenceInvalid": "最终汇报引用了无法核实的结果或需求",
+    "errors.goalSynthesisStateInvalid": "模型提交的最终汇报格式无效",
+    "errors.goalSynthesisCoverageIncomplete": "最终汇报的部分要求缺少可核实的证据",
+    "errors.goalSynthesisOutcomeUncommitted": "模型没有提交有效的最终汇报",
+    "errors.joiTurnOutcomeUncommitted": "模型没有提交有效的处理结果",
+    "errors.joiTurnCompletionEmpty": "模型没有给出最终答复",
+    "errors.joiModelToolcallLeak": "模型把工具调用输出成了普通文本",
+    "errors.customModelToolCapabilityUnverified": "模型未能完成结构化工具调用",
+    "errors.sourceAuth": "主模型服务拒绝了当前凭据",
+    "errors.sourceBalance": "主模型服务余额或配额不足",
+    "errors.sourceConfiguration": "主模型服务拒绝了当前连接配置",
+    "errors.sourceAccess": "主模型服务拒绝访问所选模型",
+    "errors.sourceSafetyRefusal": "主模型服务因安全策略拒绝了请求",
+    "errors.sourceContentRefusal": "主模型服务因内容策略拒绝了请求",
+    "errors.modelContextBudgetExhausted": "任务所需的上下文超出模型容量",
+    "errors.reasoningStreamError": "主模型服务未能完成响应",
     "errors.conversationTitleInvalid": "请输入1到80个字符的单行标题。",
     "errors.connectionUnavailable": "连接暂时中断，请稍后重试。",
     "errors.readTimedOut": "请求读取超时，请稍后重试。",
@@ -4354,6 +4413,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "首次配对 pair",
     "exportState.resume": "恢复连接 resume",
     "exportState.none": "无",
+    "home.completedWorkPreserved": "已保留 {count} 项已完成的工作。",
+    "home.retrySynthesisWithExistingWork": "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。",
+    "home.resolveModelBalance": "请补充额度或更换主模型来源，再继续此任务。",
+    "home.reviewModelContentPolicy": "请核对模型服务的政策要求，调整任务后再继续。",
     "home.piAutomaticCompaction": "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。",
     "home.piCompactionDefault": "Pi 默认设置",
     "home.image": "[图片",
@@ -6294,6 +6357,40 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "上一页": "common.previousPage",
   "Next page": "common.nextPage",
   "下一页": "common.nextPage",
+  "The final report failed evidence or format validation": "errors.goalSynthesisCorrectionExhausted",
+  "最终汇报未通过证据或格式校验": "errors.goalSynthesisCorrectionExhausted",
+  "The final report cites results or requirements that could not be verified": "errors.goalSynthesisReferenceInvalid",
+  "最终汇报引用了无法核实的结果或需求": "errors.goalSynthesisReferenceInvalid",
+  "The model submitted the final report in an invalid format": "errors.goalSynthesisStateInvalid",
+  "模型提交的最终汇报格式无效": "errors.goalSynthesisStateInvalid",
+  "The final report lacks verified evidence for some requirements": "errors.goalSynthesisCoverageIncomplete",
+  "最终汇报的部分要求缺少可核实的证据": "errors.goalSynthesisCoverageIncomplete",
+  "The model did not submit a valid final report": "errors.goalSynthesisOutcomeUncommitted",
+  "模型没有提交有效的最终汇报": "errors.goalSynthesisOutcomeUncommitted",
+  "The model did not submit a valid outcome": "errors.joiTurnOutcomeUncommitted",
+  "模型没有提交有效的处理结果": "errors.joiTurnOutcomeUncommitted",
+  "The model did not provide a final answer": "errors.joiTurnCompletionEmpty",
+  "模型没有给出最终答复": "errors.joiTurnCompletionEmpty",
+  "The model returned the tool call as plain text": "errors.joiModelToolcallLeak",
+  "模型把工具调用输出成了普通文本": "errors.joiModelToolcallLeak",
+  "The model did not demonstrate structured tool calling": "errors.customModelToolCapabilityUnverified",
+  "模型未能完成结构化工具调用": "errors.customModelToolCapabilityUnverified",
+  "The primary model service rejected the credentials": "errors.sourceAuth",
+  "主模型服务拒绝了当前凭据": "errors.sourceAuth",
+  "The primary model service has insufficient balance or quota": "errors.sourceBalance",
+  "主模型服务余额或配额不足": "errors.sourceBalance",
+  "The primary model service rejected the connection configuration": "errors.sourceConfiguration",
+  "主模型服务拒绝了当前连接配置": "errors.sourceConfiguration",
+  "The primary model service denied access to the selected model": "errors.sourceAccess",
+  "主模型服务拒绝访问所选模型": "errors.sourceAccess",
+  "The primary model service declined the request under its safety policy": "errors.sourceSafetyRefusal",
+  "主模型服务因安全策略拒绝了请求": "errors.sourceSafetyRefusal",
+  "The primary model service declined the request under its content policy": "errors.sourceContentRefusal",
+  "主模型服务因内容策略拒绝了请求": "errors.sourceContentRefusal",
+  "The required task context exceeds the model capacity": "errors.modelContextBudgetExhausted",
+  "任务所需的上下文超出模型容量": "errors.modelContextBudgetExhausted",
+  "The primary model service did not complete the response": "errors.reasoningStreamError",
+  "主模型服务未能完成响应": "errors.reasoningStreamError",
   "Enter a title of 1 to 80 characters on one line.": "errors.conversationTitleInvalid",
   "请输入1到80个字符的单行标题。": "errors.conversationTitleInvalid",
   "Connection interrupted. Please try again.": "errors.connectionUnavailable",
@@ -6773,6 +6870,12 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "恢复连接 resume": "exportState.resume",
   "None": "exportState.none",
   "无": "exportState.none",
+  "Continue this task to summarize the existing results again without rerunning completed work.": "home.retrySynthesisWithExistingWork",
+  "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。": "home.retrySynthesisWithExistingWork",
+  "Add quota or change the primary model source, then continue this task.": "home.resolveModelBalance",
+  "请补充额度或更换主模型来源，再继续此任务。": "home.resolveModelBalance",
+  "Review the policy for the model service and adjust the task before continuing.": "home.reviewModelContentPolicy",
+  "请核对模型服务的政策要求，调整任务后再继续。": "home.reviewModelContentPolicy",
   "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.": "home.piAutomaticCompaction",
   "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。": "home.piAutomaticCompaction",
   "Pi defaults": "home.piCompactionDefault",
@@ -8819,6 +8922,23 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
 export const errorKeys: Readonly<Record<string, MessageKey>> = {
   "conversation_busy": "chat.stopBeforeArchive",
   "conversation_archived": "chat.restoreFirst",
+  "goal_synthesis_correction_exhausted": "errors.goalSynthesisCorrectionExhausted",
+  "goal_synthesis_reference_invalid": "errors.goalSynthesisReferenceInvalid",
+  "goal_synthesis_state_invalid": "errors.goalSynthesisStateInvalid",
+  "goal_synthesis_coverage_incomplete": "errors.goalSynthesisCoverageIncomplete",
+  "joi_goal_synthesis_outcome_uncommitted": "errors.goalSynthesisOutcomeUncommitted",
+  "joi_turn_outcome_uncommitted": "errors.joiTurnOutcomeUncommitted",
+  "joi_turn_completion_empty": "errors.joiTurnCompletionEmpty",
+  "joi_model_toolcall_leak": "errors.joiModelToolcallLeak",
+  "custom_model_tool_capability_unverified": "errors.customModelToolCapabilityUnverified",
+  "source_auth": "errors.sourceAuth",
+  "source_balance": "errors.sourceBalance",
+  "source_configuration": "errors.sourceConfiguration",
+  "source_access": "errors.sourceAccess",
+  "source_safety_refusal": "errors.sourceSafetyRefusal",
+  "source_content_refusal": "errors.sourceContentRefusal",
+  "model_context_budget_exhausted": "errors.modelContextBudgetExhausted",
+  "reasoning_stream_error": "errors.reasoningStreamError",
   "conversation_title_invalid": "errors.conversationTitleInvalid",
   "connection_unavailable": "errors.connectionUnavailable",
   "read_timed_out": "errors.readTimedOut",

@@ -18,15 +18,15 @@
     {
       "id": "529363b4-ba83-4f8c-946f-579a736f0406",
       "kind": "document",
-      "claim": "Layer responsibilities, one scheduler, durable inbox, policy-gated outbox and safe projections.",
+      "claim": "Layer responsibilities, one scheduler, durable inbox, policy-gated outbox and safe projections. The root tick schedules ordinary turns serially and independent goal syntheses concurrently with same-goal exclusion.",
       "location": {
         "path": "docs/03-system-architecture.md"
       },
-      "hash": "cae0aec77fba64eaa7f3ccf63a99a82b0763b00a76c577ae4abd0df50aafe82b",
-      "observedAt": "2026-11-11T04:10:28.621Z",
+      "hash": "3b7dcfebf6dcfa6ed577b1957e4f46ee0e133e8d630435d82a87e8dfe7e6142e",
+      "observedAt": "2026-11-19T16:56:14.563Z",
       "range": {
         "startLine": 1,
-        "endLine": 25
+        "endLine": 159
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "5f276c53a6f1e2fc98cb1b00aae5b928538121300fc6b5ceaf9622f699ae183e",
-      "observedAt": "2026-11-19T16:14:53.420Z",
+      "hash": "ecf60c0878116dc698af7c29d7bb20129dae98e37a4e8389232372eeaa6a8028",
+      "observedAt": "2026-11-19T16:56:26.778Z",
       "range": {
         "startLine": 1,
-        "endLine": 758
+        "endLine": 761
       }
     },
     {
@@ -998,12 +998,12 @@
     {
       "id": "60fe6b4d-06e2-46f5-8e7f-e680ff854cf9",
       "kind": "source-code",
-      "claim": "The primary reasoning port carries Turn isolation, scoped prior Turn identity lookup, and private session projections. The reasoning port distinguishes trusted ready coverage exhaustion and a bounded read-only disposition pass.",
+      "claim": "The primary reasoning port carries Turn isolation, scoped prior Turn identity lookup, and private session projections. The reasoning port distinguishes trusted ready coverage exhaustion and a bounded read-only disposition pass. Synthesis tool events carry a safe reason code separately from trusted correction and coverage exhaustion flags.",
       "location": {
         "path": "src/main/application/ports/primary-reasoning-runtime.ts"
       },
-      "hash": "521048ec7d80141bc14d8c7ffa0b48fac455e659f978a061b0fc1fa7c5b6d8d5",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "eae4efbd748017d7a7ceef585510348c08ec91cda3cb84ef5b760b1e28d22427",
+      "observedAt": "2026-11-19T16:43:38.659Z",
       "range": {
         "startLine": 1,
         "endLine": 98
@@ -1012,15 +1012,15 @@
     {
       "id": "16802d66-5c1a-4e9f-8db6-af5647932e94",
       "kind": "source-code",
-      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded.",
+      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded. Turn failure diagnostics can identify outcome persistence and include a bounded SQLite error number.",
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "53bb3d4558609c01facb0bff40ae36fb276ef8db16a3b1ec4c979d6959babef9",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "71ce6585e32803b4f04fc3fea26269fd2cd2fc05fa00c8c2e7e35894e17e5136",
+      "observedAt": "2026-11-19T16:56:26.780Z",
       "range": {
         "startLine": 1,
-        "endLine": 884
+        "endLine": 886
       }
     },
     {
@@ -1068,15 +1068,15 @@
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary Pi isolates business Turns. Evidence Turns load legacy history only through scoped explicit reads; other Turns may retain a legacy summary. A disposition pass exposes only inspection and conclusion tools and forwards the trusted coverage exhaustion marker.",
+      "claim": "Primary Pi isolates business Turns. Evidence Turns load legacy history through scoped explicit reads. The disposition pass exposes inspection and completion tools, and forwards safe validation reasons independently of trusted correction and coverage exhaustion. Persisted result markers bind source and model revisions so a safe fallback cannot replay the earlier route's receipt.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "783e988f1348afa42328a661947f6c533cc18f2ca5d05dab97a429172e54ffaf",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "2d6de0b4759a4e2184208689a64201f383b31b0a29e12e9a98cd62d00157dac1",
+      "observedAt": "2026-11-19T16:56:26.780Z",
       "range": {
         "startLine": 1,
-        "endLine": 432
+        "endLine": 439
       }
     },
     {
@@ -1348,15 +1348,15 @@
     {
       "id": "70cfe0d8-8277-4d50-a38e-99188dc3d467",
       "kind": "source-code",
-      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded.",
+      "claim": "Diagnostics expose numeric/timing and stable safe identities, including projection degradation; private paths and message bodies stay excluded. Turn failure diagnostics can identify outcome persistence and include a bounded SQLite error number.",
       "location": {
         "path": "src/main/application/ports/runtime-diagnostics.ts"
       },
-      "hash": "53bb3d4558609c01facb0bff40ae36fb276ef8db16a3b1ec4c979d6959babef9",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "71ce6585e32803b4f04fc3fea26269fd2cd2fc05fa00c8c2e7e35894e17e5136",
+      "observedAt": "2026-11-19T16:56:26.780Z",
       "range": {
         "startLine": 1,
-        "endLine": 884
+        "endLine": 886
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards.",
-      "hash": "9ea741131d555310419f7f998cc75e706fe00c45fb142161277f12d927a911b9",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance.",
+      "hash": "ff7c0de28cf542534bd6049748f9440d5df3cdf78d593b72fe24f1fea8999c0e",
+      "observedAt": "2026-11-19T16:43:38.659Z",
       "range": {
         "startLine": 1,
-        "endLine": 1843
+        "endLine": 1851
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer.",
-      "hash": "f064b35c5e9aa2d38229531c95d2cc301f7c062ddc15a050ac8d4b336a1cd811",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work.",
+      "hash": "e7b1efcc756ed7f8df517ce5e0af57064765782536aa81297fe46fafe8af95f9",
+      "observedAt": "2026-11-19T16:43:38.660Z",
       "range": {
         "startLine": 1,
-        "endLine": 2437
+        "endLine": 2494
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "7e8549531b416b23f0d824bf073498907aff4c7c366c98bade0811b9be3622c7",
-      "observedAt": "2026-11-19T12:43:34.997Z",
+      "hash": "9666c966b7dc7fd3e6a120dc732af1ba74a7cb5b19c77a899aafe6f6a391dfee",
+      "observedAt": "2026-11-19T16:46:33.564Z",
       "range": {
         "startLine": 1,
-        "endLine": 9958
+        "endLine": 10067
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "dd3c62f5e1ce2d0bb33a52ad9a7badde32f7c31f80f9353eb6e2a76dba0571a5",
-      "observedAt": "2026-11-19T12:43:34.997Z",
+      "hash": "7b161a325e51baf37732c107fe34ba8614e0443f3beb6e3792ca49e8e0bbe4ed",
+      "observedAt": "2026-11-19T16:46:33.568Z",
       "range": {
         "startLine": 1,
-        "endLine": 7004
+        "endLine": 7103
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "aa90e42f48ec79cb1b213062e119aabad6428c172c8297a3a6cfdee036ee0acf",
-      "observedAt": "2026-11-19T12:43:34.997Z",
+      "hash": "9ed5b13fdcc309e029f1a93b6fe6e96cbadfd1030672e618eb0915c1b4820195",
+      "observedAt": "2026-11-19T16:46:33.571Z",
       "range": {
         "startLine": 1,
-        "endLine": 8846
+        "endLine": 8966
       }
     },
     {
@@ -2440,12 +2440,12 @@
     {
       "id": "0139295d-c933-4f90-8dbe-e817016f1e65",
       "kind": "document",
-      "claim": "AC-07/14/44/48/53 map Worker CLI detection, current-source dispatch admission, path identity and recovery projection to bounded regressions.",
+      "claim": "AC-07/14/44/48/53 map Worker CLI detection, current-source dispatch admission, path identity and recovery projection to bounded regressions. AC-10 covers serial ordinary turns, same-goal exclusion and bounded synthesis concurrency.",
       "location": {
         "path": "docs/10-requirements-traceability.md"
       },
-      "hash": "add74747323e4248d0890c1e1c43283c07e1ba515a338c64de7fb4ee484f8dc1",
-      "observedAt": "2026-11-15T12:13:09.113Z",
+      "hash": "0daa9e71b27798454b760153fc9ad782f47db130911d3fa813a13b7c8039b3cc",
+      "observedAt": "2026-11-19T16:56:14.563Z",
       "range": {
         "startLine": 1,
         "endLine": 286
@@ -2678,29 +2678,29 @@
     {
       "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
       "kind": "source-code",
-      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Bounded requirements retain mandatory entries and trusted input guidance; inactive evidence turns stop without redispatch. Verified read-only history and Skill reads preserve recovery eligibility. Exhausted coverage can lead to a bounded read-only disposition, with safe continuation or a persistent blocked result.",
+      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Read-only recovery after trusted rejection can verify evidence and submit a complete report, continue for a concrete gap, or persist a blocked result when coverage is insufficient. Unresolved reference and format failures retain their reason. Recovery never repeats Work or relaxes validation. After exhausted read-only recovery, Joi tries an untried READY source before settling. Source-specific availability failures can switch without bypassing replay guards. Outcome persistence diagnostics carry a safe stage and SQLite number.",
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "033260507df69b051e6406f6882477d28c6db82aae2cae8966ed84affcfeb720",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "62778ed820e93ac8c3f79b6abe2ab1dd3362b70413be7c86de48caaf3f14f363",
+      "observedAt": "2026-11-19T16:57:02.458Z",
       "range": {
         "startLine": 1,
-        "endLine": 933
+        "endLine": 968
       }
     },
     {
       "id": "e8632c11-c82b-419b-8d13-3011c3a11f74",
       "kind": "source-code",
-      "claim": "Durable retry and restart admission stop exhausted synthesis correction and deterministic source failures while retaining transient backoff.",
+      "claim": "Durable retry and restart admission stop exhausted synthesis correction and deterministic source failures while retaining transient backoff. Up to four independent goal syntheses run alongside one ordinary turn. Goal reservations survive cancellation until the driver settles and protect active turns from orphan recovery.",
       "location": {
         "path": "src/main/application/actors/components/joi-task-component.ts"
       },
-      "hash": "813203db0ab0314ac42e960c7a209c7403b1c234287768a82a64d1de5022a176",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "c18e8aeb85b1d7343bee28b06cda85d36c2398f8313afa72fa046e62ec73c7a9",
+      "observedAt": "2026-11-19T16:56:14.563Z",
       "range": {
         "startLine": 1,
-        "endLine": 262
+        "endLine": 278
       }
     },
     {
@@ -2748,15 +2748,15 @@
     {
       "id": "42b8045e-50f5-4144-9960-3de0e9b2c402",
       "kind": "source-code",
-      "claim": "Real synthetic Pi completion and correction pass through SQLite validation without publishing private claims or conflicts. A synthetic supplier verifies the real Pi tool restriction and persisted continuation after coverage exhaustion.",
+      "claim": "Synthetic Pi and SQLite tests exercise restricted recovery tools and persistence of continuation or validated completion after trusted synthesis rejection. Two synthetic Pi sources sharing durable SQLite prove that the backup actually executes. The real Wayfinder traversal enqueues one review and a verified final review clears the map without redispatch. Backup coverage uses the native Pi session store in a disposable directory.",
       "location": {
         "path": "tests/integration/semantic-synthesis-state.test.ts"
       },
-      "hash": "c9d65910844151c9a14a7b6092ba0b4d80432d694a10e3edd201fb1f08f63ac7",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "e1a4f7635eba9d53ee263344a62fde83f2be7b4b0660d530185001963dc691bd",
+      "observedAt": "2026-11-19T16:57:58.616Z",
       "range": {
         "startLine": 1,
-        "endLine": 168
+        "endLine": 215
       }
     },
     {
@@ -2776,15 +2776,15 @@
     {
       "id": "f0062573-1c17-4520-b6bd-3106fb939515",
       "kind": "source-code",
-      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors. Recovery tests cover safe connected continuation after read-only Skill or history inspection, bounded blockage and rejection after potential Work mutation.",
+      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors. Recovery tests cover safe continuation, bounded blockage, reason preservation and rejection after potential Work mutation. Tests also cover recovery after goal requirement reconciliation and SQLite outcome-stage diagnostics without private error text.",
       "location": {
         "path": "tests/unit/joi-synthesis-validation.test.ts"
       },
-      "hash": "61bb049078a89f81feab8fe32d9d9ecca63dbb5d1d0e59955d81fea320d635ff",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "bacd7aeb8816fc77759e4f78ae1842d3c052c10303903e79983372cb3f9d12b4",
+      "observedAt": "2026-11-19T16:57:02.460Z",
       "range": {
         "startLine": 1,
-        "endLine": 151
+        "endLine": 174
       }
     },
     {
@@ -4022,15 +4022,15 @@
     {
       "id": "b07645af-27aa-4934-aa33-38152d841901",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement. Cross-version tests reuse unchanged scopes, enforce reads for current support, retain valid support alongside invalid references and enqueue one review for a partial decision.",
+      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement. Cross-version tests reuse unchanged scopes, enforce reads for current support, retain valid support alongside invalid references and enqueue one review for a partial decision. Recovery may read an existing result and submit a verified full report; missing or withdrawn evidence still requires continuation or blockage.",
       "location": {
         "path": "tests/integration/joi-review-coverage.test.ts"
       },
-      "hash": "acc2c22678a690e8f0093f6fee6957449c4604bd1ec2a7bcf8bd480e947ebb1e",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "d1b9f2196207b89941d018e7533c8b05953fb25ed50783fac76f264eb62b2d05",
+      "observedAt": "2026-11-19T16:43:38.662Z",
       "range": {
         "startLine": 1,
-        "endLine": 286
+        "endLine": 290
       }
     },
     {

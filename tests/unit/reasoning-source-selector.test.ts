@@ -409,6 +409,16 @@ describe("deterministic-source-fallback-classification", () => {
     expect(await new ReasoningSourceSelector(repository).selectFallback({ currentSourceId: "first", failure, formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-1" })).toBeNull();
   });
 
+  it.each(["auth", "balance", "configuration"] as const)("continues a goal on an untried READY source after %s", async failure => {
+    const selector = new ReasoningSourceSelector(repository);
+    const request = { currentSourceId: "second", failure, formalOutputStarted: false, sideEffectStarted: false,
+      turnId: "goal-turn", attemptedSourceIds: new Set(["second"]) };
+    await expect(selector.selectFallback(request)).resolves.toMatchObject({ sourceId: "first" });
+    await expect(selector.selectFallback({ ...request, attemptedSourceIds: new Set(["first", "second"]) })).resolves.toBeNull();
+    await expect(selector.selectFallback({ ...request, sideEffectStarted: true })).resolves.toBeNull();
+    await expect(selector.selectFallback({ ...request, failure: "content_refusal" })).resolves.toBeNull();
+  });
+
   it("does not replay a turn after output or side effects begin", async () => {
     const selector = new ReasoningSourceSelector(repository);
     expect(await selector.selectFallback({ currentSourceId: "first", failure: "timeout", formalOutputStarted: true, sideEffectStarted: false, turnId: "turn-1" })).toBeNull();

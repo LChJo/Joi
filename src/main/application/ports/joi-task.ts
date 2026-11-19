@@ -11,6 +11,9 @@ export interface JoiTurnRetryState {
 export interface JoiTaskPendingInput {
   createdAt: string;
   inputId: string;
+  goalInputId?: string;
+  /** A bound goal result synthesis can run alongside other goals. */
+  synthesis?: boolean;
   /** Persisted user actions are deterministic and do not require a model source. */
   requiresModelSource?: boolean;
   retryState?: JoiTurnRetryState;

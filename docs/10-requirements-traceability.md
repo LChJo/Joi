@@ -59,7 +59,7 @@ AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖�
 | AC-07 | Partner registry/revision 后派发 | 已自动证实：添加/更新/停用/删除均先追加不可变 registry revision；dispatch attempt 固定引用 revision；历史 revision 保留当时状态 |
 | AC-08 | Local Pi/A2A 统一且敏感字段脱敏 | Hub contract 已证实：统一 runner/result、prompt/workspace 脱敏；真实两类搭档待验收 |
 | AC-09 | Work DAG 与确定性并发硬边界 | 已自动证实：DAG waves、policy gate、READ/WRITE workspace lease 与到期恢复 |
-| AC-10 | 连续输入在 Turn 边界安排 | 已自动证实：joi task component 单槽位串行安全边界（ADR 0009，取代 `JoiInputScheduler`），Work DAG 仍可并行 |
+| AC-10 | 连续输入在 Turn 边界安排 | 已自动证实：普通输入单槽、同目标回合互斥、独立目标总结有界并行（ADR 0009），Work DAG 仍可并行 |
 | AC-11 | Partner 结果先成为工作台 event | 已自动证实：`partner_result_events` → 预绑定 joi input → `work_reassign` |
 | AC-12 | outbox 与稳定幂等 | local/A2A 均经 outbox、稳定 action/message id、terminal 去重已证实；真实四点强杀待验收 |
 | AC-13 | Pi 凭据只进 safeStorage | 已自动证实：CredentialStore adapter、DTO/diagnostics/package secret scans |

@@ -136,7 +136,7 @@ it.each(["CONSUMED","ROUTED"])("rechecks an active legacy synthesis (%s), surfac
   } finally { await fixture.close(); }
 });
 
-it.each(["valid","missing","withdrawn"])("applies the real coverage gate to a %s plain-text synthesis", async evidenceStatus => {
+it.each(["valid","missing","withdrawn","recovered"])("applies the real coverage gate to a %s plain-text synthesis", async evidenceStatus => {
   const fixture = await createGoalEvidenceFixture([{}]);
   try {
     const { workbenchId } = fixture;
@@ -155,8 +155,8 @@ it.each(["valid","missing","withdrawn"])("applies the real coverage gate to a %s
       db.prepare(`INSERT INTO joi_goal_outcomes (input_id,result_revision,requirements_revision,disposition,completion_summary,completed_at,updated_at,synthesis_state_json)
         VALUES ('goal',1,1,'CONTINUE','Uncommitted coverage',?,?,?)`).run(now,now,JSON.stringify(draft));
     });
-    if (evidenceStatus !== "missing") {
-      const results = new WorkResultService(fixture.repository,new SqliteGoalEvidenceRepository(fixture.database));
+    const results = new WorkResultService(fixture.repository,new SqliteGoalEvidenceRepository(fixture.database));
+    if (evidenceStatus === "valid" || evidenceStatus === "withdrawn") {
       await results.read({ goalInputId: "goal",workbenchId,resultId: "result-1",receipt: { turnId: "synthesis-turn",toolCallId: "prior-read" } });
     }
     fixture.database.transaction(db => {
@@ -181,20 +181,24 @@ it.each(["valid","missing","withdrawn"])("applies the real coverage gate to a %s
       runtime: {
         abort: () => undefined,followUp: () => undefined,steer: () => undefined,isRunning: () => false,
         restore: () => Promise.resolve(false),rollbackTurn: () => Promise.resolve(true),waitForIdle: () => Promise.resolve(),
-        startTurn: turn => {
+        startTurn: async turn => {
+          if (evidenceStatus === "recovered" && turn.repair === "synthesis-disposition") {
+            await results.read({ goalInputId: "goal",workbenchId,resultId: "result-1",receipt: { turnId: turn.turnId,toolCallId: "recovery-read" } });
+          }
           const delta = evidenceStatus === "missing" && turn.repair === "synthesis-disposition"
             ? "[joi synthesis outcome=RESULT_CONTINUE]\nThe report exists. The next review can read and verify it."
             : "[joi synthesis outcome=RESULT_SYNTHESIZED]\nComplete report.";
           turn.onEvent?.({ type: "text_delta",turnId: turn.turnId,delta });
           turn.onEvent?.({ type: "turn_finished",turnId: turn.turnId });
-          return Promise.resolve();
         },
       },
     });
     await coordinator.handle(fixture.inputId);
     const outcome = fixture.database.transaction(db => db.prepare("SELECT disposition,completion_summary FROM joi_goal_outcomes WHERE input_id='goal'").get());
-    expect(outcome?.disposition).toBe(evidenceStatus === "valid" ? "COMPLETED" : evidenceStatus === "missing" ? "CONTINUE" : "BLOCKED");
-    if (evidenceStatus !== "valid") expect(outcome?.completion_summary).not.toBe("Complete report.");
+    const covered = evidenceStatus === "valid" || evidenceStatus === "recovered";
+    expect(outcome?.disposition).toBe(covered ? "COMPLETED" : evidenceStatus === "missing" ? "CONTINUE" : "BLOCKED");
+    if (!covered) expect(outcome?.completion_summary).not.toBe("Complete report.");
+    expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM dispatch_attempts").get())?.n).toBe(1);
     if (evidenceStatus === "missing") {
       const harness = new SqliteJoiHarnessRepository(fixture.database);
       await harness.createMap({ goalInputId: "goal", workbenchId, now });

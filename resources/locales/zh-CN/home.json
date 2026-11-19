@@ -1,4 +1,8 @@
 {
+  "completedWorkPreserved": "已保留 {count} 项已完成的工作。",
+  "retrySynthesisWithExistingWork": "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。",
+  "resolveModelBalance": "请补充额度或更换主模型来源，再继续此任务。",
+  "reviewModelContentPolicy": "请核对模型服务的政策要求，调整任务后再继续。",
   "piAutomaticCompaction": "上下文占用超过所设窗口比例时，由 Pi 自动压缩。留空使用 Pi 默认设置。",
   "piCompactionDefault": "Pi 默认设置",
   "image": "[图片",

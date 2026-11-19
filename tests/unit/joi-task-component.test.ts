@@ -120,6 +120,59 @@ describe("JoiTaskComponent traversal scheduling", () => {
     expect(harness.calls).toEqual(["input_a", "input_b"]);
   });
 
+  it("starts up to four independent syntheses alongside ordinary scheduling", async () => {
+    const harness = makeHarness();
+    const syntheses = Array.from({ length: 5 }, (_, index) => ({
+      createdAt: BASE, goalInputId: `goal_${String(index)}`, inputId: `synthesis_${String(index)}`, synthesis: true,
+    }));
+    const [first] = syntheses;
+    if (first === undefined) throw new Error("Missing synthetic input");
+    harness.state.pending = [
+      first,
+      { createdAt: BASE, inputId: "review", goalInputId: first.goalInputId },
+      { ...first, inputId: "new_synthesis" },
+      { createdAt: BASE, inputId: "unrelated_input" },
+      ...syntheses.slice(1),
+    ];
+    await harness.component.update(ctxAt(0));
+    expect(harness.calls).toEqual(["synthesis_0", "unrelated_input", "synthesis_1", "synthesis_2", "synthesis_3"]);
+
+    harness.settle("synthesis_1");
+    await flush();
+    harness.state.pending = harness.state.pending.filter(({ inputId }) => inputId !== "synthesis_1");
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.calls.at(-1)).toBe("synthesis_4");
+    expect(harness.calls).toHaveLength(6);
+
+    harness.settle("synthesis_0");
+    harness.settle("unrelated_input");
+    await flush();
+    harness.state.pending = harness.state.pending.filter(({ inputId }) => inputId !== "synthesis_0" && inputId !== "unrelated_input");
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.calls.slice(6)).toEqual(["review"]);
+  });
+
+  it("retains a canceled synthesis reservation until it settles and recovers only orphaned turns", async () => {
+    const harness = makeHarness({ ignoreAbort: true });
+    const original = { createdAt: BASE, goalInputId: "goal", inputId: "synthesis", synthesis: true };
+    harness.state.pending = [original, { ...original, goalInputId: "other", inputId: "other_synthesis" }];
+    await harness.component.update(ctxAt(0));
+    harness.state.canceled = ["synthesis"];
+    harness.state.pending = [{ ...original, inputId: "replacement" }];
+    harness.state.stale = [{ inputId: "synthesis", turnId: "active" }, { inputId: "orphan", turnId: "stale" }];
+    await harness.component.update(ctxAt(31_000));
+    expect(harness.signals.get("synthesis")?.aborted).toBe(true);
+    expect(harness.signals.get("other_synthesis")?.aborted).toBe(false);
+    expect(harness.failTurns).toEqual(["stale"]);
+    expect(harness.calls).toEqual(["synthesis", "other_synthesis"]);
+
+    harness.settle("synthesis");
+    await flush();
+    await harness.component.update(ctxAt(32_000));
+    expect(harness.calls.at(-1)).toBe("replacement");
+    expect(harness.parks).toEqual([]);
+  });
+
   it("does not start work while no model source is READY", async () => {
     const harness = makeHarness({ ready: false });
     harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];

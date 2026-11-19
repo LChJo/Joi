@@ -414,11 +414,13 @@ export interface RuntimeDiagnosticEventMap {
     workbenchId: string;
     durationMs: number;
     errorCode: string;
+    failureStage?: "persist_outcome";
     inputId: string;
     observedToolCount: number;
     outcomeTools: readonly string[];
     repaired: boolean;
     sourceId: string;
+    sqliteCode?: number;
     turnId: string;
   };
   /** A failed Turn's transcript could not be taken back out of its session; the retry will read

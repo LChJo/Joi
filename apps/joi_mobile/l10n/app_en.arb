@@ -2139,6 +2139,91 @@
     "description": "common.nextPage",
     "placeholders": {}
   },
+  "errorsGoalSynthesisCorrectionExhausted": "The final report failed evidence or format validation",
+  "@errorsGoalSynthesisCorrectionExhausted": {
+    "description": "errors.goalSynthesisCorrectionExhausted",
+    "placeholders": {}
+  },
+  "errorsGoalSynthesisReferenceInvalid": "The final report cites results or requirements that could not be verified",
+  "@errorsGoalSynthesisReferenceInvalid": {
+    "description": "errors.goalSynthesisReferenceInvalid",
+    "placeholders": {}
+  },
+  "errorsGoalSynthesisStateInvalid": "The model submitted the final report in an invalid format",
+  "@errorsGoalSynthesisStateInvalid": {
+    "description": "errors.goalSynthesisStateInvalid",
+    "placeholders": {}
+  },
+  "errorsGoalSynthesisCoverageIncomplete": "The final report lacks verified evidence for some requirements",
+  "@errorsGoalSynthesisCoverageIncomplete": {
+    "description": "errors.goalSynthesisCoverageIncomplete",
+    "placeholders": {}
+  },
+  "errorsGoalSynthesisOutcomeUncommitted": "The model did not submit a valid final report",
+  "@errorsGoalSynthesisOutcomeUncommitted": {
+    "description": "errors.goalSynthesisOutcomeUncommitted",
+    "placeholders": {}
+  },
+  "errorsJoiTurnOutcomeUncommitted": "The model did not submit a valid outcome",
+  "@errorsJoiTurnOutcomeUncommitted": {
+    "description": "errors.joiTurnOutcomeUncommitted",
+    "placeholders": {}
+  },
+  "errorsJoiTurnCompletionEmpty": "The model did not provide a final answer",
+  "@errorsJoiTurnCompletionEmpty": {
+    "description": "errors.joiTurnCompletionEmpty",
+    "placeholders": {}
+  },
+  "errorsJoiModelToolcallLeak": "The model returned the tool call as plain text",
+  "@errorsJoiModelToolcallLeak": {
+    "description": "errors.joiModelToolcallLeak",
+    "placeholders": {}
+  },
+  "errorsCustomModelToolCapabilityUnverified": "The model did not demonstrate structured tool calling",
+  "@errorsCustomModelToolCapabilityUnverified": {
+    "description": "errors.customModelToolCapabilityUnverified",
+    "placeholders": {}
+  },
+  "errorsSourceAuth": "The primary model service rejected the credentials",
+  "@errorsSourceAuth": {
+    "description": "errors.sourceAuth",
+    "placeholders": {}
+  },
+  "errorsSourceBalance": "The primary model service has insufficient balance or quota",
+  "@errorsSourceBalance": {
+    "description": "errors.sourceBalance",
+    "placeholders": {}
+  },
+  "errorsSourceConfiguration": "The primary model service rejected the connection configuration",
+  "@errorsSourceConfiguration": {
+    "description": "errors.sourceConfiguration",
+    "placeholders": {}
+  },
+  "errorsSourceAccess": "The primary model service denied access to the selected model",
+  "@errorsSourceAccess": {
+    "description": "errors.sourceAccess",
+    "placeholders": {}
+  },
+  "errorsSourceSafetyRefusal": "The primary model service declined the request under its safety policy",
+  "@errorsSourceSafetyRefusal": {
+    "description": "errors.sourceSafetyRefusal",
+    "placeholders": {}
+  },
+  "errorsSourceContentRefusal": "The primary model service declined the request under its content policy",
+  "@errorsSourceContentRefusal": {
+    "description": "errors.sourceContentRefusal",
+    "placeholders": {}
+  },
+  "errorsModelContextBudgetExhausted": "The required task context exceeds the model capacity",
+  "@errorsModelContextBudgetExhausted": {
+    "description": "errors.modelContextBudgetExhausted",
+    "placeholders": {}
+  },
+  "errorsReasoningStreamError": "The primary model service did not complete the response",
+  "@errorsReasoningStreamError": {
+    "description": "errors.reasoningStreamError",
+    "placeholders": {}
+  },
   "errorsConversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
   "@errorsConversationTitleInvalid": {
     "description": "Conversation titles must contain text within the title length limit and cannot contain control characters or line breaks.",
@@ -3581,6 +3666,30 @@
   "exportStateNone": "None",
   "@exportStateNone": {
     "description": "No diagnostic failure",
+    "placeholders": {}
+  },
+  "homeCompletedWorkPreserved": "{count, plural, one {{count} completed work item is still available.} other {{count} completed work items are still available.}}",
+  "@homeCompletedWorkPreserved": {
+    "description": "home.completedWorkPreserved",
+    "placeholders": {
+      "count": {
+        "type": "num"
+      }
+    }
+  },
+  "homeRetrySynthesisWithExistingWork": "Continue this task to summarize the existing results again without rerunning completed work.",
+  "@homeRetrySynthesisWithExistingWork": {
+    "description": "home.retrySynthesisWithExistingWork",
+    "placeholders": {}
+  },
+  "homeResolveModelBalance": "Add quota or change the primary model source, then continue this task.",
+  "@homeResolveModelBalance": {
+    "description": "home.resolveModelBalance",
+    "placeholders": {}
+  },
+  "homeReviewModelContentPolicy": "Review the policy for the model service and adjust the task before continuing.",
+  "@homeReviewModelContentPolicy": {
+    "description": "home.reviewModelContentPolicy",
     "placeholders": {}
   },
   "homePiAutomaticCompaction": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.",

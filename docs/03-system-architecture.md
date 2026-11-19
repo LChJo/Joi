@@ -155,7 +155,7 @@ flowchart LR
 
 - SQLite repositories：所有持久实体与迁移。
 - Durable scheduler：只负责把到期规则写成事件，不直接调用 Agent。
-- Actor tree（ADR 0009）：唯一根 tick 按 joi → workbench → agent 顺序遍历收敛；actor 无定时器、不互发消息，协调只经 SQLite 事实表；输入串行单槽位驱动推理 turn，partner 执行在 agent 层 ack 后运行、后续 tick 收敛终态，崩溃孤儿由启动首 tick 扫描收尾。失败的 turn 在收尾时中止其推理会话，残留流状态不得毒化同会话的后续 turn；同一输入连续即时失败超过上限（默认 8）即写入 migration 040 定义的独立失败事实并停摆，调度端口不具备用户取消能力。失败投影只公开有界原因码、尝试次数、是否已开始执行和枚举处理建议，杜绝 failTurn→重投 的崩溃环且不泄露原始异常。joi actor 还挂 harness component（ADR 0010）：遍历目标地图事实表（maps/paths/decisions/fog），为建图 goal 落图、把走完一层结果的 goal 以 review 系统输入排队进同一单槽位，由 joi 推理 turn 决定下一层路径或 MAP_CLEARED；组件自身不推理、不派发，唯一调度权威不变。
+- Actor tree（ADR 0009）：唯一根 tick 按 joi → workbench → agent 顺序遍历收敛；actor 无定时器、不互发消息，协调只经 SQLite 事实表；普通输入使用串行槽，独立目标综合最多四槽并行，同一目标的回合互斥，partner 执行在 agent 层 ack 后运行、后续 tick 收敛终态，崩溃孤儿由启动首 tick 扫描收尾。失败的 turn 在收尾时中止其推理会话，残留流状态不得毒化同会话的后续 turn；同一输入连续即时失败超过上限（默认 8）即写入 migration 040 定义的独立失败事实并停摆，调度端口不具备用户取消能力。失败投影只公开有界原因码、尝试次数、是否已开始执行和枚举处理建议，杜绝 failTurn→重投 的崩溃环且不泄露原始异常。joi actor 还挂 harness component（ADR 0010）：遍历目标地图事实表（maps/paths/decisions/fog），为建图 goal 落图、把走完一层结果的 goal 以 review 系统输入排队进普通串行槽，由 joi 推理 turn 决定下一层路径或 MAP_CLEARED；组件自身不推理、不派发，唯一调度权威不变。
 - A2A gateway：Card、Bearer、network policy、stream/get/cancel/resubscribe、Artifact。
 - Connection breaker：按 Agent Connection/凭据版本共享 429/503 冷却，不阻塞事件持久化。
 - Outbox dispatcher：事务提交后的外部调用；`partner.dispatch` 由 agent actor 领取交付（ADR 0009）。

@@ -29,19 +29,28 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
   }) {}
 
   async listPendingInputs(): Promise<JoiTaskPendingInput[]> {
+    // Each lane has its own scan window so a backlog in one cannot hide the other.
     const pending = (this.dependencies.database.transaction((connection) => connection.prepare(`
-      SELECT i.input_id, i.created_at, i.status,i.turn_failure_count,i.turn_failed_at,
-             i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
-             CASE WHEN EXISTS (
-               SELECT 1 FROM joi_user_action_requests action
-                WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
-             ) THEN 0 ELSE 1 END AS requires_model_source
-        FROM joi_inbox_messages i
-       WHERE ${JOI_RUNNABLE_INPUT_SQL}
-       ORDER BY i.created_at, i.input_id LIMIT 50`).all()) as Row[])
+      WITH runnable AS NOT MATERIALIZED (
+        SELECT i.input_id, i.goal_input_id, i.created_at, i.status,i.turn_failure_count,i.turn_failed_at,
+               i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
+               (i.goal_input_id IS NOT NULL AND i.workbench_id IS NOT NULL AND i.result_revision IS NOT NULL
+                 AND i.input_id GLOB 'joi_result_input:goal:*') AS synthesis_turn,
+               CASE WHEN EXISTS (
+                 SELECT 1 FROM joi_user_action_requests action
+                  WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
+               ) THEN 0 ELSE 1 END AS requires_model_source
+          FROM joi_inbox_messages i WHERE ${JOI_RUNNABLE_INPUT_SQL}
+      )
+      SELECT * FROM (SELECT * FROM runnable WHERE synthesis_turn = 0 ORDER BY created_at, input_id LIMIT 50)
+      UNION ALL
+      SELECT * FROM (SELECT * FROM runnable WHERE synthesis_turn = 1 ORDER BY created_at, input_id LIMIT 50)
+      ORDER BY created_at, input_id`).all()) as Row[])
       .map((row) => ({
         createdAt: textValue(row, "created_at"),
         inputId: textValue(row, "input_id"),
+        ...(typeof row.goal_input_id === "string" ? { goalInputId: row.goal_input_id } : {}),
+        ...(row.synthesis_turn === 1 ? { synthesis: true } : {}),
         requiresModelSource: row.requires_model_source !== 0,
         retryState: joiTurnRetryState(row),
       }));

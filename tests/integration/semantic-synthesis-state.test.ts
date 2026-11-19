@@ -1,10 +1,14 @@
+import path from "node:path";
 import { createGoalEvidenceFixture } from "../support/goal-evidence-fixture.js";
 import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { Type } from "typebox";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools, type FauxResponseFactory } from "@earendil-works/pi-ai";
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
+import { JoiHarnessComponent } from "../../src/main/application/actors/components/joi-harness-component.js";
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
+import { PiNativeSessionStore } from "../../src/main/infrastructure/pi/pi-native-session-store.js";
 import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
+import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 
 const handoff = { version: 1 as const, conclusion: "SEMANTIC_CONCLUSION", requirementIds: [], evidenceResultIds: [], artifactRefs: [],
   unresolved: ["MIDDLE_GAP"], conflicts: ["CONFLICT_REQUIRES_REVIEW"] };
@@ -15,46 +19,71 @@ const state = { version: 1 as const,
   conflicts: [{ description: "CONFLICT_REQUIRES_REVIEW", resultIds: ["result-1", "result-2"] }] };
 
 describe("semantic incremental synthesis state", () => {
-  it("offers only inspection and disposition tools after trusted coverage exhaustion", async () => {
+  it.each([
+    ["goal_synthesis_coverage_incomplete", false],
+    ["goal_synthesis_reference_invalid", false],
+    ["goal_synthesis_coverage_incomplete", true],
+    ["goal_synthesis_reference_invalid", true],
+  ] as const)("recovers from %s with restricted tools (fallback=%s)", async (reasonCode, useFallback) => {
     const fixture = await createGoalEvidenceFixture([{}]);
     const faux = fauxProvider({ provider: "synthesis-disposition-flow" });
     const models = createModels();
     models.setProvider(faux.provider);
     const normalCompletion = () => fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: "RESULT_SYNTHESIZED" })], { stopReason: "toolUse" });
+    const outcome = reasonCode === "goal_synthesis_coverage_incomplete" ? "RESULT_CONTINUE" : "RESULT_SYNTHESIZED";
+    const summary = outcome === "RESULT_CONTINUE"
+      ? "The existing report is useful. Verify the missing appendix next." : "The verified report is ready.";
+    const finish: FauxResponseFactory = context => {
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["turn_complete"]);
+      return fauxAssistantMessage([fauxText(summary), fauxToolCall("turn_complete", { outcome })], { stopReason: "toolUse" });
+    };
     faux.setResponses([
       context => {
         expect(getCurrentTools(context.messages).map(tool => tool.name)).toContain("work_supplement");
         return normalCompletion();
       },
       normalCompletion,
-      context => {
-        expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["turn_complete"]);
-        return fauxAssistantMessage([fauxText("The existing report is useful. Verify the missing appendix next."),
-          fauxToolCall("turn_complete", { outcome: "RESULT_CONTINUE" })], { stopReason: "toolUse" });
-      },
+      useFallback ? () => fauxAssistantMessage([fauxText("Draft without a conclusion.")]) : finish,
     ]);
     let rejected = 0;
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, thinkingLevel: "off",
-      sessionStore: new SqlitePiReasoningSessionStore(fixture.database),
-      tools: [
+    const sessionStore = new SqlitePiReasoningSessionStore(fixture.database);
+    const tools: ConstructorParameters<typeof PiReasoningRuntime>[0]["tools"] = [
         { name: "turn_complete", label: "Complete", description: "Complete", parameters: Type.Object({ outcome: Type.String() }),
           execute: (_id, args) => {
-            const { outcome } = args as { outcome: string };
-            if (outcome === "RESULT_CONTINUE") return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ outcome }) }],
+            const { outcome: decision } = args as { outcome: string };
+            if (rejected === 2) return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ outcome: decision }) }],
               details: {}, terminate: true });
             const exhausted = ++rejected === 2;
-            return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ status: exhausted ? "FAILED" : "RETRY_REQUIRED" }) }],
-              details: exhausted ? { correctionExhausted: true, synthesisCoverageExhausted: true } : {}, isError: true, terminate: exhausted });
+            return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ reasonCode, status: exhausted ? "FAILED" : "RETRY_REQUIRED" }) }],
+              details: { reasonCode, correctionExhausted: exhausted, synthesisCoverageExhausted: reasonCode === "goal_synthesis_coverage_incomplete" },
+              isError: true, terminate: exhausted });
           } },
         { name: "work_supplement", label: "Supplement", description: "Supplement", parameters: Type.Object({}),
           execute: () => Promise.reject(new Error("The disposition pass must never dispatch work.")) },
-      ],
-    });
+    ];
+    const runtimeOptions = { thinkingLevel: "off" as const, sessionStore, tools,
+      ...(useFallback ? { nativeSessions: new PiNativeSessionStore(path.join(fixture.root, "native")) } : {}) };
+    const runtime = new PiReasoningRuntime({ ...runtimeOptions, model: faux.getModel(), models });
+    const backup = fauxProvider({ provider: "synthesis-disposition-fallback" });
+    const backupModels = createModels();
+    backupModels.setProvider(backup.provider);
+    backup.setResponses(useFallback ? [finish] : []);
+    const backupRuntime = new PiReasoningRuntime({ ...runtimeOptions, model: backup.getModel(), models: backupModels });
+    const start = runtime.startTurn.bind(runtime);
+    vi.spyOn(runtime, "startTurn").mockImplementation(turn => turn.sourceId === "backup" ? backupRuntime.startTurn(turn) : start(turn));
     try {
       fixture.database.transaction(db => db.prepare("UPDATE joi_turns SET status='COMPLETED' WHERE turn_id='synthesis-turn'").run());
+      const harness = new SqliteJoiHarnessRepository(fixture.database);
+      const now = fixture.clock.now().toISOString();
+      await harness.createMap({ goalInputId: "goal", workbenchId: fixture.workbenchId, now });
+      await harness.synchronizeWorkPaths({ now });
       const coordinator = new JoiCoordinator({ clock: fixture.clock, ids: fixture.ids, runtime, workbenches: fixture.workbenches,
         router: { decide: () => Promise.reject(new Error("bound goal")) },
-        sources: { selectInitial: turnId => Promise.resolve({ turnId, modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }) },
+        sources: {
+          selectInitial: turnId => Promise.resolve({ turnId, modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }),
+          selectFallback: ({ currentSourceId, turnId }) => Promise.resolve(useFallback && currentSourceId === "fake"
+            ? { turnId, modelId: "backup", modelRevisionId: "backup", sourceId: "backup", sourceRevisionId: "backup" } : null),
+        },
         store: { loadInput: id => fixture.inbox.loadInput(id),
           createTurn: ({ inputId, turnId, sessionId, workbenchId, createdAt }) =>
             fixture.inbox.createTurn({ inputId, turnId, sessionId, workbenchId, createdAt }),
@@ -63,8 +92,26 @@ describe("semantic incremental synthesis state", () => {
       await coordinator.handle(fixture.inputId);
       expect(rejected).toBe(2);
       expect(faux.getPendingResponseCount()).toBe(0);
+      expect(backup.getPendingResponseCount()).toBe(0);
       const saved = fixture.database.transaction(db => db.prepare("SELECT disposition,completion_summary FROM joi_goal_outcomes WHERE input_id='goal'").get());
-      expect(saved).toMatchObject({ disposition: "CONTINUE", completion_summary: "The existing report is useful. Verify the missing appendix next." });
+      expect(saved).toMatchObject({ disposition: outcome === "RESULT_CONTINUE" ? "CONTINUE" : "COMPLETED", completion_summary: summary });
+      const traversal = new JoiHarnessComponent({ reviewEnabled: true, scan: harness, writer: harness, scanEveryMillis: 0 });
+      await traversal.update({ clock: fixture.clock, now: fixture.clock.now(), tickId: 1 });
+      const reviews = () => fixture.database.transaction(db => db.prepare(
+        "SELECT input_id FROM joi_inbox_messages WHERE goal_input_id='goal' AND input_id LIKE 'joi_harness_review:goal:%'",
+      ).all());
+      expect(reviews()).toHaveLength(1);
+      const reviewId = reviews()[0]?.input_id;
+      assert(typeof reviewId === "string");
+      if (outcome === "RESULT_SYNTHESIZED") {
+        await fixture.inbox.createTurn({ inputId: reviewId, turnId: "review", workbenchId: fixture.workbenchId, sessionId: "review", createdAt: now });
+        await fixture.inbox.completeInput(reviewId, "review");
+        expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_harness_maps WHERE goal_input_id='goal'").get())).toMatchObject({ status: "CLEARED" });
+        expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({ status: "COMPLETED", completionSummary: summary });
+      }
+      await traversal.update({ clock: fixture.clock, now: fixture.clock.now(), tickId: 2 });
+      expect(reviews()).toHaveLength(1);
+      expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM dispatch_attempts").get())).toMatchObject({ n: 1 });
     } finally { await fixture.close(); }
   });
 

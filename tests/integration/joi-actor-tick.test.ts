@@ -26,6 +26,7 @@ function makeDatabase(): DatabaseSync {
       status TEXT NOT NULL,
       workbench_id TEXT,
       goal_input_id TEXT,
+      result_revision INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       canceled_at TEXT,
@@ -87,6 +88,33 @@ function insertTurn(database: DatabaseSync, turnId: string, inputId: string, sta
 }
 
 describe("joi actor tick over persisted facts", () => {
+  it("drives independent goal syntheses from the same workbench on one tick", async () => {
+    const database = makeDatabase();
+    try {
+      const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };
+      for (const goalId of ["first", "second"]) {
+        insertInput(database, goalId, "CONSUMED", OLD);
+        const inputId = `joi_result_input:goal:${goalId}:r1:q1`;
+        insertInput(database, inputId, "PENDING", OLD);
+        database.prepare("UPDATE joi_inbox_messages SET goal_input_id=?, result_revision=1, workbench_id='workbench_h' WHERE input_id=?")
+          .run(goalId, inputId);
+      }
+      insertInput(database, "ordinary", "PENDING", NOW);
+      const started: string[] = [];
+      const finish: (() => void)[] = [];
+      const clock = { now: () => new Date(NOW) };
+      const task = new JoiTaskComponent({
+        driver: { handle: inputId => new Promise(resolve => { started.push(inputId); finish.push(resolve); }) },
+        gate: { hasReadySource: async () => true },
+        inbox: new SqliteJoiTaskReader({ database: wrapper, failTurn: vi.fn(), park: vi.fn() }),
+      });
+      await task.update({ clock, now: clock.now(), tickId: 1 });
+      for (const settle of finish) settle();
+      expect(started).toHaveLength(3);
+      expect(started).toEqual(expect.arrayContaining(["ordinary", "joi_result_input:goal:first:r1:q1", "joi_result_input:goal:second:r1:q1"]));
+    } finally { database.close(); }
+  });
+
   it("drives pending inputs and recovers orphaned turns from the DB", async () => {
     const database = makeDatabase();
     const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };

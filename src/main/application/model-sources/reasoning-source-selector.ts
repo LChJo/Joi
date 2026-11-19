@@ -125,6 +125,8 @@ export class ReasoningSourceSelector {
   }
 
   async selectFallback(input: {
+    /** Unpinned orchestration can try any READY route once within the same turn. */
+    attemptedSourceIds?: ReadonlySet<string>;
     currentSourceId: string;
     failure: SourceFailureKind;
     formalOutputStarted: boolean;
@@ -134,12 +136,16 @@ export class ReasoningSourceSelector {
     // A protocol failure (e.g. tool-call markup leaked as plain text) only ever produced
     // garbage text, so redoing the Turn after formal output is safe; any real side effect
     // still bars a fallback outright.
-    if (input.sideEffectStarted || !classifySourceFailure(input.failure).fallbackAllowed) return null;
+    const policy = classifySourceFailure(input.failure);
+    if (input.sideEffectStarted || !(policy.fallbackAllowed || input.attemptedSourceIds !== undefined && policy.sourceNeedsAttention)) return null;
     if (input.formalOutputStarted && input.failure !== "protocol") return null;
     const sources = (await this.repository.list()).sort((left, right) => left.order - right.order);
     const currentIndex = sources.findIndex((record) => record.source.sourceId === input.currentSourceId);
     if (currentIndex < 0) return null;
-    for (const candidate of sources.slice(currentIndex + 1)) {
+    const later = sources.slice(currentIndex + 1);
+    if (input.attemptedSourceIds !== undefined) later.push(...sources.slice(0, currentIndex));
+    for (const candidate of later) {
+      if (input.attemptedSourceIds?.has(candidate.source.sourceId) === true) continue;
       if (candidate.source.status !== "READY" || this.#isCapacityAvoided(candidate.source.sourceId)) continue;
       const fresh = await this.#fresh(candidate);
       if (fresh?.source.status === "READY") return pinModelSourceForTurn(fresh.source, input.turnId);

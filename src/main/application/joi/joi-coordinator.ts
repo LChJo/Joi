@@ -101,10 +101,11 @@ const SYNTHESIS_OUTCOME_REPAIR_PROMPT = [
 const SYNTHESIS_TEXT_DECISION_INSTRUCTIONS = "For this goal-result synthesis, use the existing evidence and finish without repeating completed work when it already answers the goal. You may submit a text-only decision instead of calling a tool: start with exactly [joi synthesis outcome=RESULT_SYNTHESIZED], [joi synthesis outcome=RESULT_CONTINUE], or [joi synthesis outcome=RESULT_BLOCKED], then a newline and the complete deliverable with any material gaps. Use RESULT_SYNTHESIZED only when evidence answers the goal, RESULT_CONTINUE only for a concrete safe next evidence layer, and RESULT_BLOCKED when user intervention is essential. Do not emit tool-call markup.";
 
 const SYNTHESIS_DISPOSITION_PROMPT = [
-  "Full completion was rejected by the evidence coverage check. This pass can only inspect existing evidence and save a partial decision.",
+  "The previous synthesis did not pass validation. This pass can only inspect existing evidence and submit the report or a partial decision.",
+  "Read the authoritative evidence index and the relevant existing results. Use only identifiers from the index, and submit RESULT_SYNTHESIZED if all required evidence can now be verified.",
   "Use turn_complete with RESULT_CONTINUE if you can name a concrete next evidence step within current permissions, or RESULT_BLOCKED if no such step can be established.",
   "Do not dispatch or repeat Work. Supply the confirmed findings, the specific unresolved gaps, and any safe next step in the visible answer.",
-  "If structured tools are unavailable, use the synthesis decision marker for RESULT_CONTINUE or RESULT_BLOCKED.",
+  "If structured tools are unavailable, use the synthesis decision marker for the applicable outcome.",
 ].join(" ");
 
 const SYNTHESIS_BLOCKED_SUMMARY = "Final synthesis could not verify all required evidence. The completed Work results remain available in the task details.";
@@ -171,7 +172,7 @@ function shouldRollbackTurn(sideEffectStarted: boolean, signal: AbortSignal | un
 
 // A deterministic model-side failure (protocol garbage, capacity mismatch) should not be
 // rediscovered by the very next Turn: skip the route for this window.
-const PROTOCOL_AVOID_MILLIS = 30 * 60_000;
+const SOURCE_AVOID_MILLIS = 30 * 60_000;
 // Consecutive failed Turns on one goal poison the shared session: each retry appends the
 // previous failure's transcript, so the next retry reproduces it. After this many, the
 // next attempt starts from a fresh session generation instead.
@@ -208,6 +209,7 @@ export class JoiCoordinator {
       /** Skips a deterministically broken route for a window so the next Turn picks another. */
       avoidSource?(sourceId: string, millis: number): void;
       selectFallback?(input: {
+        attemptedSourceIds?: ReadonlySet<string>;
         currentSourceId: string;
         failure: SourceFailureKind;
         formalOutputStarted: boolean;
@@ -438,9 +440,11 @@ export class JoiCoordinator {
     let requirementsRepairAttempted = false;
     let toolCapabilityRepairAttempted = false;
     let synthesisValidationRepairAttempted = false;
-    const synthesisFailure: { code: string | undefined; coverageExhausted: boolean } = { code: undefined, coverageExhausted: false };
+    let synthesisRejection: { code: string; coverageReady: boolean } | undefined;
+    let synthesisRecovery: { code: string; coverageReady: boolean } | undefined;
     const evidenceRead = { inactive: false };
     let completionText = "";
+    let persistingOutcome = false;
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
     let repair: ReasoningRepair | undefined;
@@ -545,8 +549,10 @@ export class JoiCoordinator {
                 });
                 toolStartedAt.delete(event.toolCallId);
                 if (isGoalSynthesis && event.toolName === "turn_complete") {
-                  synthesisFailure.code = event.isError ? event.reasonCode : undefined;
-                  synthesisFailure.coverageExhausted = event.isError && event.synthesisCoverageExhausted === true;
+                  synthesisRejection = event.isError
+                    && (event.synthesisCorrectionExhausted === true || event.reasonCode === "goal_synthesis_correction_exhausted")
+                    ? { code: event.reasonCode ?? "goal_synthesis_correction_exhausted", coverageReady: event.synthesisCoverageExhausted === true }
+                    : undefined;
                   if (event.isError) {
                     committedTurnOutcome = undefined;
                     committedSynthesisState = undefined;
@@ -592,8 +598,8 @@ export class JoiCoordinator {
           if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (evidenceRead.inactive) throw new DomainError("goal_evidence_turn_inactive", "This turn can no longer read evidence.");
-          if (synthesisFailure.code === "goal_synthesis_correction_exhausted" && repair !== "synthesis-disposition") {
-            throw new DomainError(synthesisFailure.code, "Synthesis correction requires a valid evidence state.");
+          if (synthesisRejection !== undefined && repair !== "synthesis-disposition") {
+            throw new DomainError(synthesisRejection.code, "Synthesis correction requires a valid evidence state.");
           }
           if (dispatchFailureReason !== undefined) {
             if (!DISPATCH_CLARIFICATION_REASONS.has(dispatchFailureReason)) {
@@ -616,22 +622,26 @@ export class JoiCoordinator {
           // AC-26 gates the FIRST Turn of an unproven custom model only: once any Turn of the
           // pinned revision pair demonstrated structured tool calling, a later direct answer
           // (zero tool calls) is a valid outcome instead of a capability failure.
-          const textDecision = isGoalSynthesis && shouldRollbackTurn(sideEffectStarted(), signal) && !pass.committedOutcome
+          const textDecision = isGoalSynthesis && synthesisRejection === undefined && shouldRollbackTurn(sideEffectStarted(), signal) && !pass.committedOutcome
             ? synthesisTextDecision(attemptCompletionText) : undefined;
           if (textDecision !== undefined) {
             committedTurnOutcome = textDecision.outcome;
             completionText = textDecision.body;
           }
           if (repair === "synthesis-disposition") {
-            if (sideEffectStarted()) throw new DomainError("goal_synthesis_correction_exhausted", "Disposition repair requires read-only tools.");
-            if ((committedTurnOutcome !== "RESULT_CONTINUE" && committedTurnOutcome !== "RESULT_BLOCKED")
-              || normalizeCompletionSummary(completionText) === "") {
-              committedTurnOutcome = "RESULT_BLOCKED";
-              committedSynthesisState = undefined;
-              completionText = SYNTHESIS_BLOCKED_SUMMARY;
+            if (sideEffectStarted()) throw new DomainError(synthesisRecovery?.code ?? "goal_synthesis_correction_exhausted", "Synthesis recovery requires read-only tools.");
+            if ((committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_CONTINUE" || committedTurnOutcome === "RESULT_BLOCKED")
+              && normalizeCompletionSummary(completionText) !== "") {
+              try {
+                await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState, committedTurnOutcome === "RESULT_SYNTHESIZED");
+                break;
+              } catch (error) {
+                if (!(error instanceof GoalSynthesisCoverageError) || error.issues.requirementsStatus !== "READY") throw error;
+                synthesisRejection = { code: error.code, coverageReady: true };
+              }
             }
-            await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState, false);
-            break;
+            const rejection = synthesisRejection ?? synthesisRecovery;
+            throw new DomainError(rejection?.code ?? "goal_synthesis_correction_exhausted", "The read-only recovery did not submit a valid synthesis.");
           }
           if (!isGoalSynthesis && observedToolCalls.size === 0 && requirementsStore !== undefined) {
             const current = await requirementsStore.load(goalId, workbenchId);
@@ -724,7 +734,7 @@ export class JoiCoordinator {
           if (signal?.aborted) throw error;
           const coverage = error instanceof GoalSynthesisCoverageError ? error.issues : undefined;
           if (isGoalSynthesis && error instanceof DomainError && isSynthesisStateCorrection(error.code)
-            && repair !== "synthesis-disposition" && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
+            && synthesisRejection === undefined && repair !== "synthesis-disposition" && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
             synthesisValidationRepairAttempted = true;
             committedSynthesisState = undefined;
             committedTurnOutcome = undefined;
@@ -736,16 +746,16 @@ export class JoiCoordinator {
             turnImages = undefined;
             continue;
           }
-          if (isGoalSynthesis && repair !== "synthesis-disposition" && !sideEffectStarted()
-            && (coverage?.requirementsStatus === "READY" || (synthesisFailure.coverageExhausted && error instanceof DomainError
-              && error.code === "goal_synthesis_correction_exhausted"))) {
+          if (isGoalSynthesis && repair !== "synthesis-disposition" && !sideEffectStarted() && error instanceof DomainError
+            && (coverage?.requirementsStatus === "READY" || synthesisRejection?.code === error.code
+              && (synthesisRejection.coverageReady || error.code === "goal_synthesis_reference_invalid" || error.code === "goal_synthesis_state_invalid"))) {
+            synthesisRecovery = { code: error.code, coverageReady: coverage?.requirementsStatus === "READY" || synthesisRejection?.coverageReady === true };
             committedSynthesisState = undefined;
             committedTurnOutcome = undefined;
             committedOutcomeTools.delete("turn_complete");
             completionText = "";
-            synthesisFailure.code = undefined;
-            synthesisFailure.coverageExhausted = false;
-            prompt = SYNTHESIS_DISPOSITION_PROMPT;
+            synthesisRejection = undefined;
+            prompt = `${SYNTHESIS_DISPOSITION_PROMPT} Validation reason: ${error.code}.`;
             if (coverage !== undefined) prompt += ` Coverage issues: ${JSON.stringify(coverage)}`;
             repair = "synthesis-disposition";
             turnImages = undefined;
@@ -754,8 +764,14 @@ export class JoiCoordinator {
             });
             continue;
           }
-          const failure = this.dependencies.failureClassifier?.classify(error) ?? null;
+          const rejection = synthesisRejection ?? synthesisRecovery;
+          const recoveryFailed = repair === "synthesis-disposition" && !sideEffectStarted() && error instanceof DomainError
+            && rejection?.code === error.code && (rejection.coverageReady
+              || error.code === "goal_synthesis_reference_invalid" || error.code === "goal_synthesis_state_invalid");
+          const providerFailure = this.dependencies.failureClassifier?.classify(error) ?? null;
+          const failure = providerFailure ?? (recoveryFailed ? "protocol" : null);
           const fallback = failure === null ? null : await this.dependencies.sources.selectFallback?.({
+            attemptedSourceIds: attemptedSources,
             currentSourceId: pin.sourceId,
             failure,
             // Synthesis text is a draft until its outcome transaction commits.
@@ -763,13 +779,25 @@ export class JoiCoordinator {
             sideEffectStarted: sideEffectStarted(),
             turnId,
           }) ?? null;
-          if (fallback === null || attemptedSources.has(fallback.sourceId)) throw error;
+          if (fallback === null || attemptedSources.has(fallback.sourceId)) {
+            if (!recoveryFailed || !rejection.coverageReady) throw error;
+            await this.dependencies.store.validateSynthesisState?.(inputId, undefined, false);
+            committedTurnOutcome = "RESULT_BLOCKED";
+            committedSynthesisState = undefined;
+            completionText = SYNTHESIS_BLOCKED_SUMMARY;
+            break;
+          }
+          if (providerFailure === "auth" || providerFailure === "balance" || providerFailure === "configuration" || providerFailure === "access") {
+            this.dependencies.sources.avoidSource?.(pin.sourceId, SOURCE_AVOID_MILLIS);
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.source.avoided", {
+              inputId, millis: SOURCE_AVOID_MILLIS, reason: providerFailure, sourceId: pin.sourceId, turnId,
+            });
+          }
           if (isGoalSynthesis) {
             completionText = "";
             committedSynthesisState = undefined;
             committedTurnOutcome = undefined;
-            synthesisFailure.code = undefined;
-            synthesisFailure.coverageExhausted = false;
+            synthesisRejection = undefined;
             committedOutcomeTools.delete("turn_complete");
           }
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.source_fallback", {
@@ -812,6 +840,7 @@ export class JoiCoordinator {
             ? "DIRECT_ANSWER" as const
             : undefined
         : undefined;
+      persistingOutcome = true;
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
         ...(committedSynthesisState === undefined ? {} : { synthesisState: committedSynthesisState }),
         completionSummary,
@@ -821,6 +850,7 @@ export class JoiCoordinator {
         ...(committedTurnOutcome === directOutcome ? { committedByTool: true } : {}),
         outcome: directOutcome,
       });
+      persistingOutcome = false;
       if (goalSynthesis !== null) {
         const disposition = synthesisOutcome === "RESULT_SYNTHESIZED" ? "COMPLETED" as const
           : synthesisOutcome === "RESULT_CONTINUE" ? "CONTINUE" as const : "BLOCKED" as const;
@@ -868,9 +898,9 @@ export class JoiCoordinator {
       if (!signal?.aborted) {
         const failureKind = this.dependencies.failureClassifier?.classify(error) ?? null;
         if (failureKind === "protocol" && !(error instanceof DomainError && error.code === "custom_model_tool_capability_unverified")) {
-          this.dependencies.sources.avoidSource?.(pin.sourceId, PROTOCOL_AVOID_MILLIS);
+          this.dependencies.sources.avoidSource?.(pin.sourceId, SOURCE_AVOID_MILLIS);
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.source.avoided", {
-            millis: PROTOCOL_AVOID_MILLIS,
+            millis: SOURCE_AVOID_MILLIS,
             reason: failureKind,
             sourceId: pin.sourceId,
             turnId,
@@ -909,15 +939,20 @@ export class JoiCoordinator {
             reviewReplaySafe: !signal?.aborted && !reviewEffects.unsafe && pendingReviewEffects.size === 0,
           } : failureReasonCode === dispatchFailureReason || replayState.rejected ? { reasonCode: failureReasonCode, ...replayProof } : { reasonCode: failureReasonCode });
       }
+      const sqliteCode = failureReasonCode === "ERR_SQLITE_ERROR" && error instanceof Error && "errcode" in error
+        && typeof error.errcode === "number" && Number.isSafeInteger(error.errcode) && error.errcode > 0 && error.errcode <= 65_535
+        ? error.errcode : undefined;
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {
         workbenchId,
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
         errorCode: failureReasonCode,
+        ...(persistingOutcome ? { failureStage: "persist_outcome" as const } : {}),
         inputId,
         observedToolCount: observedToolCalls.size,
         outcomeTools: [...committedOutcomeTools].sort(),
         repaired: completionRepairAttempted,
         sourceId: pin.sourceId,
+        ...(sqliteCode === undefined ? {} : { sqliteCode }),
         turnId,
       });
       await this.dependencies.events?.emit("joi.turn.failed", turnId, { workbenchId, inputId, turnId });

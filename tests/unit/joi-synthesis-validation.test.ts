@@ -12,11 +12,14 @@ const workbench = createWorkbench({ workbenchId: "workbench", createdAt: "2026-0
 const invalid = () => new DomainError("goal_synthesis_reference_invalid", "Unknown evidence.");
 
 function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFailure?: SourceFailureKind; fallback?: boolean; longAnswer?: string;
-  coverageExhausted?: "continue" | "no-decision"; readOnlyTool?: string } = {}) {
+  coverageExhausted?: "continue" | "no-decision"; priorTool?: string; exhaustedReason?: string; completionError?: Error } = {}) {
   const validate = options.fallback || options.coverageExhausted !== undefined ? vi.fn().mockResolvedValue(undefined)
     : options.repeated ? vi.fn().mockRejectedValue(invalid()) : vi.fn().mockRejectedValueOnce(invalid()).mockResolvedValue(undefined);
-  const complete = vi.fn(async () => undefined);
+  const complete = vi.fn(async () => {
+    if (options.completionError !== undefined) throw options.completionError;
+  });
   const failed = vi.fn(async () => undefined);
+  const emit = vi.fn();
   const progress = vi.fn<NonNullable<JoiCoordinatorStore["recordTurnProgress"]>>(async () => undefined);
   let calls = 0;
   const startTurn = vi.fn(async (turn: StartReasoningTurnInput) => {
@@ -32,12 +35,13 @@ function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFa
     }
     if (options.coverageExhausted !== undefined) {
       if (calls === 1) {
-        if (options.readOnlyTool !== undefined) {
-          turn.onEvent?.({ type: "tool_started", turnId: turn.turnId, toolCallId: "read", toolName: options.readOnlyTool });
-          turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "read", toolName: options.readOnlyTool, isError: false });
+        if (options.priorTool !== undefined) {
+          turn.onEvent?.({ type: "tool_started", turnId: turn.turnId, toolCallId: "prior", toolName: options.priorTool });
+          turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "prior", toolName: options.priorTool, isError: false });
         }
         turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "failed-coverage", toolName: "turn_complete",
-          isError: true, reasonCode: "goal_synthesis_correction_exhausted", synthesisCoverageExhausted: true });
+          isError: true, reasonCode: options.exhaustedReason ?? "goal_synthesis_coverage_incomplete", synthesisCorrectionExhausted: true,
+          ...(options.exhaustedReason === undefined ? { synthesisCoverageExhausted: true } : {}) });
         turn.onEvent?.({ type: "text_delta", turnId: turn.turnId, delta: "Unverified all-done assertion." });
       } else if (options.coverageExhausted === "continue") {
         turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "partial", toolName: "turn_complete",
@@ -57,6 +61,7 @@ function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFa
   const selectFallback = vi.fn().mockResolvedValue(options.fallback
     ? { turnId: "fallback", modelId: "other", modelRevisionId: "other", sourceId: "other", sourceRevisionId: "other" } : null);
   const coordinator = new JoiCoordinator({ clock: new TestClock(), ids: new TestIds(),
+    diagnostics: { emit },
     runtime: { startTurn, abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
       rollbackTurn: async () => true, steer: () => undefined, waitForIdle: async () => undefined },
     workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] }, router: { decide: async () => ({}) },
@@ -66,7 +71,7 @@ function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFa
       requireClarification: async () => undefined,
       loadInput: async () => ({ inputId: "joi_result_input:goal:goal:r1:q0", goalInputId: "goal", resultRevision: 1, workbenchId: "workbench", body: "Synthesize evidence", status: "PENDING" }) },
   });
-  return { coordinator, startTurn, validate, complete, failed, progress, selectFallback };
+  return { coordinator, startTurn, validate, complete, failed, progress, selectFallback, emit };
 }
 
 describe("synthesis validation recovery", () => {
@@ -112,8 +117,8 @@ describe("synthesis validation recovery", () => {
     expect(fixture.failed).toHaveBeenCalledOnce();
   });
 
-  it.each(["joi_read_skill", "workbench_read_history"])("persists a safe continuation after coverage exhaustion following %s", async readOnlyTool => {
-    const fixture = setup({ coverageExhausted: "continue", readOnlyTool });
+  it.each(["joi_read_skill", "workbench_read_history", "goal_update_requirements"])("persists a safe continuation after coverage exhaustion following %s", async priorTool => {
+    const fixture = setup({ coverageExhausted: "continue", priorTool });
     await fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0");
     expect(fixture.startTurn).toHaveBeenCalledTimes(2);
     expect(fixture.startTurn.mock.calls[1]?.[0]).toMatchObject({ repair: "synthesis-disposition" });
@@ -121,6 +126,15 @@ describe("synthesis validation recovery", () => {
       outcome: "RESULT_CONTINUE", completionSummary: "The report is confirmed. Check the appendix next.",
     });
     expect(fixture.failed).not.toHaveBeenCalled();
+  });
+
+  it("records a failed outcome write without adding SQLite error text to diagnostics", async () => {
+    const error = Object.assign(new Error("PRIVATE_SQLITE_DETAIL"), { code: "ERR_SQLITE_ERROR", errcode: 1 });
+    const fixture = setup({ completionError: error });
+    await expect(fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0")).rejects.toBe(error);
+    expect(fixture.emit).toHaveBeenCalledWith("joi.turn.failed",
+      expect.objectContaining({ errorCode: "ERR_SQLITE_ERROR", failureStage: "persist_outcome", sqliteCode: 1 }));
+    expect(JSON.stringify(fixture.emit.mock.calls)).not.toContain("PRIVATE_SQLITE_DETAIL");
   });
 
   it("records a blocked result without publishing an unverified answer when the disposition pass gives no decision", async () => {
@@ -136,8 +150,17 @@ describe("synthesis validation recovery", () => {
   it("does not open another pass on coverage failure after a possible Work mutation", async () => {
     const fixture = setup({ coverageExhausted: "continue", externalEffect: true });
     await expect(fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0"))
-      .rejects.toMatchObject({ code: "goal_synthesis_correction_exhausted" });
+      .rejects.toMatchObject({ code: "goal_synthesis_coverage_incomplete" });
     expect(fixture.startTurn).toHaveBeenCalledOnce();
+    expect(fixture.complete).not.toHaveBeenCalled();
+  });
+
+  it.each(["goal_synthesis_reference_invalid", "goal_synthesis_state_invalid"])("persists %s when the read-only recovery cannot submit a report", async exhaustedReason => {
+    const fixture = setup({ coverageExhausted: "no-decision", exhaustedReason });
+    await expect(fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0")).rejects.toMatchObject({ code: exhaustedReason });
+    expect(fixture.startTurn).toHaveBeenCalledTimes(2);
+    expect(fixture.startTurn.mock.calls[1]?.[0].repair).toBe("synthesis-disposition");
+    expect(fixture.failed).toHaveBeenCalledExactlyOnceWith(expect.any(String), expect.any(String), { reasonCode: exhaustedReason });
     expect(fixture.complete).not.toHaveBeenCalled();
   });
 

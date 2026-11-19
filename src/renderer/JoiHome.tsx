@@ -1,4 +1,4 @@
-import { localizeProductText, currentLocale, noticeMessage, t, useI18n, useNotice } from "./i18n";
+import { localizeProductText, currentLocale, errorNotice, noticeMessage, t, translateNotice, useI18n, useNotice } from "./i18n";
 import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
 import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { ResultExportMenu } from './ResultExportMenu';
@@ -1182,16 +1182,24 @@ function GoalAgentWarning({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () =
     {String(goal.work.failed)}  {t("home.partnerIssuesViewDetails")}</button>;
 }
 
-function GoalFailureNotice({ failure }: { failure: NonNullable<JoiGoalCardDto["failure"]> }) {
+function GoalFailureNotice({ failure, completedWork }: { failure: NonNullable<JoiGoalCardDto["failure"]>; completedWork: number }) {
   useI18n();
-  const action = failure.suggestedAction === "RESTART_OR_UPDATE"
+  const reason = errorNotice(failure.reasonCode);
+  const synthesisValidationFailed = failure.reasonCode.startsWith("goal_synthesis_");
+  const action = synthesisValidationFailed ? t("home.retrySynthesisWithExistingWork")
+    : failure.reasonCode === "source_balance" ? t("home.resolveModelBalance")
+    : failure.reasonCode === "source_safety_refusal" || failure.reasonCode === "source_content_refusal" ? t("home.reviewModelContentPolicy")
+    : failure.suggestedAction === "RESTART_OR_UPDATE"
     ? t("home.thisIsAnInternalJoiConfigurationIssueRestartOr")
     : failure.suggestedAction === "CHECK_MODEL_SOURCE"
       ? t("home.checkThePrimaryModelConnectionCredentialsAndAvailabilityIn")
       : t("home.submitAgainIfItFailsAgainExportDiagnosticsTo");
   return <section className="joi-goal-failure" role="alert">
-    <strong>{t("home.joiHasStoppedRetrying")}</strong>
-    <p>{t("home.automaticAttempts")} {String(failure.attempts)}  {t("home.retriesHaveNowStopped")}{failure.executionStarted ? t("home.executionHasStartedAndSomeWorkMayAlreadyHave") : t("home.noAgentsHaveStartedAndNoWorkHasBeen")}</p>
+    <strong>{reason.key === "common.requestFailed" ? t("home.joiHasStoppedRetrying") : translateNotice(reason)}</strong>
+    <p>{t("home.automaticAttempts")} {String(failure.attempts)}  {t("home.retriesHaveNowStopped")}{completedWork === 0
+      ? failure.executionStarted ? t("home.executionHasStartedAndSomeWorkMayAlreadyHave") : t("home.noAgentsHaveStartedAndNoWorkHasBeen")
+      : null}</p>
+    {completedWork > 0 ? <p>{t("home.completedWorkPreserved", { count: completedWork })}</p> : null}
     <p>{action}</p>
     <small>{t("home.diagnosticCode")}{failure.reasonCode}</small>
   </section>;
@@ -1407,7 +1415,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
           <p className="joi-route-counts">{t("home.routeLoading")}</p>
         </article>}
         {detailState.failed && detailState.detail?.harness === undefined ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
-        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
+        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} completedWork={goal.work.completed} />}
         <GoalRecoveryNotice goal={goal} />
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} key={artifactVersion} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} key={artifactVersion} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgent(agents.find(agent => agent.status === "FAILED") ?? selectedAgent)} />
@@ -1720,7 +1728,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
           <div className="joi-goal-side"><GoalStatusBadge goal={goal} /><GoalActionMenu api={api} goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={() => dismissGoal(goal.goalId)} onChanged={() => void refresh().catch(() => undefined)} /></div>
         </div>
         <GoalResultPreview goal={goal} onOpen={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />
-        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
+        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} completedWork={goal.work.completed} />}
         <GoalRecoveryNotice goal={goal} />
         {(goal.questions?.length ?? 0) > 0 && (goal.clarification === undefined || goal.clarification.reasonCode === "question_required") ? <QuestionQueue questions={goal.questions ?? []} onAnswer={async (id,input) => { const saved = await api.answerQuestion({kind:"GOAL",id:goal.goalId},id,input); await refreshAfterMutation(); return saved; }} /> : goal.clarification === undefined ? null : <ClarificationActions key={`${goal.clarification.questionId ?? "legacy"}:${String(goal.clarification.questionVersion)}`} api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refreshAfterMutation().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} onShowContinuationResult={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}

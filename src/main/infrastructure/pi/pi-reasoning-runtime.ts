@@ -233,8 +233,12 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       if (this.#canceledStartup.has(input.sessionId)) { session.dispose(); return; }
       const completed = session.sessionManager.getBranch().findLast(entry => {
         if (entry.type !== "custom" || entry.customType !== "joi.primary_result") return false;
-        const result = entry.data as { turnId?: unknown; repair?: unknown } | null;
-        return result?.turnId === input.turnId && result.repair === input.repair;
+        const result = entry.data as { turnId?: unknown; repair?: unknown; sourceRevisionId?: unknown; modelRevisionId?: unknown } | null;
+        if (result?.turnId !== input.turnId || result.repair !== input.repair) return false;
+        if (result.sourceRevisionId === undefined && result.modelRevisionId === undefined) {
+          return stored === null || stored.sourceRevisionId === input.sourceRevisionId && stored.modelRevisionId === input.modelRevisionId;
+        }
+        return result.sourceRevisionId === input.sourceRevisionId && result.modelRevisionId === input.modelRevisionId;
       });
       if (completed?.type === "custom") {
         const data = completed.data as { events?: PrimaryReasoningEvent[] };
@@ -289,7 +293,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           const last = [...active.session.messages].reverse().find(message => message.role === "assistant");
           if (last?.role === "assistant" && last.stopReason === "error") throw reasoningStreamFailure(last.errorMessage);
           if ((settled.aborted || last?.role === "assistant" && last.stopReason === "aborted") && !active.cancelled) throw reasoningStreamFailure("Primary reasoning was aborted.");
-          active.session.sessionManager.appendCustomEntry("joi.primary_result", { turnId: input.turnId, repair: input.repair, events: active.events });
+          active.session.sessionManager.appendCustomEntry("joi.primary_result", {
+            turnId: input.turnId, repair: input.repair, sourceRevisionId: input.sourceRevisionId, modelRevisionId: input.modelRevisionId, events: active.events,
+          });
           active.session.sessionManager.appendCustomEntry("joi.usage_idle", {});
         } catch (error) {
           if (!active.delivered.tool) await this.#rollback(active, input.turnId);
@@ -375,8 +381,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         && runtime.agent.state.tools.some(tool => tool.name === event.toolName && tool.prepareArguments === undefined);
       const details = (event.result as { details?: { correctionExhausted?: unknown; synthesisCoverageExhausted?: unknown } } | undefined)?.details;
       const correctionExhausted = event.toolName === "turn_complete" && isError && details?.correctionExhausted === true;
-      const reasonCode = correctionExhausted
-        ? "goal_synthesis_correction_exhausted" : safeToolResultReasonCode(event.result)
+      const reasonCode = safeToolResultReasonCode(event.result)
+        ?? (correctionExhausted ? "goal_synthesis_correction_exhausted" : undefined)
         ?? (isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
       const outcome = safeTurnOutcome(event.toolName, event.result);
@@ -387,6 +393,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         isError,
         ...(outcome === undefined ? {} : { outcome }),
         ...(synthesisState === undefined ? {} : { synthesisState }),
+        ...(correctionExhausted ? { synthesisCorrectionExhausted: true } : {}),
         ...(correctionExhausted && details.synthesisCoverageExhausted === true ? { synthesisCoverageExhausted: true } : {}),
         ...(reasonCode === undefined && isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
         ...(rejectedBeforeExecution || (event.toolName === "work_dispatch" || isError && event.toolName === "goal_resume"

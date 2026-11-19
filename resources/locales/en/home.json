@@ -1,4 +1,8 @@
 {
+  "completedWorkPreserved": { "message": "{count, plural, one {{count} completed work item is still available.} other {{count} completed work items are still available.}}", "placeholders": { "count": "number" } },
+  "retrySynthesisWithExistingWork": "Continue this task to summarize the existing results again without rerunning completed work.",
+  "resolveModelBalance": "Add quota or change the primary model source, then continue this task.",
+  "reviewModelContentPolicy": "Review the policy for the model service and adjust the task before continuing.",
   "piAutomaticCompaction": { "message": "Pi compacts automatically when context usage exceeds the configured window percentage. Leave blank for Pi defaults.", "description": "Explains the automatic compaction trigger" },
   "piCompactionDefault": { "message": "Pi defaults", "description": "Native automatic compaction defaults" },
   "image": {
