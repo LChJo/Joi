@@ -1,5 +1,6 @@
 import { DomainError } from "../../domain/errors.js";
 import { isSynthesisStateCorrection } from "../../domain/work/joi-turn-recovery.js";
+import { GoalSynthesisCoverageError } from "../../domain/work/goal-synthesis-state.js";
 import type { EvolutionService } from "../evolution/evolution-service.js";
 import type { WorkbenchCatalog } from "../ports/workbench-context.js";
 import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
@@ -63,9 +64,11 @@ const REPLAY_SAFE_TOOL_NAMES = new Set([
   "partner_list_available",
   "partner_list_instances",
   "partner_list_skills",
+  "joi_read_skill",
   "work_read_result",
   "work_read_evidence",
   "context_read_history",
+  "workbench_read_history",
   "workbench_list_summaries",
   "list_automations",
   "get_automation",
@@ -96,6 +99,15 @@ const SYNTHESIS_OUTCOME_REPAIR_PROMPT = [
 ].join(" ");
 
 const SYNTHESIS_TEXT_DECISION_INSTRUCTIONS = "For this goal-result synthesis, use the existing evidence and finish without repeating completed work when it already answers the goal. You may submit a text-only decision instead of calling a tool: start with exactly [joi synthesis outcome=RESULT_SYNTHESIZED], [joi synthesis outcome=RESULT_CONTINUE], or [joi synthesis outcome=RESULT_BLOCKED], then a newline and the complete deliverable with any material gaps. Use RESULT_SYNTHESIZED only when evidence answers the goal, RESULT_CONTINUE only for a concrete safe next evidence layer, and RESULT_BLOCKED when user intervention is essential. Do not emit tool-call markup.";
+
+const SYNTHESIS_DISPOSITION_PROMPT = [
+  "Full completion was rejected by the evidence coverage check. This pass can only inspect existing evidence and save a partial decision.",
+  "Use turn_complete with RESULT_CONTINUE if you can name a concrete next evidence step within current permissions, or RESULT_BLOCKED if no such step can be established.",
+  "Do not dispatch or repeat Work. Supply the confirmed findings, the specific unresolved gaps, and any safe next step in the visible answer.",
+  "If structured tools are unavailable, use the synthesis decision marker for RESULT_CONTINUE or RESULT_BLOCKED.",
+].join(" ");
+
+const SYNTHESIS_BLOCKED_SUMMARY = "Final synthesis could not verify all required evidence. The completed Work results remain available in the task details.";
 
 function synthesisTextDecision(text: string): { outcome: "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED"; body: string } | undefined {
   const match = /^\[joi synthesis outcome=(RESULT_SYNTHESIZED|RESULT_CONTINUE|RESULT_BLOCKED)\]\r?\n([\s\S]+)$/u.exec(text.trim());
@@ -426,7 +438,7 @@ export class JoiCoordinator {
     let requirementsRepairAttempted = false;
     let toolCapabilityRepairAttempted = false;
     let synthesisValidationRepairAttempted = false;
-    let synthesisCompletionFailure: string | undefined;
+    const synthesisFailure: { code: string | undefined; coverageExhausted: boolean } = { code: undefined, coverageExhausted: false };
     const evidenceRead = { inactive: false };
     let completionText = "";
     let dispatchFailureReason: string | undefined;
@@ -533,7 +545,8 @@ export class JoiCoordinator {
                 });
                 toolStartedAt.delete(event.toolCallId);
                 if (isGoalSynthesis && event.toolName === "turn_complete") {
-                  synthesisCompletionFailure = event.isError ? event.reasonCode : undefined;
+                  synthesisFailure.code = event.isError ? event.reasonCode : undefined;
+                  synthesisFailure.coverageExhausted = event.isError && event.synthesisCoverageExhausted === true;
                   if (event.isError) {
                     committedTurnOutcome = undefined;
                     committedSynthesisState = undefined;
@@ -579,8 +592,8 @@ export class JoiCoordinator {
           if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (evidenceRead.inactive) throw new DomainError("goal_evidence_turn_inactive", "This turn can no longer read evidence.");
-          if (synthesisCompletionFailure === "goal_synthesis_correction_exhausted") {
-            throw new DomainError(synthesisCompletionFailure, "Synthesis correction requires a valid evidence state.");
+          if (synthesisFailure.code === "goal_synthesis_correction_exhausted" && repair !== "synthesis-disposition") {
+            throw new DomainError(synthesisFailure.code, "Synthesis correction requires a valid evidence state.");
           }
           if (dispatchFailureReason !== undefined) {
             if (!DISPATCH_CLARIFICATION_REASONS.has(dispatchFailureReason)) {
@@ -608,6 +621,17 @@ export class JoiCoordinator {
           if (textDecision !== undefined) {
             committedTurnOutcome = textDecision.outcome;
             completionText = textDecision.body;
+          }
+          if (repair === "synthesis-disposition") {
+            if (sideEffectStarted()) throw new DomainError("goal_synthesis_correction_exhausted", "Disposition repair requires read-only tools.");
+            if ((committedTurnOutcome !== "RESULT_CONTINUE" && committedTurnOutcome !== "RESULT_BLOCKED")
+              || normalizeCompletionSummary(completionText) === "") {
+              committedTurnOutcome = "RESULT_BLOCKED";
+              committedSynthesisState = undefined;
+              completionText = SYNTHESIS_BLOCKED_SUMMARY;
+            }
+            await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState, false);
+            break;
           }
           if (!isGoalSynthesis && observedToolCalls.size === 0 && requirementsStore !== undefined) {
             const current = await requirementsStore.load(goalId, workbenchId);
@@ -698,16 +722,36 @@ export class JoiCoordinator {
           break;
         } catch (error) {
           if (signal?.aborted) throw error;
+          const coverage = error instanceof GoalSynthesisCoverageError ? error.issues : undefined;
           if (isGoalSynthesis && error instanceof DomainError && isSynthesisStateCorrection(error.code)
-            && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
+            && repair !== "synthesis-disposition" && !synthesisValidationRepairAttempted && !sideEffectStarted()) {
             synthesisValidationRepairAttempted = true;
             committedSynthesisState = undefined;
             committedTurnOutcome = undefined;
             committedOutcomeTools.delete("turn_complete");
             completionText = "";
             prompt = "The synthesis has not been committed because its private evidence state is invalid. Read work_read_evidence for the current goal, use only actual resultId values and current requirement ids, then submit a corrected synthesisState with turn_complete and the complete deliverable. Do not repeat completed Work.";
+            if (coverage !== undefined) prompt += ` Correct these coverage issues, or report the remaining gaps with RESULT_CONTINUE or RESULT_BLOCKED: ${JSON.stringify(coverage)}`;
             repair = "synthesis-state";
             turnImages = undefined;
+            continue;
+          }
+          if (isGoalSynthesis && repair !== "synthesis-disposition" && !sideEffectStarted()
+            && (coverage?.requirementsStatus === "READY" || (synthesisFailure.coverageExhausted && error instanceof DomainError
+              && error.code === "goal_synthesis_correction_exhausted"))) {
+            committedSynthesisState = undefined;
+            committedTurnOutcome = undefined;
+            committedOutcomeTools.delete("turn_complete");
+            completionText = "";
+            synthesisFailure.code = undefined;
+            synthesisFailure.coverageExhausted = false;
+            prompt = SYNTHESIS_DISPOSITION_PROMPT;
+            if (coverage !== undefined) prompt += ` Coverage issues: ${JSON.stringify(coverage)}`;
+            repair = "synthesis-disposition";
+            turnImages = undefined;
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", {
+              workbenchId, inputId, observedToolCount: observedToolCalls.size, turnId,
+            });
             continue;
           }
           const failure = this.dependencies.failureClassifier?.classify(error) ?? null;
@@ -724,7 +768,8 @@ export class JoiCoordinator {
             completionText = "";
             committedSynthesisState = undefined;
             committedTurnOutcome = undefined;
-            synthesisCompletionFailure = undefined;
+            synthesisFailure.code = undefined;
+            synthesisFailure.coverageExhausted = false;
             committedOutcomeTools.delete("turn_complete");
           }
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.source_fallback", {
@@ -805,7 +850,7 @@ export class JoiCoordinator {
         inputId,
         observedToolCount: observedToolCalls.size,
         outcomeTools: [...committedOutcomeTools].sort(),
-        repaired: completionRepairAttempted,
+        repaired: completionRepairAttempted || synthesisValidationRepairAttempted || repair === "synthesis-disposition",
         sourceId: pin.sourceId,
         turnId,
       });

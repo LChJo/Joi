@@ -8,6 +8,57 @@ import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import path from "node:path";
 
+it("reuses unchanged requirement evidence alongside new evidence and reports the remaining gaps privately", async () => {
+  const fixture = await createGoalEvidenceFixture([{}, {}, { verification: "FAILED" }]);
+  try {
+    const { workbenchId } = fixture;
+    const report = { id: "report", kind: "DELIVERABLE", mandatory: true, scope: "SCOPED",
+      text: "Deliver the report", source: { sourceRevision: 1, start: 0, end: 1 } };
+    const oldAudit = { ...report, id: "audit", text: "List the old audit checks" };
+    const audit = { ...oldAudit, text: "Run the new audit checks", source: { ...report.source, sourceRevision: 2 } };
+    const appendix = { ...audit, id: "appendix", text: "Deliver the appendix" };
+    fixture.database.transaction(db => {
+      db.prepare("INSERT INTO joi_goal_requirements VALUES ('goal',?,2,0)").run(workbenchId);
+      const snapshot = db.prepare("INSERT INTO joi_goal_requirement_snapshots VALUES ('goal',?,?)");
+      snapshot.run(1, JSON.stringify([report, oldAudit]));
+      snapshot.run(2, JSON.stringify([report, audit, appendix]));
+      db.exec(`UPDATE partner_runs SET requirements_revision=1,requirement_ids_json='["report","audit"]' WHERE run_id='run-1';
+        UPDATE partner_runs SET requirements_revision=2,requirement_ids_json='["audit","appendix"]' WHERE run_id='run-2';
+        UPDATE partner_runs SET requirements_revision=2,requirement_ids_json='["report"]' WHERE run_id='run-3';
+        UPDATE joi_turns SET requirements_revision=2 WHERE turn_id='synthesis-turn';`);
+      db.prepare("UPDATE joi_inbox_messages SET requirements_revision=2 WHERE input_id=?").run(fixture.inputId);
+    });
+    const results = new WorkResultService(fixture.repository, new SqliteGoalEvidenceRepository(fixture.database));
+    const read = (resultId: string) => results.read({ goalInputId: "goal", workbenchId, resultId,
+      receipt: { turnId: "synthesis-turn", toolCallId: resultId } });
+    await read("result-1");
+    const claim = { statement: "PRIVATE_SYNTHESIS_TEXT", requirementIds: ["report", "audit", "appendix"],
+      resultIds: ["result-1", "result-2", "result-3"] };
+    const synthesisState = { version: 1 as const, claims: [claim], unresolved: [], conflicts: [] };
+    await expect(fixture.inbox.validateSynthesisState(fixture.inputId, synthesisState, true)).rejects.toMatchObject({
+      code: "goal_synthesis_coverage_incomplete",
+      issues: {
+        missingRequirementIds: ["audit", "appendix"],
+        citations: [
+          { resultId: "result-1", reason: "REQUIREMENT_CHANGED", requirementIds: ["audit"] },
+          { resultId: "result-2", reason: "MISSING_READ_RECEIPT" },
+          { resultId: "result-3", reason: "INELIGIBLE_RESULT" },
+        ],
+      },
+    });
+    await expect(fixture.inbox.validateSynthesisState(fixture.inputId, { ...synthesisState,
+      claims: [{ ...claim, requirementIds: ["audit"], resultIds: ["result-1"] }] }, true))
+      .rejects.toMatchObject({ issues: { missingRequirementIds: ["report", "audit", "appendix"] } });
+    await read("result-2");
+    await expect(fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", {
+      outcome: "RESULT_SYNTHESIZED", completionSummary: "Existing report and new checks delivered.",
+      synthesisState: { ...synthesisState, conflicts: [{ description: "Conflicting report review",
+        requirementIds: ["report"], resultIds: ["result-3"],
+        resolution: { rationale: "Use the verified report.", resultIds: ["result-1"] } }] },
+    })).resolves.toMatchObject({ disposition: "COMPLETED" });
+  } finally { await fixture.close(); }
+});
+
 it("REV-04 refuses to publish a completed synthesis with an omitted mandatory requirement", async () => {
   const fixture = await createGoalEvidenceFixture([{}]);
   try {
@@ -131,16 +182,27 @@ it.each(["valid","missing","withdrawn"])("applies the real coverage gate to a %s
         abort: () => undefined,followUp: () => undefined,steer: () => undefined,isRunning: () => false,
         restore: () => Promise.resolve(false),rollbackTurn: () => Promise.resolve(true),waitForIdle: () => Promise.resolve(),
         startTurn: turn => {
-          turn.onEvent?.({ type: "text_delta",turnId: turn.turnId,delta: "[joi synthesis outcome=RESULT_SYNTHESIZED]\nComplete report." });
+          const delta = evidenceStatus === "missing" && turn.repair === "synthesis-disposition"
+            ? "[joi synthesis outcome=RESULT_CONTINUE]\nThe report exists. The next review can read and verify it."
+            : "[joi synthesis outcome=RESULT_SYNTHESIZED]\nComplete report.";
+          turn.onEvent?.({ type: "text_delta",turnId: turn.turnId,delta });
           turn.onEvent?.({ type: "turn_finished",turnId: turn.turnId });
           return Promise.resolve();
         },
       },
     });
-    if (evidenceStatus === "valid") await coordinator.handle(fixture.inputId);
-    else await expect(coordinator.handle(fixture.inputId)).rejects.toMatchObject({ code: "goal_synthesis_coverage_incomplete" });
-    expect(fixture.database.transaction(db => db.prepare("SELECT disposition FROM joi_goal_outcomes WHERE input_id='goal'").get())?.disposition)
-      .toBe(evidenceStatus === "valid" ? "COMPLETED" : "CONTINUE");
+    await coordinator.handle(fixture.inputId);
+    const outcome = fixture.database.transaction(db => db.prepare("SELECT disposition,completion_summary FROM joi_goal_outcomes WHERE input_id='goal'").get());
+    expect(outcome?.disposition).toBe(evidenceStatus === "valid" ? "COMPLETED" : evidenceStatus === "missing" ? "CONTINUE" : "BLOCKED");
+    if (evidenceStatus !== "valid") expect(outcome?.completion_summary).not.toBe("Complete report.");
+    if (evidenceStatus === "missing") {
+      const harness = new SqliteJoiHarnessRepository(fixture.database);
+      await harness.createMap({ goalInputId: "goal", workbenchId, now });
+      const [digest] = await harness.listReviewDigests();
+      if (digest === undefined) throw new Error("Expected a continuation awaiting review");
+      await expect(harness.enqueueReview({ digest, now })).resolves.toMatch(/^joi_harness_review:/u);
+      expect((await harness.listReviewDigests())).toEqual([]);
+    }
   } finally { await fixture.close(); }
 });
 

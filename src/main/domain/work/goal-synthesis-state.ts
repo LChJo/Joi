@@ -1,3 +1,5 @@
+import { DomainError } from "../errors.js";
+
 export interface GoalSynthesisClaim { statement: string; requirementIds: string[]; resultIds: string[] }
 export interface GoalSynthesisGap { description: string; requirementIds: string[]; resultIds: string[] }
 export interface GoalSynthesisConflict {
@@ -17,6 +19,24 @@ export interface GoalSynthesisState extends Omit<GoalSynthesisDraft, "claims"> {
   resultRevision: number;
   requirementsRevision: number;
   source: "MODEL" | "LEGACY";
+}
+
+export interface GoalSynthesisCoverageIssues {
+  requirementsStatus: "READY" | "DIRTY" | "STALE";
+  missingRequirementIds: string[];
+  unresolvedRequirementIds: string[];
+  blockingConflicts: { index: number; requirementIds: string[]; reason: "MISSING_RESOLUTION" | "UNSUPPORTED_RESOLUTION" }[];
+  citations: (
+    | { resultId: string; reason: "INELIGIBLE_RESULT" | "MISSING_READ_RECEIPT" }
+    | { resultId: string; reason: "REQUIREMENT_CHANGED"; requirementIds: string[] }
+  )[];
+  truncated: boolean;
+}
+
+export class GoalSynthesisCoverageError extends DomainError {
+  constructor(public readonly issues: GoalSynthesisCoverageIssues) {
+    super("goal_synthesis_coverage_incomplete", "Read and link eligible evidence for each mandatory requirement, or report the remaining gaps.");
+  }
 }
 
 const references = { type: "array", maxItems: 128, items: { type: "string", minLength: 1, maxLength: 256 } } as const;

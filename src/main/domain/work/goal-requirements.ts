@@ -37,7 +37,7 @@ export interface RequirementsUpdate {
   retirements: { id: string; source: RequirementSource; explicitUserCorrection?: true }[];
 }
 
-function sameRequirement(left: GoalRequirement, right: GoalRequirement): boolean {
+export function sameGoalRequirement(left: GoalRequirement, right: GoalRequirement): boolean {
   return left.text === right.text && left.kind === right.kind && left.mandatory === right.mandatory && left.scope === right.scope;
 }
 
@@ -61,7 +61,7 @@ export function mergeGoalRequirements(current: GoalRequirements, update: Require
     touched.add(change.id);
     const previous = requirements.get(change.id);
     const candidate = "text" in change ? change as GoalRequirement : undefined;
-    const unchanged = previous !== undefined && candidate !== undefined && sameRequirement(previous, candidate);
+    const unchanged = previous !== undefined && candidate !== undefined && sameGoalRequirement(previous, candidate);
     const laterUnprocessedSpan = change.source.sourceRevision === previous?.source.sourceRevision
       && change.source.start >= previous.source.end && change.source.sourceRevision > current.processedSourceRevision;
     if (!unchanged && (change.source.sourceRevision <= current.processedSourceRevision
@@ -78,7 +78,7 @@ export function mergeGoalRequirements(current: GoalRequirements, update: Require
         throw new DomainError("goal_requirements_invalid", "A requirement must have text, kind and scope.");
       }
       // Existing identifiers retain their own correction and provenance even when their texts converge.
-      if (previous !== undefined || ![...requirements.values()].some(existing => sameRequirement(existing, item))) {
+      if (previous !== undefined || ![...requirements.values()].some(existing => sameGoalRequirement(existing, item))) {
         requirements.set(item.id, unchanged ? previous : item);
       }
     } else {

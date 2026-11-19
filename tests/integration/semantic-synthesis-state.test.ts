@@ -1,7 +1,7 @@
 import { createGoalEvidenceFixture } from "../support/goal-evidence-fixture.js";
 import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { Type } from "typebox";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
@@ -15,6 +15,59 @@ const state = { version: 1 as const,
   conflicts: [{ description: "CONFLICT_REQUIRES_REVIEW", resultIds: ["result-1", "result-2"] }] };
 
 describe("semantic incremental synthesis state", () => {
+  it("offers only inspection and disposition tools after trusted coverage exhaustion", async () => {
+    const fixture = await createGoalEvidenceFixture([{}]);
+    const faux = fauxProvider({ provider: "synthesis-disposition-flow" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const normalCompletion = () => fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: "RESULT_SYNTHESIZED" })], { stopReason: "toolUse" });
+    faux.setResponses([
+      context => {
+        expect(getCurrentTools(context.messages).map(tool => tool.name)).toContain("work_supplement");
+        return normalCompletion();
+      },
+      normalCompletion,
+      context => {
+        expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["turn_complete"]);
+        return fauxAssistantMessage([fauxText("The existing report is useful. Verify the missing appendix next."),
+          fauxToolCall("turn_complete", { outcome: "RESULT_CONTINUE" })], { stopReason: "toolUse" });
+      },
+    ]);
+    let rejected = 0;
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, thinkingLevel: "off",
+      sessionStore: new SqlitePiReasoningSessionStore(fixture.database),
+      tools: [
+        { name: "turn_complete", label: "Complete", description: "Complete", parameters: Type.Object({ outcome: Type.String() }),
+          execute: (_id, args) => {
+            const { outcome } = args as { outcome: string };
+            if (outcome === "RESULT_CONTINUE") return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ outcome }) }],
+              details: {}, terminate: true });
+            const exhausted = ++rejected === 2;
+            return Promise.resolve({ content: [{ type: "text" as const, text: JSON.stringify({ status: exhausted ? "FAILED" : "RETRY_REQUIRED" }) }],
+              details: exhausted ? { correctionExhausted: true, synthesisCoverageExhausted: true } : {}, isError: true, terminate: exhausted });
+          } },
+        { name: "work_supplement", label: "Supplement", description: "Supplement", parameters: Type.Object({}),
+          execute: () => Promise.reject(new Error("The disposition pass must never dispatch work.")) },
+      ],
+    });
+    try {
+      fixture.database.transaction(db => db.prepare("UPDATE joi_turns SET status='COMPLETED' WHERE turn_id='synthesis-turn'").run());
+      const coordinator = new JoiCoordinator({ clock: fixture.clock, ids: fixture.ids, runtime, workbenches: fixture.workbenches,
+        router: { decide: () => Promise.reject(new Error("bound goal")) },
+        sources: { selectInitial: turnId => Promise.resolve({ turnId, modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }) },
+        store: { loadInput: id => fixture.inbox.loadInput(id),
+          createTurn: ({ inputId, turnId, sessionId, workbenchId, createdAt }) =>
+            fixture.inbox.createTurn({ inputId, turnId, sessionId, workbenchId, createdAt }),
+          completeInput: (id, turnId, completion) => fixture.inbox.completeInput(id, turnId, completion),
+          requireClarification: (id, reason) => fixture.inbox.requireClarification(id, reason) } });
+      await coordinator.handle(fixture.inputId);
+      expect(rejected).toBe(2);
+      expect(faux.getPendingResponseCount()).toBe(0);
+      const saved = fixture.database.transaction(db => db.prepare("SELECT disposition,completion_summary FROM joi_goal_outcomes WHERE input_id='goal'").get());
+      expect(saved).toMatchObject({ disposition: "CONTINUE", completion_summary: "The existing report is useful. Verify the missing appendix next." });
+    } finally { await fixture.close(); }
+  });
+
   it.each([false, true])("commits validated private state through real Pi without publishing it (correction=%s)", async correction => {
     const fixture = await createGoalEvidenceFixture([{ handoff }, { handoff }]);
     const faux = fauxProvider({ provider: "synthesis-state-flow" });

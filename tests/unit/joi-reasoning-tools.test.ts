@@ -9,7 +9,7 @@ import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import type { GoalRequirementsRepository } from "../../src/main/application/ports/goal-requirements.js";
 import type { GoalWorkListPage,GoalWorkListQuery } from "../../src/main/application/ports/work-orchestration.js";
 import type { MethodEvidenceRead } from "../../src/main/application/ports/method-learning.js";
-import type { GoalSynthesisDraft } from "../../src/main/domain/work/goal-synthesis-state.js";
+import { GoalSynthesisCoverageError, type GoalSynthesisDraft } from "../../src/main/domain/work/goal-synthesis-state.js";
 
 const partnerDto: PartnerDto = {
   capabilities: ["code"], createdBy: "user", displayName: "Coder", engine: "pi-core", inFlightCount: 0,
@@ -1109,6 +1109,26 @@ describe("AC-43/48 evidence tools", () => {
     expect(await tool.execute("first", parameters)).toMatchObject({ isError: true });
     expect(await tool.execute("second", parameters)).toMatchObject({ isError: true, terminate: true, details: { reasonCode: "goal_synthesis_reference_invalid" } });
     expect(harness.clarificationCalls).toEqual([]);
+  });
+
+  it("returns bounded coverage facts to the model and distinguishes a recoverable exhausted declaration", async () => {
+    const issues = {
+      requirementsStatus: "READY" as const, missingRequirementIds: ["appendix"], unresolvedRequirementIds: [],
+      blockingConflicts: [{ index: 0, requirementIds: ["appendix"], reason: "UNSUPPORTED_RESOLUTION" as const }],
+      citations: [{ resultId: "result-1", reason: "MISSING_READ_RECEIPT" as const }], truncated: false,
+    };
+    const validate = vi.fn().mockRejectedValue(new GoalSynthesisCoverageError(issues));
+    const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2", goalInputId: "original", validateSynthesisState: validate });
+    const tool = harness.tools.find(value => value.name === "turn_complete");
+    if (tool === undefined) throw new Error("Missing completion tool.");
+    const parameters = { outcome: "RESULT_SYNTHESIZED" };
+    const correction = await tool.execute("first", parameters);
+    expect(correction).not.toHaveProperty("terminate", true);
+    expect(correction.details).toEqual({ reasonCode: "goal_synthesis_coverage_incomplete" });
+    const [content] = correction.content;
+    expect(content?.type === "text" && content.text).toContain(JSON.stringify(issues));
+    expect(await tool.execute("second", parameters)).toMatchObject({ isError: true, terminate: true,
+      details: { correctionExhausted: true, synthesisCoverageExhausted: true } });
   });
 
   it("scopes historical index and conclusion pages to the original goal", async () => {

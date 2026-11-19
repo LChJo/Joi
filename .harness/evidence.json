@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "e7cbb76b778fcf4a378f2e8c90b99db08c1999e290a41341e409166a126c05d8",
-      "observedAt": "2026-11-19T06:09:21.825Z",
+      "hash": "20e69feea86968cf4927d76a83a9eae09f3e98981857619c3ab467675a24e5ed",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 750
+        "endLine": 756
       }
     },
     {
@@ -998,12 +998,12 @@
     {
       "id": "60fe6b4d-06e2-46f5-8e7f-e680ff854cf9",
       "kind": "source-code",
-      "claim": "The primary reasoning port carries Turn isolation, scoped prior Turn identity lookup, and private session projections.",
+      "claim": "The primary reasoning port carries Turn isolation, scoped prior Turn identity lookup, and private session projections. The reasoning port distinguishes trusted ready coverage exhaustion and a bounded read-only disposition pass.",
       "location": {
         "path": "src/main/application/ports/primary-reasoning-runtime.ts"
       },
-      "hash": "46b192d0ee1ca0f4937d5d3d6364ef79d63d69fb08f782ac9cf857d3f484fd4f",
-      "observedAt": "2026-11-19T02:11:41.594Z",
+      "hash": "521048ec7d80141bc14d8c7ffa0b48fac455e659f978a061b0fc1fa7c5b6d8d5",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
         "endLine": 98
@@ -1068,15 +1068,15 @@
     {
       "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
       "kind": "source-code",
-      "claim": "Primary Pi isolates business Turns. Evidence Turns load legacy history only through scoped explicit reads; other Turns may retain a legacy summary.",
+      "claim": "Primary Pi isolates business Turns. Evidence Turns load legacy history only through scoped explicit reads; other Turns may retain a legacy summary. A disposition pass exposes only inspection and conclusion tools and forwards the trusted coverage exhaustion marker.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "f94dd28aeb974824639605452e16fd3c59b65b953cc240dcd7fc0031c566b419",
-      "observedAt": "2026-11-19T06:09:21.825Z",
+      "hash": "783e988f1348afa42328a661947f6c533cc18f2ca5d05dab97a429172e54ffaf",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 424
+        "endLine": 432
       }
     },
     {
@@ -2076,15 +2076,15 @@
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Primary Joi navigates the goal-scoped roadmap and receipt-backed evidence. Result reads separate unavailable, inactive and stale ownership. Coverage refresh uses only evidence, requirement and completion tools. Primary user_ask passes structured options/defaults and a stable turn/tool-call binding to the existing goal clarification port; goal_resume still requires the versioned recovery gate.",
+      "claim": "Primary Joi navigates the goal-scoped roadmap and receipt-backed evidence. Result reads separate unavailable, inactive and stale ownership. Coverage refresh uses only evidence, requirement and completion tools. Primary user_ask passes structured options/defaults and a stable turn/tool-call binding to the existing goal clarification port; goal_resume still requires the versioned recovery gate. Synthesis validation returns bounded coverage issues to the model without publishing private claims or changing the retry budget.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "f652fb7121a6c8be793d45e1ee48d54486d3e375980d54dbc9d7e17cffb0e9ea",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "1b1d42fc4bfbd232646a2d243144e26a2d6fb0b29aa22130dafb49e90828c15a",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 1142
+        "endLine": 1149
       }
     },
     {
@@ -2118,15 +2118,15 @@
     {
       "id": "54924ed6-1441-4f5d-a175-47b16eae6fbc",
       "kind": "source-code",
-      "claim": "Synthetic tool regressions retain usable partner candidates and pass both valid and invalid dependency edges intact to the application. Plan errors permit one ordering-preserving correction and never request a partner selection.",
+      "claim": "Synthetic tool regressions retain usable partner candidates and pass both valid and invalid dependency edges intact to the application. Plan errors permit one ordering-preserving correction and never request a partner selection. Tool regressions cover private structured coverage feedback and trusted exhaustion classification.",
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "f7f63a92db251515a857c09b4eac603c7ac42b20d178f00431bb280bc83710df",
-      "observedAt": "2026-11-19T06:56:47.075Z",
+      "hash": "dd9ad460d88b5cdc60c1eba663f11f09b794dbd89fc0c8fefb70f276e9797073",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 1131
+        "endLine": 1151
       }
     },
     {
@@ -2678,15 +2678,15 @@
     {
       "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
       "kind": "source-code",
-      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Bounded requirements retain mandatory entries and trusted input guidance; inactive evidence turns stop without redispatch.",
+      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Bounded requirements retain mandatory entries and trusted input guidance; inactive evidence turns stop without redispatch. Verified read-only history and Skill reads preserve recovery eligibility. Exhausted coverage can lead to a bounded read-only disposition, with safe continuation or a persistent blocked result.",
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "9e6fc8acddce4e297cc99087539db8896a3107ab95f7da98a004a29b85c46ebf",
-      "observedAt": "2026-11-19T06:56:47.075Z",
+      "hash": "033260507df69b051e6406f6882477d28c6db82aae2cae8966ed84affcfeb720",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 888
+        "endLine": 933
       }
     },
     {
@@ -2720,12 +2720,12 @@
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion. Goal questions preserve FIFO and exact action/run ownership, import legacy gate identities, defer or supersede ordinary questions behind independent choices, and persist active gate projection with enqueue. Saved answers reconcile with explicit source provenance, resolve each Work action and create one aggregate recovery review only after the queue empties. Resume revalidates current queue, goal and gate; cancellation never revives questions. Canceling Work retires its cards, including saved answers awaiting projection. The remaining queue advances or schedules an explicit recovery review with withdrawal provenance.",
+      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion. Goal questions preserve FIFO and exact action/run ownership, import legacy gate identities, defer or supersede ordinary questions behind independent choices, and persist active gate projection with enqueue. Saved answers reconcile with explicit source provenance, resolve each Work action and create one aggregate recovery review only after the queue empties. Resume revalidates current queue, goal and gate; cancellation never revives questions. Canceling Work retires its cards, including saved answers awaiting projection. The remaining queue advances or schedules an explicit recovery review with withdrawal provenance. The coverage preflight and transactional completion use the same scoped evidence rules.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "60e85ed012a18ebbb9fe841cbba100ebeda0d710cef91615988b2475b217ebfa",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "5b695c5523d322dbff4cfcc1f307e8c371856464f3a5233f62d009c112246048",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
         "endLine": 1810
@@ -2748,15 +2748,15 @@
     {
       "id": "42b8045e-50f5-4144-9960-3de0e9b2c402",
       "kind": "source-code",
-      "claim": "Real synthetic Pi completion and correction pass through SQLite validation without publishing private claims or conflicts.",
+      "claim": "Real synthetic Pi completion and correction pass through SQLite validation without publishing private claims or conflicts. A synthetic supplier verifies the real Pi tool restriction and persisted continuation after coverage exhaustion.",
       "location": {
         "path": "tests/integration/semantic-synthesis-state.test.ts"
       },
-      "hash": "5dcea317a398d8663a9c10b42a1837c20e1d1366647f7a532ea98bd1221903f0",
-      "observedAt": "2026-11-19T06:09:21.825Z",
+      "hash": "c9d65910844151c9a14a7b6092ba0b4d80432d694a10e3edd201fb1f08f63ac7",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 115
+        "endLine": 168
       }
     },
     {
@@ -2776,15 +2776,15 @@
     {
       "id": "f0062573-1c17-4520-b6bd-3106fb939515",
       "kind": "source-code",
-      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors.",
+      "claim": "Coordinator tests enforce bounded correction, complete long output, draft replacement through fallback and non-repeating source errors. Recovery tests cover safe connected continuation after read-only Skill or history inspection, bounded blockage and rejection after potential Work mutation.",
       "location": {
         "path": "tests/unit/joi-synthesis-validation.test.ts"
       },
-      "hash": "1b7028fcaaeecf00fa56a46065ee3173006008d08fbcd6a899e0924c7b81c3b8",
-      "observedAt": "2026-11-16T04:37:28.758Z",
+      "hash": "61bb049078a89f81feab8fe32d9d9ecca63dbb5d1d0e59955d81fea320d635ff",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 103
+        "endLine": 151
       }
     },
     {
@@ -4022,15 +4022,15 @@
     {
       "id": "b07645af-27aa-4934-aa33-38152d841901",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement.",
+      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement. Cross-version tests reuse unchanged scopes, enforce reads for current support, retain valid support alongside invalid references and enqueue one review for a partial decision.",
       "location": {
         "path": "tests/integration/joi-review-coverage.test.ts"
       },
-      "hash": "a18a015a6d03023dce86da9ad5f252f3dadf053537d53ae31e88112d92a896e3",
-      "observedAt": "2026-11-19T06:59:46.486Z",
+      "hash": "acc2c22678a690e8f0093f6fee6957449c4604bd1ec2a7bcf8bd480e947ebb1e",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 224
+        "endLine": 286
       }
     },
     {
@@ -4050,15 +4050,15 @@
     {
       "id": "46193bc6-5f95-4df0-9533-52b4cdcd1751",
       "kind": "source-code",
-      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence.",
+      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence. Accepted authoritative results support individually unchanged historical requirements through their frozen scope and source. Bounded coverage diagnostics identify missing or unresolved requirements, conflicts and unusable citations.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-goal-synthesis-state.ts"
       },
-      "hash": "ae16398e0c10bb5e97d7265a081fddfcced7d5381d66d6c623e458c9b7621286",
-      "observedAt": "2026-11-19T06:59:46.486Z",
+      "hash": "f83a03908d1ce3e7643bbc538fa95feec6ae99f45d15659b2e38853b8637a155",
+      "observedAt": "2026-11-19T14:19:48.650Z",
       "range": {
         "startLine": 1,
-        "endLine": 150
+        "endLine": 228
       }
     },
     {

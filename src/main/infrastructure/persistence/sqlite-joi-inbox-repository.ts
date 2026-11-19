@@ -8,7 +8,7 @@ import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.js";
 import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
-import { assertGoalSynthesisCoverage, hasCurrentGoalSynthesisCoverage, buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
+import { hasCurrentGoalSynthesisCoverage, buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
 import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
@@ -1087,10 +1087,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (typeof input?.goal_input_id !== "string" || typeof input.workbench_id !== "string" || typeof input.result_revision !== "number") {
         throw new DomainError("goal_synthesis_state_invalid", "Synthesis requires a versioned goal input.");
       }
-      const state = buildGoalSynthesisState(connection, { goalInputId: input.goal_input_id, workbenchId: input.workbench_id,
+      buildGoalSynthesisState(connection, { goalInputId: input.goal_input_id, workbenchId: input.workbench_id,
         resultRevision: input.result_revision, requirementsRevision: Number(input.requirements_revision ?? 0),
+        requireCoverage: completing === true,
         ...(draft === undefined ? {} : { draft }) });
-      if (completing === true) assertGoalSynthesisCoverage(connection,input.goal_input_id,state);
     });
   }
 
@@ -1236,15 +1236,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
         const committedAt = explicitResume && reopenedAt > completionTime ? reopenedAt : completionTime;
+        const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED"
+          : completion.outcome === "RESULT_CONTINUE" ? "CONTINUE" : "BLOCKED";
         const synthesisState = buildGoalSynthesisState(connection, {
           goalInputId: synthesis.goal_input_id, workbenchId: requirements?.workbenchId ?? String(connection.prepare("SELECT workbench_id FROM joi_inbox_messages WHERE input_id=?").get(inputId)?.workbench_id),
           resultRevision: synthesis.result_revision, requirementsRevision: requirements?.revision ?? 0,
+          requireCoverage: disposition === "COMPLETED",
           ...(completion.synthesisState === undefined ? {} : { draft: completion.synthesisState }),
         });
-        const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED"
-          : completion.outcome === "RESULT_CONTINUE" ? "CONTINUE" : "BLOCKED";
         if (disposition === "COMPLETED") {
-          assertGoalSynthesisCoverage(connection,synthesis.goal_input_id,synthesisState);
           const completedWork = connection.prepare(`SELECT 1 FROM work_items
             WHERE input_id = ? AND status = 'COMPLETED' LIMIT 1`).get(synthesis.goal_input_id);
           if (completedWork === undefined) {

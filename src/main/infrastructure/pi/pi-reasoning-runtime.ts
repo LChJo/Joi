@@ -72,6 +72,10 @@ export const JOI_REASONING_TOOL_NAMES = [
 
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
+const SYNTHESIS_DISPOSITION_TOOLS = new Set([
+  "goal_read_inputs", "work_list_goal", "work_read_brief", "work_read_evidence", "work_read_result", "turn_complete",
+]);
+
 interface PiReasoningRuntimeOptions {
   memory?: HistoricalMemoryReader;
   compactionThresholdPercent?: number;
@@ -199,7 +203,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           const oldSummary = old?.compaction?.summary.trim();
           return [...priorTurns, ...(oldSummary ? [{ kind: "legacy_summary",text: oldSummary }] : []),
             ...(old?.archivedMessages ?? []), ...oldMessages, ...current];
-        },readTurn)].map(tool => tool.name === "user_ask" || tool.name === "turn_complete" ? { ...tool,executionMode: "sequential" as const } : tool);
+        },readTurn)]
+        .filter(tool => input.repair !== "synthesis-disposition" || SYNTHESIS_DISPOSITION_TOOLS.has(tool.name))
+        .map(tool => tool.name === "user_ask" || tool.name === "turn_complete" ? { ...tool,executionMode: "sequential" as const } : tool);
       validateToolNames(tools);
       const memory = renderHistoricalContext("joi",this.options.memory?.entries("joi",JOI_MEMORY_OWNER) ?? []).text;
       const factories: ExtensionFactory[] = [pi => {
@@ -367,8 +373,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // Error text and model-provided content cannot establish this proof.
       const rejectedBeforeExecution = isError && !runtime.validatedToolCalls.has(event.toolCallId)
         && runtime.agent.state.tools.some(tool => tool.name === event.toolName && tool.prepareArguments === undefined);
-      const reasonCode = event.toolName === "turn_complete"
-        && (event.result as { details?: { correctionExhausted?: unknown } } | undefined)?.details?.correctionExhausted === true
+      const details = (event.result as { details?: { correctionExhausted?: unknown; synthesisCoverageExhausted?: unknown } } | undefined)?.details;
+      const correctionExhausted = event.toolName === "turn_complete" && isError && details?.correctionExhausted === true;
+      const reasonCode = correctionExhausted
         ? "goal_synthesis_correction_exhausted" : safeToolResultReasonCode(event.result)
         ?? (isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
@@ -380,6 +387,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         isError,
         ...(outcome === undefined ? {} : { outcome }),
         ...(synthesisState === undefined ? {} : { synthesisState }),
+        ...(correctionExhausted && details.synthesisCoverageExhausted === true ? { synthesisCoverageExhausted: true } : {}),
         ...(reasonCode === undefined && isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
         ...(rejectedBeforeExecution || (event.toolName === "work_dispatch" || isError && event.toolName === "goal_resume"
           && (reasonCode === "goal_resume_not_allowed" || reasonCode === "goal_resume_conflict"))

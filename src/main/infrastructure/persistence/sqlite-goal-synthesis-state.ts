@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
-import { parseGoalSynthesisDraft, type GoalSynthesisDraft, type GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
+import { sameGoalRequirement, type GoalRequirement, type GoalRequirements } from "../../domain/work/goal-requirements.js";
+import { GoalSynthesisCoverageError, parseGoalSynthesisDraft, type GoalSynthesisCoverageIssues, type GoalSynthesisDraft, type GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements.js";
 
 export function readStoredSynthesisState(value: unknown): GoalSynthesisState | undefined {
@@ -19,7 +20,7 @@ export function readStoredSynthesisState(value: unknown): GoalSynthesisState | u
 
 /** References are scoped to the committed evidence version; model statements cannot grant acceptance. */
 export function buildGoalSynthesisState(connection: DatabaseSync, input: {
-  goalInputId: string; workbenchId: string; resultRevision: number; requirementsRevision: number; draft?: GoalSynthesisDraft;
+  goalInputId: string; workbenchId: string; resultRevision: number; requirementsRevision: number; draft?: GoalSynthesisDraft; requireCoverage?: boolean;
 }): GoalSynthesisState {
   const contract = loadGoalRequirements(connection, input.goalInputId);
   const knownRequirements = new Set(contract?.requirements.map(requirement => requirement.id) ?? []);
@@ -37,9 +38,66 @@ export function buildGoalSynthesisState(connection: DatabaseSync, input: {
   for (const item of [...draft.claims, ...draft.unresolved, ...draft.conflicts]) {
     if (item.requirementIds?.some(id => !knownRequirements.has(id))) throw new DomainError("goal_synthesis_reference_invalid", "Synthesis references an unknown requirement.");
   }
+  const evidence = verifySynthesisResults(connection, input, draft, contract);
+  const state: GoalSynthesisState = { ...draft, source: input.draft === undefined ? "LEGACY" : "MODEL", resultRevision: input.resultRevision,
+    requirementsRevision: input.requirementsRevision,
+    claims: draft.claims.map(claim => {
+      const usable = claim.resultIds.flatMap(id => {
+        const result = evidence.get(id);
+        return result?.eligible === true ? [result] : [];
+      });
+      const verified = usable.length > 0 && claim.requirementIds.every(id => usable.some(result => result.requirementIds.has(id)));
+      return { ...claim, verification: verified ? "VERIFIED" : "UNVERIFIED" };
+    }),
+  };
+  if (input.requireCoverage === true) assertGoalSynthesisCoverage(connection, contract, state, evidence);
+  return state;
+}
+
+interface ResultEvidence {
+  eligible: boolean;
+  requirementIds: Set<string>;
+  changedRequirementIds: Set<string>;
+}
+
+function readRequirementScopes(connection: DatabaseSync, goalInputId: string, current: GoalRequirements | null, oldRevisions: Set<number>) {
+  const scopes = new Map<number, Set<string>>();
+  if (current === null || oldRevisions.size === 0) return scopes;
+  const currentById = new Map(current.requirements.map(requirement => [requirement.id, requirement]));
+  const snapshots = connection.prepare(`SELECT revision,requirements_json FROM joi_goal_requirement_snapshots
+    WHERE goal_input_id=? AND json_valid(requirements_json) AND revision IN (SELECT value FROM json_each(?))`)
+    .all(goalInputId, JSON.stringify([...oldRevisions]));
+  for (const snapshot of snapshots) {
+    const unchanged = new Set<string>();
+    const previousRequirements: unknown = JSON.parse(String(snapshot.requirements_json));
+    if (!Array.isArray(previousRequirements)) continue;
+    for (const previous of previousRequirements as (GoalRequirement | null)[]) {
+      if (previous === null) continue;
+      const active = currentById.get(previous.id);
+      // The original source span distinguishes a continuously active requirement from a retired or replaced one.
+      if (active !== undefined && sameGoalRequirement(previous, active)
+        && previous.source.sourceRevision === active.source.sourceRevision
+        && previous.source.start === active.source.start && previous.source.end === active.source.end) unchanged.add(active.id);
+    }
+    scopes.set(Number(snapshot.revision), unchanged);
+  }
+  return scopes;
+}
+
+function resultRequirementIds(value: unknown): string[] | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const ids: unknown = JSON.parse(value);
+    if (Array.isArray(ids) && ids.every((id: unknown) => typeof id === "string")) return ids;
+  } catch { /* An unknown execution scope cannot prove requirement coverage. */ }
+  return undefined;
+}
+
+function verifySynthesisResults(connection: DatabaseSync, input: {
+  goalInputId: string; workbenchId: string; resultRevision: number; requirementsRevision: number;
+}, draft: GoalSynthesisDraft, contract: GoalRequirements | null): Map<string, ResultEvidence> {
   const ids = new Set([...draft.claims, ...draft.unresolved, ...draft.conflicts].flatMap(item => item.resultIds));
   for (const conflict of draft.conflicts) for (const id of conflict.resolution?.resultIds ?? []) ids.add(id);
-  const verified = new Map<string, { requirementsRevision: number; requirementIds?: Set<string> }>();
   const rows = ids.size === 0 ? [] : connection.prepare(`WITH requested AS (SELECT value AS result_id FROM json_each(?))
       SELECT r.result_id AS resultId,r.status,r.is_late,r.is_authoritative,COALESCE(v.status,'UNVERIFIED') AS verification,
       run.requirements_revision,run.requirement_ids_json,
@@ -52,79 +110,100 @@ export function buildGoalSynthesisState(connection: DatabaseSync, input: {
         WHERE m.original_input_id=? AND m.revision<=? AND e.run_id=r.run_id AND e.status=r.status
       )`).all(JSON.stringify([...ids]), input.goalInputId, input.workbenchId, input.workbenchId, input.goalInputId, input.resultRevision);
   if (rows.length !== ids.size) throw new DomainError("goal_synthesis_reference_invalid", "Synthesis references evidence outside its goal or version.");
-  for (const row of rows) {
+  const oldRevisions = new Set(rows.map(row => Number(row.requirements_revision ?? 0))
+    .filter(revision => revision > 0 && revision < input.requirementsRevision));
+  const unchanged = readRequirementScopes(connection, input.goalInputId,
+    contract?.revision === input.requirementsRevision ? contract : null, oldRevisions);
+  return new Map(rows.map(row => {
+    const requirementIds = new Set<string>();
+    const changedRequirementIds = new Set<string>();
+    let eligible = false;
     if (row.status === "COMPLETED" && row.verification === "PASSED" && row.is_late === 0 && row.is_authoritative === 1 && row.eligible === 1) {
-      let requirementIds: Set<string> | undefined;
-      try {
-        const ids: unknown = typeof row.requirement_ids_json === "string" ? JSON.parse(row.requirement_ids_json) : undefined;
-        if (Array.isArray(ids) && ids.every((value: unknown) => typeof value === "string")) requirementIds = new Set(ids);
-      } catch { /* An unknown execution scope cannot prove current requirement coverage. */ }
-      verified.set(row.resultId as string, { requirementsRevision: Number(row.requirements_revision ?? 0), ...(requirementIds === undefined ? {} : { requirementIds }) });
+      const revision = Number(row.requirements_revision ?? 0);
+      const scope = resultRequirementIds(row.requirement_ids_json);
+      if (revision === input.requirementsRevision) {
+        eligible = scope !== undefined || revision === 0;
+        for (const id of scope ?? []) requirementIds.add(id);
+      } else if (revision < input.requirementsRevision) {
+        for (const id of scope ?? []) {
+          (unchanged.get(revision)?.has(id) === true ? requirementIds : changedRequirementIds).add(id);
+        }
+        eligible = requirementIds.size > 0;
+      }
     }
-  }
-  return { ...draft, source: input.draft === undefined ? "LEGACY" : "MODEL", resultRevision: input.resultRevision,
-    requirementsRevision: input.requirementsRevision,
-    claims: draft.claims.map(claim => {
-      const coveredRequirements = new Set<string>();
-      const eligible = claim.resultIds.length > 0 && claim.resultIds.every(id => {
-        const evidence = verified.get(id);
-        if (evidence?.requirementsRevision !== input.requirementsRevision) return false;
-        if (evidence.requirementIds === undefined) return input.requirementsRevision === 0 && claim.requirementIds.length === 0;
-        for (const requirementId of evidence.requirementIds) coveredRequirements.add(requirementId);
-        return true;
-      });
-      return { ...claim, verification: eligible && claim.requirementIds.every(id => coveredRequirements.has(id)) ? "VERIFIED" : "UNVERIFIED" };
-    }),
-  };
+    return [String(row.resultId), { eligible, requirementIds, changedRequirementIds }];
+  }));
 }
 
-export function assertGoalSynthesisCoverage(connection: DatabaseSync, goalInputId: string, state: GoalSynthesisState): void {
-  const contract = loadGoalRequirements(connection,goalInputId);
+function assertGoalSynthesisCoverage(connection: DatabaseSync, contract: GoalRequirements | null, state: GoalSynthesisState,
+  evidence: Map<string, ResultEvidence>): void {
   if (contract === null) return;
   const mandatory = contract.requirements.filter(requirement => requirement.mandatory).map(requirement => requirement.id);
   if (mandatory.length === 0) return;
-  const eligible = state.claims.filter(claim => claim.verification === "VERIFIED");
-  const sources = new Set(eligible.flatMap(claim => claim.resultIds));
-  const readRows = connection.prepare(`SELECT DISTINCT e.result_id,req.value AS requirement_id FROM json_each(?) requested
+  const required = new Set(mandatory);
+  const claimResultIds = new Set(state.claims.flatMap(claim => claim.resultIds).filter(id => evidence.get(id)?.eligible === true));
+  const readRows = claimResultIds.size === 0 ? [] : connection.prepare(`SELECT DISTINCT e.result_id FROM json_each(?) requested
     JOIN joi_goal_evidence_reads e ON e.result_id=requested.value
     JOIN work_results r ON r.result_id=e.result_id AND r.body_ref=e.source_ref
-    JOIN partner_runs run ON run.run_id=r.run_id
-    LEFT JOIN json_each(CASE WHEN json_valid(run.requirement_ids_json) THEN run.requirement_ids_json ELSE '[]' END) req
     WHERE e.goal_input_id=? AND e.requirements_revision=? AND e.result_revision<=?`)
-    .all(JSON.stringify([...sources]),goalInputId,state.requirementsRevision,state.resultRevision);
-  const readScopes = new Map<string, Set<string>>();
-  for (const row of readRows) {
-    const resultId = row.result_id as string;
-    const scope = readScopes.get(resultId) ?? new Set<string>();
-    if (typeof row.requirement_id === "string") scope.add(row.requirement_id);
-    readScopes.set(resultId,scope);
-  }
-  const covered = new Set<string>();
+    .all(JSON.stringify([...claimResultIds]), contract.goalInputId, state.requirementsRevision, state.resultRevision);
+  const readIds = new Set(readRows.map(row => String(row.result_id)));
   const support = new Map<string, Set<string>>();
-  for (const claim of eligible) {
-    if (!claim.resultIds.every(id => readScopes.has(id))) continue;
-    for (const requirementId of claim.requirementIds) {
-      covered.add(requirementId);
-      const results = support.get(requirementId) ?? new Set<string>();
-      for (const resultId of claim.resultIds) {
-        if (readScopes.get(resultId)?.has(requirementId) === true) results.add(resultId);
+  const relevantCitations = new Map<string, Set<string>>();
+  for (const claim of state.claims) {
+    const claimedRequirements = claim.requirementIds.filter(id => required.has(id));
+    if (claimedRequirements.length === 0) continue;
+    for (const resultId of claim.resultIds) {
+      const relevant = relevantCitations.get(resultId) ?? new Set<string>();
+      for (const id of claimedRequirements) {
+        relevant.add(id);
+        if (!readIds.has(resultId) || evidence.get(resultId)?.requirementIds.has(id) !== true) continue;
+        const supportingResults = support.get(id) ?? new Set<string>();
+        supportingResults.add(resultId);
+        support.set(id, supportingResults);
       }
-      support.set(requirementId,results);
+      relevantCitations.set(resultId, relevant);
     }
   }
-  const required = new Set(mandatory);
-  const blockingConflict = state.conflicts.some(conflict => {
+  const blockingConflicts: GoalSynthesisCoverageIssues["blockingConflicts"] = [];
+  for (const [index, conflict] of state.conflicts.entries()) {
     const affected = conflict.requirementIds?.filter(id => required.has(id)) ?? mandatory;
-    if (affected.length === 0) return false;
+    if (affected.length === 0) continue;
     const resolvedWith = conflict.resolution?.resultIds;
-    return resolvedWith === undefined || affected.some(id => !resolvedWith.some(resultId => support.get(id)?.has(resultId) === true))
-      || resolvedWith.some(resultId => !affected.some(id => support.get(id)?.has(resultId) === true));
-  });
-  const gaps = new Set(state.unresolved.flatMap(gap => gap.requirementIds));
-  if (contract.revision !== state.requirementsRevision || contract.status !== "READY" ||
-    mandatory.some(id => !covered.has(id) || gaps.has(id)) || blockingConflict) {
-    throw new DomainError("goal_synthesis_coverage_incomplete","Read and link eligible evidence for each mandatory requirement, or report the remaining gaps.");
+    if (resolvedWith === undefined) blockingConflicts.push({ index, requirementIds: affected, reason: "MISSING_RESOLUTION" });
+    else if (affected.some(id => !resolvedWith.some(resultId => support.get(id)?.has(resultId) === true))
+      || resolvedWith.some(resultId => !affected.some(id => support.get(id)?.has(resultId) === true))) {
+      blockingConflicts.push({ index, requirementIds: affected, reason: "UNSUPPORTED_RESOLUTION" });
+    }
   }
+  const gaps = new Set(state.unresolved.flatMap(gap => gap.requirementIds));
+  const missingRequirementIds = mandatory.filter(id => !support.has(id));
+  const unresolvedRequirementIds = mandatory.filter(id => gaps.has(id));
+  const requirementsStatus = contract.revision === state.requirementsRevision ? contract.status : "STALE";
+  if (requirementsStatus === "READY" && missingRequirementIds.length === 0 && unresolvedRequirementIds.length === 0
+    && blockingConflicts.length === 0) return;
+
+  const citations: GoalSynthesisCoverageIssues["citations"] = [];
+  for (const [resultId, requirementIds] of relevantCitations) {
+    const result = evidence.get(resultId);
+    const changed = [...requirementIds].filter(id => result?.changedRequirementIds.has(id) === true);
+    if (changed.length > 0) citations.push({ resultId, reason: "REQUIREMENT_CHANGED", requirementIds: changed });
+    if (result?.eligible !== true && changed.length === 0) citations.push({ resultId, reason: "INELIGIBLE_RESULT" });
+    else if (result?.eligible === true && !readIds.has(resultId)
+      && [...requirementIds].some(id => result.requirementIds.has(id))) citations.push({ resultId, reason: "MISSING_READ_RECEIPT" });
+  }
+  const limit = 12;
+  const perIssueLimit = 4;
+  throw new GoalSynthesisCoverageError({
+    requirementsStatus,
+    missingRequirementIds: missingRequirementIds.slice(0, limit),
+    unresolvedRequirementIds: unresolvedRequirementIds.slice(0, limit),
+    blockingConflicts: blockingConflicts.slice(0, limit).map(issue => ({ ...issue, requirementIds: issue.requirementIds.slice(0, perIssueLimit) })),
+    citations: citations.slice(0, limit).map(issue => issue.reason === "REQUIREMENT_CHANGED"
+      ? { ...issue, requirementIds: issue.requirementIds.slice(0, perIssueLimit) } : issue),
+    truncated: [missingRequirementIds, unresolvedRequirementIds, blockingConflicts, citations].some(items => items.length > limit)
+      || [...blockingConflicts, ...citations].some(issue => "requirementIds" in issue && issue.requirementIds.length > perIssueLimit),
+  });
 }
 
 export function hasCurrentGoalSynthesisCoverage(connection: DatabaseSync, goalInputId: string): boolean {
@@ -139,9 +218,8 @@ export function hasCurrentGoalSynthesisCoverage(connection: DatabaseSync, goalIn
     unresolved: stored.unresolved,conflicts: stored.conflicts,
   };
   try {
-    const state = buildGoalSynthesisState(connection,{ goalInputId,workbenchId: contract.workbenchId,
-      resultRevision: stored.resultRevision,requirementsRevision: contract.revision,draft });
-    assertGoalSynthesisCoverage(connection,goalInputId,state);
+    buildGoalSynthesisState(connection,{ goalInputId,workbenchId: contract.workbenchId,
+      resultRevision: stored.resultRevision,requirementsRevision: contract.revision,draft,requireCoverage: true });
     return true;
   } catch (error) {
     if (error instanceof DomainError && ["goal_synthesis_coverage_incomplete","goal_synthesis_reference_invalid"].includes(error.code)) return false;

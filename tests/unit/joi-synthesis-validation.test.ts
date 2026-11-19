@@ -11,8 +11,9 @@ const workbench = createWorkbench({ workbenchId: "workbench", createdAt: "2026-0
   personaRevisionId: "persona", personaSummary: "Careful", project: { label: "Test" }, scopeSummary: "Test", taskContext: { activeWorkIds: [], summary: "" } });
 const invalid = () => new DomainError("goal_synthesis_reference_invalid", "Unknown evidence.");
 
-function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFailure?: SourceFailureKind; fallback?: boolean; longAnswer?: string } = {}) {
-  const validate = options.fallback ? vi.fn().mockResolvedValue(undefined)
+function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFailure?: SourceFailureKind; fallback?: boolean; longAnswer?: string;
+  coverageExhausted?: "continue" | "no-decision"; readOnlyTool?: string } = {}) {
+  const validate = options.fallback || options.coverageExhausted !== undefined ? vi.fn().mockResolvedValue(undefined)
     : options.repeated ? vi.fn().mockRejectedValue(invalid()) : vi.fn().mockRejectedValueOnce(invalid()).mockResolvedValue(undefined);
   const complete = vi.fn(async () => undefined);
   const failed = vi.fn(async () => undefined);
@@ -28,6 +29,24 @@ function setup(options: { repeated?: boolean; externalEffect?: boolean; sourceFa
     if (options.externalEffect) {
       turn.onEvent?.({ type: "tool_started", turnId: turn.turnId, toolCallId: "external", toolName: "work_supplement" });
       turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "external", toolName: "work_supplement", isError: false });
+    }
+    if (options.coverageExhausted !== undefined) {
+      if (calls === 1) {
+        if (options.readOnlyTool !== undefined) {
+          turn.onEvent?.({ type: "tool_started", turnId: turn.turnId, toolCallId: "read", toolName: options.readOnlyTool });
+          turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "read", toolName: options.readOnlyTool, isError: false });
+        }
+        turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "failed-coverage", toolName: "turn_complete",
+          isError: true, reasonCode: "goal_synthesis_correction_exhausted", synthesisCoverageExhausted: true });
+        turn.onEvent?.({ type: "text_delta", turnId: turn.turnId, delta: "Unverified all-done assertion." });
+      } else if (options.coverageExhausted === "continue") {
+        turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: "partial", toolName: "turn_complete",
+          isError: false, outcome: "RESULT_CONTINUE" });
+        turn.onEvent?.({ type: "text_delta", turnId: turn.turnId, delta: "The report is confirmed. Check the appendix next." });
+      } else {
+        turn.onEvent?.({ type: "text_delta", turnId: turn.turnId, delta: "Uncommitted plain text." });
+      }
+      return;
     }
     turn.onEvent?.({ type: "tool_started", turnId: turn.turnId, toolCallId: `complete-${String(calls)}`, toolName: "turn_complete" });
     turn.onEvent?.({ type: "tool_finished", turnId: turn.turnId, toolCallId: `complete-${String(calls)}`, toolName: "turn_complete", isError: false, outcome: "RESULT_SYNTHESIZED",
@@ -91,6 +110,35 @@ describe("synthesis validation recovery", () => {
     expect(fixture.startTurn).toHaveBeenCalledTimes(2);
     expect(fixture.complete).not.toHaveBeenCalled();
     expect(fixture.failed).toHaveBeenCalledOnce();
+  });
+
+  it.each(["joi_read_skill", "workbench_read_history"])("persists a safe continuation after coverage exhaustion following %s", async readOnlyTool => {
+    const fixture = setup({ coverageExhausted: "continue", readOnlyTool });
+    await fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0");
+    expect(fixture.startTurn).toHaveBeenCalledTimes(2);
+    expect(fixture.startTurn.mock.calls[1]?.[0]).toMatchObject({ repair: "synthesis-disposition" });
+    expect(fixture.complete).toHaveBeenCalledExactlyOnceWith(expect.any(String), expect.any(String), {
+      outcome: "RESULT_CONTINUE", completionSummary: "The report is confirmed. Check the appendix next.",
+    });
+    expect(fixture.failed).not.toHaveBeenCalled();
+  });
+
+  it("records a blocked result without publishing an unverified answer when the disposition pass gives no decision", async () => {
+    const fixture = setup({ coverageExhausted: "no-decision" });
+    await fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0");
+    expect(fixture.startTurn).toHaveBeenCalledTimes(2);
+    expect(fixture.complete).toHaveBeenCalledExactlyOnceWith(expect.any(String), expect.any(String),
+      expect.objectContaining({ outcome: "RESULT_BLOCKED" }));
+    expect(JSON.stringify(fixture.complete.mock.calls)).not.toMatch(/Unverified all-done|Uncommitted plain/);
+    expect(fixture.failed).not.toHaveBeenCalled();
+  });
+
+  it("does not open another pass on coverage failure after a possible Work mutation", async () => {
+    const fixture = setup({ coverageExhausted: "continue", externalEffect: true });
+    await expect(fixture.coordinator.handle("joi_result_input:goal:goal:r1:q0"))
+      .rejects.toMatchObject({ code: "goal_synthesis_correction_exhausted" });
+    expect(fixture.startTurn).toHaveBeenCalledOnce();
+    expect(fixture.complete).not.toHaveBeenCalled();
   });
 
   it("does not replay an execution-bearing synthesis while correcting its state", async () => {

@@ -3,14 +3,14 @@ import type { SummaryRetryState } from "./summary-state.js";
 import type { PartnerSessionState } from "./partner-instances.js";
 
 export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED" | "MAP_CLEARED";
-export type ReasoningRepair = "requirements" | "tool-capability" | "tool-call-markup" | "missing-outcome" | "empty-completion" | "synthesis-state";
+export type ReasoningRepair = "requirements" | "tool-capability" | "tool-call-markup" | "missing-outcome" | "empty-completion" | "synthesis-state" | "synthesis-disposition";
 
 export type PrimaryReasoningEvent =
   | { type: "turn_started"; turnId: string }
   | { type: "text_delta"; delta: string; turnId: string }
   | { type: "thinking_delta"; delta: string; turnId: string }
   | { type: "tool_started"; toolCallId: string; toolName: string; turnId: string }
-  | { type: "tool_finished"; isError: boolean; outcome?: JoiReasoningOutcome; synthesisState?: GoalSynthesisDraft; reasonCode?: string; replaySafeRejection?: true; toolCallId: string; toolName: string; turnId: string }
+  | { type: "tool_finished"; isError: boolean; outcome?: JoiReasoningOutcome; synthesisState?: GoalSynthesisDraft; synthesisCoverageExhausted?: true; reasonCode?: string; replaySafeRejection?: true; toolCallId: string; toolName: string; turnId: string }
   | { type: "turn_finished"; turnId: string };
 
 export interface StartReasoningTurnInput {
