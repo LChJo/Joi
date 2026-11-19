@@ -6,6 +6,7 @@ import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-servic
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
+import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
@@ -307,6 +308,50 @@ describe("sqlite joi inbox retry", () => {
       await fixture.close();
     }
   });
+
+  it.each(["CONSUMED", "ROUTED", "CLARIFICATION_REQUIRED"] as const)(
+    "requeues a canceled goal when its revoked recovery input is %s",
+    async (childStatus) => {
+      const fixture = await createRuntimeFixture();
+      try {
+        const workbench = await fixture.workbenchRegistry.create({ name: "Resume", personaSummary: "persona", projectLabel: "Joi", scopeSummary: "Resume a canceled goal" });
+        const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+        const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+        const reader = new SqliteJoiTaskReader({ database: fixture.database, failTurn: vi.fn(), park: vi.fn() });
+        const { inputId } = await inbox.accept({ idempotencyKey: "cancel-review-retry", text: "Complete the goal", workbenchId: workbench.workbenchId });
+        await repository.requireClarification(inputId, "question_required", "Which phase?");
+        await inbox.clarify({ inputId, text: "The second phase", questionId: `goal_question:${inputId}:v1`, questionVersion: 1 });
+        const resumeId = `joi_goal_resume:goal:${inputId}:v1`;
+        const turnId = "prior-resume-turn";
+        await repository.createTurn({ inputId: resumeId, sessionId: "prior-resume-session", turnId,
+          workbenchId: workbench.workbenchId, createdAt: fixture.clock.now().toISOString() });
+
+        const readChild = () => fixture.database.transaction((db) => db.prepare("SELECT status, canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(resumeId));
+        await expect(inbox.cancel({ inputId })).resolves.toMatchObject({ canceled: true });
+        const canceledAt = fixture.clock.now().toISOString();
+        const childAtCancel = readChild();
+        await expect(inbox.retry({ inputId })).rejects.toMatchObject({ code: "joi_retry_unavailable" });
+        await repository.failTurn(resumeId, turnId);
+        if (childStatus !== "CONSUMED") {
+          fixture.database.transaction((db) => db.prepare("UPDATE joi_inbox_messages SET status = ?, canceled_at = NULL WHERE input_id = ?")
+            .run(childStatus, resumeId));
+        }
+
+        const text = childStatus === "ROUTED" ? "Use the existing results" : undefined;
+        await expect(inbox.retry({ inputId, ...(text === undefined ? {} : { text }) })).resolves.toMatchObject({ inputId, status: "PENDING" });
+        await repository.failTurn(resumeId, turnId);
+        const reopened = await repository.loadInput(inputId);
+        expect(reopened?.body.endsWith(text ?? "The second phase")).toBe(true);
+        expect(await reader.isCanceled(inputId)).toBe(false);
+        expect((await reader.listPendingInputs()).map((input) => input.inputId)).toEqual([inputId]);
+        expect(readChild()).toEqual({ canceled_at: canceledAt, status: "CONSUMED" });
+        if (childStatus === "CONSUMED") expect(childAtCancel).toEqual(readChild());
+        await expect(inbox.retry({ inputId: resumeId })).rejects.toMatchObject({ code: "joi_retry_unavailable" });
+      } finally {
+        await fixture.close();
+      }
+    },
+  );
 
   it("refuses synthetic inputs, dismissed rows and goals with live work", async () => {
     const fixture = await createRuntimeFixture();

@@ -166,6 +166,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     exportJobs = runtimeStack.exportJobs;
     drainRuntime = async () => { await conversationStack.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
+    await persistence.joiInboxRepository.recoverOnBoot();
+    await persistence.dispatchClaims.recoverOnBoot();
     await runtimeStack.outboxDispatcher.dispatchOnce();
     await runtimeStack.actorTree.tick(clock.now());
     const remoteAccess = new RemoteAccessHost({

@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "038fac1e03cd063d5a07251cf5b5713c25fd14227f919450252558f144979877",
-      "observedAt": "2026-11-18T09:18:49.896Z",
+      "hash": "8503105e81e22cb68d1fa9f34c108f9484374e934306e2a63f43be8ced274c7e",
+      "observedAt": "2026-11-19T05:05:27.952Z",
       "range": {
         "startLine": 1,
-        "endLine": 742
+        "endLine": 746
       }
     },
     {
@@ -900,15 +900,15 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied.",
+      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied. The exclusive desktop writer awaits Turn and dispatch claim reconciliation before its first outbox dispatch and actor tick.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "0ad9f58d489f96264d39d9bbddc1e7bd438edc95caecb0c9338eb33ba740c258",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "de1c3cc097e15f160a77fecfd2e3050e7a9e5fa9266e8663abde62a1e167ee9d",
+      "observedAt": "2026-11-19T05:05:27.952Z",
       "range": {
         "startLine": 1,
-        "endLine": 380
+        "endLine": 382
       }
     },
     {
@@ -2720,15 +2720,15 @@
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "Read-only synthesis preflight uses the same evidence validation as the authoritative outcome transaction.",
+      "claim": "Read-only synthesis preflight uses the same evidence validation as the authoritative outcome transaction. Goal cancellation revokes child inputs. Explicit retry after settlement atomically retires legacy child state, opens the old review gate and requeues only the original goal. Boot settlement uses exact completion receipts, keeps committed plans and unknown effects out of automatic replay, and preserves existing retry limits.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "098134bdb632a803fb40eb4ca3aba941a28f90ed42836731452cd77d5a5de9e9",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "4f268df95a3b8a4eeed3937c9f0f41bf154a02bf4a36b27ab63adc109dd688f9",
+      "observedAt": "2026-11-19T05:05:27.952Z",
       "range": {
         "startLine": 1,
-        "endLine": 1495
+        "endLine": 1532
       }
     },
     {
@@ -3185,12 +3185,12 @@
       "location": {
         "path": "src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.ts"
       },
-      "claim": "Work joins fair directory admission before engine startup, abandons capacity-only waits and releases generation-fenced resources after verification and durable result storage, before conversation projection. Native continuation and A2A contracts remain intact.",
-      "hash": "4fafb74ceba42b213728e7a2396aa9bdabe2a233cf143a787f0cc5f376bb3918",
-      "observedAt": "2026-11-18T03:39:04.299Z",
+      "claim": "Work joins fair directory admission before engine startup, abandons capacity-only waits and releases generation-fenced resources after verification and durable result storage, before conversation projection. Native continuation and A2A contracts remain intact. Exclusive startup releases unstarted dispatch claims and acknowledges persisted starts for existing result recovery.",
+      "hash": "5a1f83747c7687eea8688b3e0020926f38f461ad0a68cc9e91b0c2e546802217",
+      "observedAt": "2026-11-19T05:05:27.952Z",
       "range": {
         "startLine": 1,
-        "endLine": 1216
+        "endLine": 1227
       }
     },
     {
@@ -3451,12 +3451,12 @@
       "location": {
         "path": "tests/integration/agent-dispatch-crash.test.ts"
       },
-      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior.",
-      "hash": "99d09a249fe66a3d2aa78619d5c49e803e7a00ba23d371df5ec374bdd1b19ae5",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "claim": "Synthetic regression evidence for the documented Pi session ownership and compatibility boundaries at this test seam; it does not establish live-provider, real-user-data or all-platform behavior. The disposable fixture exercises claim recovery before lease expiration and preserves both recovered Pi results and interrupted unknown runs without launching them again.",
+      "hash": "77c44e4c8d5fb526e329cdc036befba6a8c0d376cd3bb3e38bf11036fe4e872b",
+      "observedAt": "2026-11-19T05:05:27.952Z",
       "range": {
         "startLine": 1,
-        "endLine": 179
+        "endLine": 190
       }
     },
     {
