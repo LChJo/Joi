@@ -5,8 +5,21 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteJoiApp, type RemoteJoiConnection } from "../../src/renderer/RemoteJoiApp.js";
 import type { JoiHomeFeedDto } from "../../src/shared/joi.js";
 import type { RemoteCommand } from "../../src/shared/remote";
+import type { UserQuestionDto } from "../../src/shared/user-questions";
 
 describe("RemoteJoiApp", () => {
+  it("answers a goal question through negotiated transport and keeps queued history", async () => {
+    const question: UserQuestionDto = { questionId: "q1", version: 2, scope: { kind: "GOAL", id: "goal" }, ownerId: "work", sourceName: "Partner", question: "Active goal question", kind: "QUESTION", options: [], multiSelect: false, allowCustom: true, defaultAnswer: "Default", defaultOptionIds: [], status: "ACTIVE", createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 1800000).toISOString(), delivery: "PENDING" };
+    const invoke = vi.fn().mockResolvedValue({ ...question, status: "ANSWERED" });
+    const connection: RemoteJoiConnection = { capabilities: () => ["questions.v1"], command: <T,>(command: RemoteCommand) => invoke(command) as Promise<T>, sendMessage: vi.fn(), status: () => "connected", feed: vi.fn().mockResolvedValue({
+      goals: [{ goalId: "goal", title: "Goal", status: "NEEDS_ATTENTION", clarification: { reasonCode: "question_required", prompt: "Active goal question" }, workbench: { name: "Test", workbenchId: "wb" }, work: { active: 1, completed: 0, failed: 0, total: 1 }, questions: [question, { ...question, questionId: "q2", status: "QUEUED", question: "Next goal question" }] }], thinking: [], unassignedActions: [],
+    }) };
+    render(<RemoteJoiApp connection={connection} />);
+    const answer = await screen.findByRole("button", { name: "采用推荐并继续" });
+    expect(screen.getByText("Next goal question")).toBeInTheDocument();
+    fireEvent.click(answer);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ kind: "question.answer", scopeKind: "GOAL", scopeId: "goal", questionId: "q1", input: { version: 2, useDefault: true } })));
+  });
   it("projects queued synthesis recovery in the paired browser", async () => {
     const connection: RemoteJoiConnection = { sendMessage: vi.fn(), status: () => "connected", feed: vi.fn().mockResolvedValue({
       goals: [{ goalId: "goal", title: "Queued report", agentCount: 0, canDelete: false, status: "FINALIZING", updatedAt: "2026-11-16T00:00:00Z",

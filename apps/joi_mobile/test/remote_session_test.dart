@@ -48,6 +48,7 @@ class Peer implements NativeTransport {
   bool modern = true;
   bool history = true;
   bool conversations = true;
+  bool questions = true;
   Object? conversationResult;
   bool failSend = false;
   bool failFeed = false;
@@ -144,6 +145,7 @@ class Peer implements NativeTransport {
                 'workbench.choice.v1',
                 if (history) 'goal.results.v1',
                 if (conversations) 'conversations.v1',
+                if (questions) 'questions.v1',
               ],
           },
         ),
@@ -257,6 +259,90 @@ Future<void> settleUntil(bool Function() ready) async {
 }
 
 void main() {
+  test(
+    'negotiates question answers and sends scope, version and defaults through encryption',
+    () async {
+      final peer = Peer();
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await settleUntil(
+        () => controller.state.connection == RemoteConnectionState.connected,
+      );
+      expect(controller.supportsQuestions, isTrue);
+      await controller.answerQuestion('GOAL', 'goal', 'q1', {
+        'version': 2,
+        'useDefault': true,
+      });
+      expect(peer.commands.last, containsPair('kind', 'question.answer'));
+      expect(peer.commands.last, containsPair('scopeKind', 'GOAL'));
+      expect(peer.commands.last, containsPair('scopeId', 'goal'));
+      expect(peer.commands.last['input'], {'version': 2, 'useDefault': true});
+      await controller.conversation(
+        'answerQuestion',
+        parameters: {
+          'conversationId': 'chat',
+          'questionId': 'q2',
+          'input': {'version': 1, 'text': 'Answer'},
+        },
+      );
+      expect(peer.commands.last['kind'], 'conversation.answerQuestion');
+      await controller.conversation(
+        'resumeQuestion',
+        parameters: {'conversationId': 'chat', 'questionId': 'q2'},
+      );
+      expect(peer.commands.last['kind'], 'conversation.resumeQuestion');
+      expect(peer.commands.last.containsKey('input'), isFalse);
+      peer.questions = false;
+      peer.bus.add(const NativeTransportEvent(type: 'disconnected'));
+      await settleUntil(
+        () => controller.state.connection != RemoteConnectionState.connected,
+      );
+      expect(controller.supportsQuestions, isFalse);
+    },
+  );
+
+  test(
+    'old hosts explicitly refuse questions without sending answer commands',
+    () async {
+      final peer = Peer()..questions = false;
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      await settleUntil(
+        () => controller.state.connection == RemoteConnectionState.connected,
+      );
+      expect(controller.supportsQuestions, isFalse);
+      final refusal = throwsA(
+        isA<RemoteActionFailure>().having(
+          (e) => e.code,
+          'code',
+          'remote_upgrade_required',
+        ),
+      );
+      await expectLater(
+        controller.answerQuestion('GOAL', 'g', 'q', {'version': 1}),
+        refusal,
+      );
+      await expectLater(controller.conversation('answerQuestion'), refusal);
+      await expectLater(controller.conversation('resumeQuestion'), refusal);
+      expect(
+        peer.commands.any(
+          (c) =>
+              c['kind'] == 'question.answer' ||
+              c['kind'] == 'conversation.answerQuestion',
+        ),
+        isFalse,
+      );
+    },
+  );
+
   test(
     'normal conversation commands use the encrypted session and reassemble history',
     () async {

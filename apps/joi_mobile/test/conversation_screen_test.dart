@@ -4,6 +4,8 @@ import 'package:joi_mobile/home_screen.dart';
 import 'package:joi_mobile/i18n.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/conversation_screen.dart';
+import 'package:joi_mobile/user_question_card.dart';
+import 'user_question_card_test.dart' show questionJson;
 import 'package:joi_mobile/goal_detail.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -115,6 +117,34 @@ class ChatPeer extends ChangeNotifier implements ConversationRemoteController {
   }
 }
 
+class QuestionPeer extends ChatPeer implements QuestionRemoteController {
+  @override
+  bool get supportsQuestions => true;
+  final answers = <Map<String, Object?>>[];
+  @override
+  Future<Map<String, dynamic>> answerQuestion(
+    String scopeKind,
+    String scopeId,
+    String questionId,
+    Map<String, Object?> input,
+  ) async {
+    answers.add(input);
+    return {};
+  }
+
+  @override
+  Future<Map<String, dynamic>> conversation(
+    String operation, {
+    Map<String, Object?> parameters = const {},
+  }) async {
+    if (operation == 'answerQuestion') {
+      answers.add(parameters);
+      return {};
+    }
+    return super.conversation(operation, parameters: parameters);
+  }
+}
+
 class PartnerHistoryPeer extends PlaceholderRemoteController {
   @override
   Future<Map<String, dynamic>> read(
@@ -159,6 +189,70 @@ class PartnerHistoryPeer extends PlaceholderRemoteController {
 }
 
 void main() {
+  testWidgets(
+    'conversation timeline retains active queued and answered questions and sends the active version',
+    (tester) async {
+      final peer = QuestionPeer();
+      addTearDown(peer.dispose);
+      peer.chat = {
+        'conversationId': 'phone-questions',
+        'workbenchId': 'wb',
+        'title': 'Question timeline',
+        'turns': [
+          {
+            'turnId': 'turn',
+            'text': 'Task',
+            'status': 'RUNNING',
+            'waitingForUser': true,
+            'config': peer.config,
+            'entries': <Object>[],
+            'questions': [
+              questionJson(),
+              {
+                ...questionJson(status: 'QUEUED'),
+                'questionId': 'queued',
+                'question': 'Next question',
+              },
+              {
+                ...questionJson(status: 'ANSWERED'),
+                'questionId': 'answered',
+                'question': 'Previous question',
+                'answer': {
+                  'text': 'Recorded reply',
+                  'source': 'USER',
+                  'answeredAt': '2026-11-19T00:00:00Z',
+                },
+              },
+            ],
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(home: ConversationScreen(controller: peer)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Question timeline'));
+      await tester.pumpAndSettle();
+      expect(find.byType(UserQuestionCard), findsNWidgets(3));
+      expect(find.text('Next question'), findsOneWidget);
+      expect(find.text('Recorded reply'), findsOneWidget);
+      final button = find.text(tr(Msg.chatQuestionUseDefault));
+      await Scrollable.ensureVisible(tester.element(button), alignment: .5);
+      await tester.pump();
+      await Scrollable.ensureVisible(tester.element(button), alignment: .5);
+      await tester.pump();
+      await tester.tap(button);
+      await tester.pump();
+      expect(peer.answers.single, {
+        'conversationId': 'phone-questions',
+        'questionId': 'q1',
+        'input': {'version': 1, 'useDefault': true},
+      });
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   setUpAll(() async {
     await (FontLoader(
       'TestNoto',

@@ -2,6 +2,10 @@ import type { ConversationChild,ConversationChildInput,ConversationSubagentStore
 import type { Clock,IdGenerator } from "../ports/runtime-store.js";
 import { DomainError } from "../../domain/errors.js";
 
+function isShutdown(reason: unknown): boolean {
+  return reason !== null && typeof reason === "object" && "code" in reason && reason.code === "conversation_shutdown";
+}
+
 /** Child effects are admitted once; parent settlement includes every admitted child. */
 export class ConversationSubagentService implements ConversationSubagentPort {
   readonly #active = new Map<string,{ parentTurnId: string;controller: AbortController;done: Promise<void> }>();
@@ -34,9 +38,9 @@ export class ConversationSubagentService implements ConversationSubagentPort {
     try {
       signal.throwIfAborted();
       const body = await this.dependencies.execute(child,signal);
-      await this.dependencies.store.finish(child.childId,signal.aborted ? "CANCELED" : "COMPLETED",body);
+      await this.dependencies.store.finish(child.childId,signal.aborted ? isShutdown(signal.reason) ? "INTERRUPTED" : "CANCELED" : "COMPLETED",body);
     } catch {
-      await this.dependencies.store.finish(child.childId,signal.aborted ? "CANCELED" : "FAILED");
+      await this.dependencies.store.finish(child.childId,signal.aborted ? isShutdown(signal.reason) ? "INTERRUPTED" : "CANCELED" : "FAILED");
     }
   }
   async settle(parentTurnId: string): Promise<ConversationChild[]> {
@@ -49,9 +53,12 @@ export class ConversationSubagentService implements ConversationSubagentPort {
       await new Promise<void>(resolve => setTimeout(resolve,50));
     }
   }
-  async close(): Promise<void> {
+  async close(reason?: unknown): Promise<void> {
     this.#closed = true;
-    for (const active of this.#active.values()) { await this.dependencies.store.cancel(active.parentTurnId);active.controller.abort(); }
+    for (const active of this.#active.values()) {
+      if (!isShutdown(reason)) await this.dependencies.store.cancel(active.parentTurnId);
+      active.controller.abort(reason);
+    }
     await Promise.all([...this.#active.values()].map(active => active.done));
     await this.dependencies.store.recover();
   }

@@ -15,6 +15,7 @@ import type { UsageRecorder } from "../../application/ports/usage.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { ConversationSubagentPort } from "../../application/ports/conversation-subagents.js";
 import { draftAgentConversation } from "../../application/partners/agent-conversation-presentation.js";
+import { normalizeUserQuestionPrompt } from "../../application/joi/user-question-service.js";
 import { toolCallCommand, toolCallResultBody, toolCallSummary, type ToolTraceDraft } from "../../application/partners/tool-trace-presentation.js";
 import { wrapPartnerRunFailure, safePartnerRunFailureBody, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { workAccessPrompt } from "../../application/partners/local-write-gate.js";
@@ -27,6 +28,8 @@ import { workspaceReadScopeLine } from "../workspace/workspace-prompt-boundary.j
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { ConversationThinking } from "./conversation-thinking.js";
 import { createJoiPiSession, snapshotJoiPiSession } from "./joi-pi-session.js";
+import { askPiUserQuestion, createPiUserQuestionUI, isPiQuestionShutdown, type PiUserQuestions } from "./pi-user-question-ui.js";
+import type { UserQuestionAnswer, UserQuestionPrompt } from "../../../shared/user-questions.js";
 import { createJoiSubagentTools } from "./joi-subagent-tools.js";
 import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
@@ -50,8 +53,14 @@ import { boundModelContext, modelContextMaxChars } from "./pi-model-budget.js";
 
 export const partnerContextMaxChars = modelContextMaxChars;
 export const boundPartnerModelContext = boundModelContext;
-interface RunTracker { state: PartnerRunSideEffectState; question?: string; handoff?: ParsedWorkHandoff }
-const askUserParameters = Type.Object({ question: Type.String({ maxLength: 1000, minLength: 1 }) });
+interface RunTracker { state: PartnerRunSideEffectState; question?: string; questionSpec?: UserQuestionPrompt; handoff?: ParsedWorkHandoff }
+const askUserParameters = Type.Object({
+  question: Type.String({ maxLength: 1000, minLength: 1 }),
+  options: Type.Optional(Type.Array(Type.Object({ id: Type.String({ minLength: 1, maxLength: 100 }), label: Type.String({ minLength: 1, maxLength: 500 }),
+    description: Type.Optional(Type.String({ maxLength: 1000 })), recommended: Type.Optional(Type.Boolean()) }), { maxItems: 12 })),
+  multiSelect: Type.Optional(Type.Boolean()), allowCustom: Type.Optional(Type.Boolean()),
+  defaultAnswer: Type.Optional(Type.String({ maxLength: 8000 })), defaultOptionIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 100 }), { maxItems: 12 })),
+});
 const MUTATING_TOOLS = new Set(["bash", "edit", "write", ...PI_AGENT_BROWSER_TOOLS]);
 
 function createWorkHandoffTool(tracker: RunTracker): AgentTool {
@@ -165,7 +174,9 @@ function createAskUserTool(tracker: { current: RunTracker }): AgentTool<typeof a
       if (question.length === 0 || question.length > 1_000) {
         throw new DomainError("partner_question_invalid", "The question for the user is invalid.");
       }
-      tracker.current.question = question;
+      const spec = normalizeUserQuestionPrompt({ ...parameters, question });
+      tracker.current.question = spec.question;
+      tracker.current.questionSpec = spec;
       return Promise.resolve({
         content: [{ text: "Question recorded. The run now pauses for the user's answer. Reply with a one-line summary and stop; do not call any more tools.", type: "text" }],
         details: {},
@@ -185,7 +196,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   readonly #active = new Map<string, AgentSession>();
   readonly #starting = new Set<string>();
   readonly #generations = new Map<string, symbol>();
+  readonly #questionLifetimes = new Map<string, AbortController>();
   #subagents: ConversationSubagentPort | undefined;
+  #userQuestions: PiUserQuestions | undefined;
   constructor(private readonly dependencies: {
     usage?: UsageRecorder; diagnostics?: RuntimeDiagnostics; maxWarmAgents?: number;
     contexts: WorkbenchExecutionContextReader; prompts: Pick<PartnerPromptStore, "read">;
@@ -200,6 +213,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }) {}
 
   setSubagents(port: ConversationSubagentPort): void { this.#subagents = port; }
+  setUserQuestions(service: PiUserQuestions): void { this.#userQuestions = service; }
   engineOf(): "pi-core" { return "pi-core"; }
   toolOptions(): readonly string[] { return [...this.dependencies.tools.names, ...PI_EXTENSION_TOOL_NAMES]; }
   health(): Promise<{ available: boolean }> { return Promise.resolve({ available: true }); }
@@ -219,6 +233,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   preflight(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin> { return this.#selectSource(input.revision, input.turnId); }
   evictFromMemory(instanceId: string): void {
     this.#generations.delete(instanceId);
+    this.#questionLifetimes.get(instanceId)?.abort();
     const active = this.#active.get(instanceId);
     if (active !== undefined) void active.abort().catch(() => undefined);
     this.#warm.delete(instanceId);
@@ -237,19 +252,30 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const latency = new PiLatency(this.dependencies.diagnostics, { purpose: "partner", workId: input.request.workId });
     const turn = latency.start("turn");
     const tracker: RunTracker = { state: "NONE" };
+    const lifetime = new AbortController();
+    this.#questionLifetimes.set(input.instanceId, lifetime);
+    const signal = input.signal === undefined ? lifetime.signal : AbortSignal.any([input.signal, lifetime.signal]);
     let status: "completed" | "failed" | "canceled" = "failed";
-    try { const result = await this.#run(input, tracker, latency); status = "completed"; return result; }
+    try { const result = await this.#run({ ...input, signal }, tracker, latency); status = "completed"; return result; }
     catch (error) {
       const wrapped = wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
       allowUnpinnedForbiddenFallback(wrapped, input.revision);
       throw wrapped;
-    } finally { if (input.signal?.aborted === true) status = "canceled"; turn.finish(status); latency.finish(status); this.#starting.delete(input.instanceId); }
+    } finally {
+      if (signal.aborted) status = "canceled";
+      lifetime.abort(); this.#questionLifetimes.delete(input.instanceId);
+      turn.finish(status); latency.finish(status); this.#starting.delete(input.instanceId);
+    }
   }
 
   async #run(input: ResidentTurnInput, tracker: RunTracker, latency: PiLatency): Promise<ResidentTurnResult> {
     input.signal?.throwIfAborted();
     if (this.#active.has(input.instanceId)) throw new DomainError("partner_instance_busy", "Partner instance is already executing.");
     const { request, revision } = input;
+    const userQuestions = request.conversationId === undefined ? undefined : this.#userQuestions;
+    const questionOwner = request.conversationId === undefined ? undefined : {
+      ownerId: request.workId, sourceName: revision.displayName, scope: { kind: "CONVERSATION" as const, id: request.conversationId },
+    };
     const generation = this.#generations.get(input.instanceId);
     const isCurrent = () => this.#generations.get(input.instanceId) === generation;
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "A Pi partner is required.");
@@ -287,7 +313,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const selected = names.filter(name => this.dependencies.tools.names.includes(name) && (execution.workspacePath !== undefined || (PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)));
     const tools: AgentTool[] = [
       ...this.dependencies.tools.create(execution.workspacePath ?? process.cwd(), selected, { environmentKeys: input.skillEnvironmentKeys }).filter(tool => selected.includes(tool.name)),
-      createAskUserTool({ current: tracker }),
+      ...(userQuestions === undefined ? [createAskUserTool({ current: tracker })] : []),
       ...(request.conversationId === undefined ? [createWorkHandoffTool(tracker)] : []),
       ...(this.dependencies.memory === undefined ? [] : historicalMemoryTools(this.dependencies.memory,request.workbenchId,workScoped)),
       createContextHistoryTool(input.readHistory ?? (() => {
@@ -298,7 +324,30 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       })),
       ...createPartnerEvidenceTools(execution.evidence), ...(children?.tools ?? []), ...extensions.tools,
     ];
+    const questionResults = new Map<string, { questionId: string; text: string; answer: UserQuestionAnswer }>();
+    const uiAnswers = new Set<string>();
     const factories: ExtensionFactory[] = [];
+    if (userQuestions !== undefined && questionOwner !== undefined) factories.push(pi => {
+      pi.registerTool({ name: "ask_user", label: "Ask the user", parameters: askUserParameters, executionMode: "sequential",
+        description: "Ask one ordinary information or preference question, optionally with choices and a recommended answer. Wait for the answer, then continue this task. This is not a permission or security-confirmation tool: automatic/default answers are not authorization and must never bypass required confirmation or existing permission gates.",
+        execute: async (toolCallId, parameters, signal, _onUpdate, ctx) => {
+          const signals = [signal, input.signal].filter((value): value is AbortSignal => value !== undefined);
+          try {
+            const answer = await askPiUserQuestion(userQuestions, { ...questionOwner, ...parameters,
+              questionId: `pi-question:${request.workId}:${toolCallId}`, toolCallId }, signals.length === 0 ? undefined : AbortSignal.any(signals));
+            const text = answer.source === "USER" ? answer.text : answer.source === "TIMEOUT_DEFAULT"
+              ? `[TIMEOUT_DEFAULT: Automatic recommended answer, not a human response or authorization. Continue only within existing permissions; do not bypass required confirmation.]\n${answer.text}`
+              : `[USER_DEFAULT: The user selected the default answer. This is not a permission grant and does not replace required confirmation.]\n${answer.text}`;
+            questionResults.set(toolCallId, { questionId: `pi-question:${request.workId}:${toolCallId}`, text, answer });
+            return { content: [{ type: "text", text }], details: answer };
+          } catch (error) {
+            // A canceled card must stop the SDK run, not become a normal tool error it can retry.
+            ctx.abort();
+            throw error;
+          }
+        },
+      });
+    });
     if (extensions.beforeTool !== undefined) factories.push(pi => {
       pi.on("tool_call", event => extensions.beforeTool?.({ id: event.toolCallId, type: "toolCall", name: event.toolName, arguments: event.input as ToolCall["arguments"] }));
     });
@@ -331,11 +380,39 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         ...(previous !== undefined && previous.engine !== "pi-core" ? { importedMessages: previous.messages } : {}),
         ...(input.skillPaths === undefined ? {} : { skillPaths: input.skillPaths }), loadProjectContext: execution.workspacePath !== undefined,
         ...(native === undefined ? previous?.piSession === undefined ? {} : { snapshot: previous.piSession } : { sessionManager: native.manager }), extensionFactories: factories,
+        ...(userQuestions === undefined || questionOwner === undefined ? {} : { uiContext: createPiUserQuestionUI(userQuestions, questionOwner, {
+          ...(input.signal === undefined ? {} : { signal: input.signal }), onCancel: () => { this.#questionLifetimes.get(input.instanceId)?.abort(); },
+          onAnswer: questionId => { uiAnswers.add(questionId); },
+        }) }),
       });
     } catch (error) { await children?.close(true); await extensions.close(); queue.close(); throw error; }
     this.#active.set(input.instanceId, session);
     const active = session;
     const firstEntry = active.sessionManager.getEntryCount();
+    let questionAcks = Promise.resolve();
+    const acknowledged = new Set<string>();
+    const acknowledge = (questionId: string) => {
+      if (userQuestions === undefined || acknowledged.has(questionId)) return;
+      acknowledged.add(questionId);
+      questionAcks = questionAcks.then(() => userQuestions.markDelivered(questionId)).catch(() => {
+        acknowledged.delete(questionId);
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.pi.projection_degraded", { workId: request.workId });
+      });
+    };
+    let questionEntryCursor = firstEntry;
+    const reconcileQuestionResults = () => {
+      // tool_execution_end and public message_end precede SDK persistence. Only canonical entries
+      // prove that the successful original call actually accepted this answer.
+      const entries = active.sessionManager.getEntries();
+      for (const entry of entries.slice(questionEntryCursor)) {
+        if (entry.type !== "message" || entry.message.role !== "toolResult" || entry.message.toolName !== "ask_user" || entry.message.isError) continue;
+        const expected = questionResults.get(entry.message.toolCallId);
+        if (expected === undefined || JSON.stringify(entry.message.content) !== JSON.stringify([{ type: "text", text: expected.text }])
+          || JSON.stringify(entry.message.details) !== JSON.stringify(expected.answer)) continue;
+        acknowledge(expected.questionId);
+      }
+      questionEntryCursor = entries.length;
+    };
     const usage = new PiSessionUsage(this.dependencies.usage);
     const usageQueue = new PiObservationQueue(() => emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.pi.projection_degraded", { workId: request.workId }));
     let usagePending = false;
@@ -374,6 +451,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       });
     };
     const unsubscribe = active.subscribe(event => {
+      if (event.type === "turn_end" || event.type === "agent_settled") reconcileQuestionResults();
       if (event.type === "tool_execution_start" || event.type === "tool_execution_end") latency.event(event);
       if (isCurrent()) { try { input.onProgress?.(); } catch { /* Activity consumers do not control execution. */ } }
       if (event.type === "tool_execution_start" && (MUTATING_TOOLS.has(event.toolName) || event.toolName === "subagent" && names.some(name => MUTATING_TOOLS.has(name)))) tracker.state = "OBSERVED";
@@ -439,14 +517,21 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       if (body === "" && artifacts.length === 0 && tracker.question === undefined) throw new DomainError("partner_empty_delivery", "The partner settled without a deliverable.");
       const result: ResidentTurnResult = { conversation: draftAgentConversation(request.taskProjection, body, messages), externalRunId: `local_pi:${request.actionId}`,
         externalSessionRef: `partner_instance_messages:${input.instanceId}`, messages: [...active.messages],
-        output: { artifacts, body, handoffStatus: tracker.handoff?.status ?? "MISSING",...(tracker.handoff?.status === "PROVIDED" ? { handoff: tracker.handoff.handoff } : {}), ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) }, status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT" };
+        output: { artifacts, body, handoffStatus: tracker.handoff?.status ?? "MISSING",...(tracker.handoff?.status === "PROVIDED" ? { handoff: tracker.handoff.handoff } : {}), ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question, pendingQuestionSpec: tracker.questionSpec }) }, status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT" };
       await closeResources(false);
       const durableResult = { ...result }; delete durableResult.messages;
       active.sessionManager.appendCustomEntry("joi.work_result", { actionId: request.actionId, result: durableResult });
+      reconcileQuestionResults();
+      for (const questionId of uiAnswers) acknowledge(questionId);
+      await questionAcks;
       active.sessionManager.appendCustomEntry("joi.usage_idle", {});
       notify(() => input.onEvent?.({ type: "status", state: tracker.question === undefined ? "completed" : "input-required" }) ?? Promise.resolve());
       return result;
     } catch (error) {
+      reconcileQuestionResults();
+      await questionAcks;
+      if (!isPiQuestionShutdown(input.signal)) await userQuestions?.cancelOwner(request.workId).catch(() => undefined);
+      await userQuestions?.interruptOwner(request.workId).catch(() => undefined);
       await this.dependencies.sources.reportRunFailure?.(pin.sourceId, error).catch(() => undefined);
       const failure = wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
       const partialArtifacts = tracker.state === "NONE" ? [] : await collectChangedWorkspaceArtifacts(execution.workspacePath, before);

@@ -774,7 +774,11 @@ export function createJoiReasoningTools(input: {
       return result(await input.results.index(scope));
     },
   };
-  const userAskParameters = Type.Object({ question: Type.String() });
+  const userAskParameters = Type.Object({ question: Type.String(),
+    options: Type.Optional(Type.Array(Type.Object({ id: Type.String(), label: Type.String(), description: Type.Optional(Type.String()), recommended: Type.Optional(Type.Boolean()) }))),
+    multiSelect: Type.Optional(Type.Boolean()), allowCustom: Type.Optional(Type.Boolean()),
+    defaultAnswer: Type.Optional(Type.String()), defaultOptionIds: Type.Optional(Type.Array(Type.String())),
+  });
   const goalResumeTool: AgentTool = {
     description: "Open the current goal execution gate after reviewing the saved answer and queued Work. This is allowed only in the matching versioned goal recovery turn. Call it before resuming, reassigning, supplementing or dispatching replacement Work; if information is still missing, call user_ask instead.",
     execute: async (_id, raw) => {
@@ -799,7 +803,8 @@ export function createJoiReasoningTools(input: {
       if (question.length === 0 || question.length > 1_000) {
         throw new DomainError("joi_clarification_question_invalid", "The clarification question is invalid.");
       }
-      await input.clarifications.requireClarification(input.inputId, "question_required", question);
+      await input.clarifications.requireClarification(input.inputId, "question_required", question, undefined, undefined,
+        { ...arguments_, question, toolCallId: `${input.turnId}:${_toolCallId}` });
       return result({ reasonCode: "question_required", status: "CLARIFICATION_REQUIRED" });
     },
     label: "Ask the user",

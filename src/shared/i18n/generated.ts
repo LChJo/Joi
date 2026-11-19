@@ -186,6 +186,43 @@ export interface MessageParameters {
   "catalog.builtinSkillsDescription": undefined;
   "catalog.skillLicense": undefined;
   "chat.readRecovering": undefined;
+  "chat.questionQueueLabel": undefined;
+  "chat.questionRemoteUnavailable": undefined;
+  "chat.questionSource": { "name": string };
+  "chat.questionActive": undefined;
+  "chat.questionConfirm": undefined;
+  "chat.questionQueued": undefined;
+  "chat.questionAnswered": undefined;
+  "chat.questionCanceled": undefined;
+  "chat.questionSuperseded": undefined;
+  "chat.questionInterrupted": undefined;
+  "chat.questionResumeSaved": undefined;
+  "chat.questionResumeDefault": undefined;
+  "chat.questionQueuedHint": undefined;
+  "chat.questionCanceledHint": undefined;
+  "chat.questionSupersededHint": undefined;
+  "chat.questionInterruptedHint": undefined;
+  "chat.questionDefaultLabel": undefined;
+  "chat.questionTimeoutPolicy": undefined;
+  "chat.questionCountdown": { "remaining": string };
+  "chat.questionDeadline": { "time": string };
+  "chat.questionExpired": undefined;
+  "chat.questionTimingPending": undefined;
+  "chat.questionChooseOne": undefined;
+  "chat.questionChooseMany": undefined;
+  "chat.questionRecommended": undefined;
+  "chat.questionCustomAnswer": undefined;
+  "chat.questionKeyboardHint": undefined;
+  "chat.questionUseDefault": undefined;
+  "chat.questionSubmit": undefined;
+  "chat.questionSubmitting": undefined;
+  "chat.questionSubmitted": undefined;
+  "chat.questionSubmitFailed": undefined;
+  "chat.questionAnswerUser": undefined;
+  "chat.questionAnswerUserDefault": undefined;
+  "chat.questionAnswerTimeout": undefined;
+  "chat.questionDeliveryPending": undefined;
+  "chat.questionDeliveryDelivered": undefined;
   "chat.failureCleanup": undefined;
   "chat.modelRecovering": { "attempt": number; "max": number };
   "chat.modelRecovered": undefined;
@@ -1981,6 +2018,43 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.builtinSkillsDescription": "Build capability partners from the 6 most recent local Pi core skills, individually or as a full pack.",
     "catalog.skillLicense": "As declared by each skill",
     "chat.readRecovering": "Progress will refresh automatically.",
+    "chat.questionQueueLabel": "Questions in this conversation",
+    "chat.questionRemoteUnavailable": "This host does not support remote question answers. Update the host or answer on the desktop.",
+    "chat.questionSource": "From {name}",
+    "chat.questionActive": "Awaiting your answer",
+    "chat.questionConfirm": "Awaiting your confirmation",
+    "chat.questionQueued": "Queued question",
+    "chat.questionAnswered": "Answered",
+    "chat.questionCanceled": "Canceled",
+    "chat.questionSuperseded": "Replaced",
+    "chat.questionInterrupted": "Delivery interrupted",
+    "chat.questionResumeSaved": "Continue from saved answers",
+    "chat.questionResumeDefault": "Use the default and resume",
+    "chat.questionQueuedHint": "Queued. The timer starts when this question becomes active.",
+    "chat.questionCanceledHint": "This question was canceled. No answer is needed.",
+    "chat.questionSupersededHint": "Replaced by a newer question. Please answer the latest one.",
+    "chat.questionInterruptedHint": "Delivery was interrupted. This question is closed; its answer will not be resent automatically.",
+    "chat.questionDefaultLabel": "Default answer",
+    "chat.questionTimeoutPolicy": "After 30 minutes without an answer, the default below will be used.",
+    "chat.questionCountdown": "Time remaining: {remaining}",
+    "chat.questionDeadline": "Answer by {time}",
+    "chat.questionExpired": "The answer window has ended. Waiting for confirmation of the default answer.",
+    "chat.questionTimingPending": "Waiting for the question deadline. Answering is not available yet.",
+    "chat.questionChooseOne": "Choose one option, or write your own answer if available.",
+    "chat.questionChooseMany": "Choose one or more options. You can add details below if available.",
+    "chat.questionRecommended": "Recommended",
+    "chat.questionCustomAnswer": "Your answer or additional details",
+    "chat.questionKeyboardHint": "Enter for a new line · Ctrl/⌘+Enter to submit",
+    "chat.questionUseDefault": "Use recommendation and continue",
+    "chat.questionSubmit": "Submit and continue",
+    "chat.questionSubmitting": "Submitting your answer…",
+    "chat.questionSubmitted": "Answer submitted. Waiting for the updated question status.",
+    "chat.questionSubmitFailed": "Your answer could not be submitted. Your draft is kept; confirm that the question is still awaiting an answer, then retry.",
+    "chat.questionAnswerUser": "Your answer",
+    "chat.questionAnswerUserDefault": "You adopted the recommended answer",
+    "chat.questionAnswerTimeout": "Default answer used after timeout",
+    "chat.questionDeliveryPending": "Answer recorded. Waiting for delivery.",
+    "chat.questionDeliveryDelivered": "Answer delivered.",
     "chat.failureCleanup": "Stop was requested, but some execution could not be confirmed as settled.",
     "chat.modelRecovering": "Recovering model connection ({attempt}/{max})",
     "chat.modelRecovered": "Model connection recovered",
@@ -3774,6 +3848,43 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.builtinSkillsDescription": "把 Pi core 当前可用的最近 6 个本机 Skill 组装为可单独或整套安装的能力搭档。",
     "catalog.skillLicense": "依各 Skill 声明",
     "chat.readRecovering": "正在自动重新读取进度。",
+    "chat.questionQueueLabel": "对话中的提问",
+    "chat.questionRemoteUnavailable": "当前主机不支持远程回答问题，请更新主机或在桌面端回答。",
+    "chat.questionSource": "来自 {name}",
+    "chat.questionActive": "等待你的回答",
+    "chat.questionConfirm": "等待你的确认",
+    "chat.questionQueued": "排队中的问题",
+    "chat.questionAnswered": "已回答",
+    "chat.questionCanceled": "已取消",
+    "chat.questionSuperseded": "已替代",
+    "chat.questionInterrupted": "交付已中断",
+    "chat.questionResumeSaved": "从已保存答案继续",
+    "chat.questionResumeDefault": "采用默认答案并恢复",
+    "chat.questionQueuedHint": "排队中，轮到此问题后开始计时。",
+    "chat.questionCanceledHint": "问题已取消，无需回答。",
+    "chat.questionSupersededHint": "已由新问题替代，请回答最新问题。",
+    "chat.questionInterruptedHint": "交付已中断。此问题已关闭，不会自动重发回答。",
+    "chat.questionDefaultLabel": "默认回答",
+    "chat.questionTimeoutPolicy": "30 分钟内未回答，将采用下方默认回答。",
+    "chat.questionCountdown": "剩余时间：{remaining}",
+    "chat.questionDeadline": "请在 {time} 前回答",
+    "chat.questionExpired": "回答时间已到，正在等待默认回答的确认。",
+    "chat.questionTimingPending": "正在等待问题的截止时间，暂不可回答。",
+    "chat.questionChooseOne": "选择一项；如有自定义输入，也可以填写自己的回答。",
+    "chat.questionChooseMany": "可选择多项；如有自定义输入，也可以补充说明。",
+    "chat.questionRecommended": "推荐",
+    "chat.questionCustomAnswer": "自定义回答或补充",
+    "chat.questionKeyboardHint": "Enter 换行 · Ctrl/⌘+Enter 提交",
+    "chat.questionUseDefault": "采用推荐并继续",
+    "chat.questionSubmit": "提交并继续",
+    "chat.questionSubmitting": "正在提交回答…",
+    "chat.questionSubmitted": "回答已提交，正在等待状态更新。",
+    "chat.questionSubmitFailed": "回答未能提交。草稿已保留，请确认问题仍在等待回答后重试。",
+    "chat.questionAnswerUser": "你的回答",
+    "chat.questionAnswerUserDefault": "你采用了推荐回答",
+    "chat.questionAnswerTimeout": "超时后采用默认回答",
+    "chat.questionDeliveryPending": "回答已记录，等待交付。",
+    "chat.questionDeliveryDelivered": "回答已交付。",
     "chat.failureCleanup": "已请求停止，部分执行尚未确认结束，请检查已有结果。",
     "chat.modelRecovering": "正在恢复模型连接（{attempt}/{max}）",
     "chat.modelRecovered": "模型连接已恢复",
@@ -5735,6 +5846,74 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "依各 Skill 声明": "catalog.skillLicense",
   "Progress will refresh automatically.": "chat.readRecovering",
   "正在自动重新读取进度。": "chat.readRecovering",
+  "Questions in this conversation": "chat.questionQueueLabel",
+  "对话中的提问": "chat.questionQueueLabel",
+  "This host does not support remote question answers. Update the host or answer on the desktop.": "chat.questionRemoteUnavailable",
+  "当前主机不支持远程回答问题，请更新主机或在桌面端回答。": "chat.questionRemoteUnavailable",
+  "Awaiting your answer": "chat.questionActive",
+  "等待你的回答": "chat.questionActive",
+  "Awaiting your confirmation": "chat.questionConfirm",
+  "等待你的确认": "chat.questionConfirm",
+  "Queued question": "chat.questionQueued",
+  "排队中的问题": "chat.questionQueued",
+  "Answered": "chat.questionAnswered",
+  "已回答": "chat.questionAnswered",
+  "Canceled": "status.canceled",
+  "已取消": "status.canceled",
+  "Replaced": "chat.questionSuperseded",
+  "已替代": "chat.questionSuperseded",
+  "Delivery interrupted": "chat.questionInterrupted",
+  "交付已中断": "chat.questionInterrupted",
+  "Continue from saved answers": "chat.questionResumeSaved",
+  "从已保存答案继续": "chat.questionResumeSaved",
+  "Use the default and resume": "chat.questionResumeDefault",
+  "采用默认答案并恢复": "chat.questionResumeDefault",
+  "Queued. The timer starts when this question becomes active.": "chat.questionQueuedHint",
+  "排队中，轮到此问题后开始计时。": "chat.questionQueuedHint",
+  "This question was canceled. No answer is needed.": "chat.questionCanceledHint",
+  "问题已取消，无需回答。": "chat.questionCanceledHint",
+  "Replaced by a newer question. Please answer the latest one.": "chat.questionSupersededHint",
+  "已由新问题替代，请回答最新问题。": "chat.questionSupersededHint",
+  "Delivery was interrupted. This question is closed; its answer will not be resent automatically.": "chat.questionInterruptedHint",
+  "交付已中断。此问题已关闭，不会自动重发回答。": "chat.questionInterruptedHint",
+  "Default answer": "chat.questionDefaultLabel",
+  "默认回答": "chat.questionDefaultLabel",
+  "After 30 minutes without an answer, the default below will be used.": "chat.questionTimeoutPolicy",
+  "30 分钟内未回答，将采用下方默认回答。": "chat.questionTimeoutPolicy",
+  "The answer window has ended. Waiting for confirmation of the default answer.": "chat.questionExpired",
+  "回答时间已到，正在等待默认回答的确认。": "chat.questionExpired",
+  "Waiting for the question deadline. Answering is not available yet.": "chat.questionTimingPending",
+  "正在等待问题的截止时间，暂不可回答。": "chat.questionTimingPending",
+  "Choose one option, or write your own answer if available.": "chat.questionChooseOne",
+  "选择一项；如有自定义输入，也可以填写自己的回答。": "chat.questionChooseOne",
+  "Choose one or more options. You can add details below if available.": "chat.questionChooseMany",
+  "可选择多项；如有自定义输入，也可以补充说明。": "chat.questionChooseMany",
+  "Recommended": "chat.questionRecommended",
+  "推荐": "chat.questionRecommended",
+  "Your answer or additional details": "chat.questionCustomAnswer",
+  "自定义回答或补充": "chat.questionCustomAnswer",
+  "Enter for a new line · Ctrl/⌘+Enter to submit": "chat.questionKeyboardHint",
+  "Enter 换行 · Ctrl/⌘+Enter 提交": "chat.questionKeyboardHint",
+  "Use recommendation and continue": "chat.questionUseDefault",
+  "采用推荐并继续": "chat.questionUseDefault",
+  "Submit and continue": "chat.questionSubmit",
+  "提交并继续": "chat.questionSubmit",
+  "Submitting your answer…": "chat.questionSubmitting",
+  "正在提交回答…": "chat.questionSubmitting",
+  "Answer submitted. Waiting for the updated question status.": "chat.questionSubmitted",
+  "回答已提交，正在等待状态更新。": "chat.questionSubmitted",
+  "Your answer could not be submitted. Your draft is kept; confirm that the question is still awaiting an answer, then retry.": "chat.questionSubmitFailed",
+  "回答未能提交。草稿已保留，请确认问题仍在等待回答后重试。": "chat.questionSubmitFailed",
+  "Your answer": "home.yourAnswer",
+  "你的回答": "home.yourAnswer",
+  "You adopted the recommended answer": "chat.questionAnswerUserDefault",
+  "你采用了推荐回答": "chat.questionAnswerUserDefault",
+  "Default answer used after timeout": "chat.questionAnswerTimeout",
+  "超时后采用默认回答": "chat.questionAnswerTimeout",
+  "Answer recorded. Waiting for delivery.": "chat.questionDeliveryPending",
+  "回答已记录，等待交付。": "chat.questionDeliveryPending",
+  "Answer delivered.": "chat.questionDeliveryDelivered",
+  "回答已交付。": "chat.questionDeliveryDelivered",
   "Stop was requested, but some execution could not be confirmed as settled.": "chat.failureCleanup",
   "已请求停止，部分执行尚未确认结束，请检查已有结果。": "chat.failureCleanup",
   "Model connection recovered": "chat.modelRecovered",
@@ -6976,8 +7155,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "选择中…": "home.selecting",
   "Choose working directory": "home.chooseWorkingDirectory",
   "选择工作目录": "home.chooseWorkingDirectory",
-  "Your answer": "home.yourAnswer",
-  "你的回答": "home.yourAnswer",
   "Additional information": "home.additionalInformation",
   "补充信息": "home.additionalInformation",
   "Answer and joi will continue the task… (Shift+Enter for a new line)": "home.answerAndJoiWillContinueTheTaskShiftEnter",
@@ -7321,8 +7498,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "等待下一步处理": "home.joiProgressIdle",
   "Finished": "mobile.finished",
   "已收尾": "home.joiProgressCompleted",
-  "Canceled": "status.canceled",
-  "已取消": "status.canceled",
   "Plan and arrange work": "home.joiProgressPlanning",
   "整理与安排工作": "home.joiProgressPlanning",
   "Synthesize results": "home.joiProgressFinalizing",

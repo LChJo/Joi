@@ -1,5 +1,6 @@
 import type { AgentService } from "../../application/agents/agent-service.js";
 import type { ConversationService } from "../../application/joi/conversation-service.js";
+import type { UserQuestionService } from "../../application/joi/user-question-service.js";
 import type { ConversationWorkspaceService } from "../../application/joi/conversation-workspace-service.js";
 import type { ConversationWorkspacePort } from "../../application/ports/conversation-workspace.js";
 import type { WorkbenchDto } from "../../../shared/joi.js";
@@ -41,7 +42,8 @@ import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddre
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
-  conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "rename" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild" | "subscribe" | "fork">>;
+  userQuestions?: Pick<UserQuestionService,"list" | "answer">;
+  conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "rename" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild" | "subscribe" | "fork" | "answerQuestion" | "resumeQuestion">>;
   conversationWorkspace?: ConversationWorkspacePort;
   conversationGit?: Pick<ConversationWorkspaceService, "submit" | "get">;
   quickWorkbench?: (rootPath: string) => Promise<WorkbenchDto>;

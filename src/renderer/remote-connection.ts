@@ -120,6 +120,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
   #socket: WebSocket | undefined;
   #status: ReturnType<RemoteJoiConnection["status"]> = "disconnected";
   #ticket: PairingTicket | undefined;
+  #capabilities: readonly string[] = [];
 
   constructor(input: { location?: Location; storage?: Storage } = {}) {
     this.#location = input.location ?? window.location;
@@ -130,6 +131,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
   }
 
   status() { return this.#status; }
+  capabilities(): readonly string[] { return this.#capabilities; }
   dispose(): void {
     this.#credential = undefined;
     window.clearTimeout(this.#reconnectTimer);this.#reconnectTimer = undefined;
@@ -182,6 +184,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
 
   #disconnect(): void {
     this.#status = "disconnected"; this.#key = undefined; this.#connectionId = undefined;
+    this.#capabilities = [];
     this.#readyReject?.(new Error("remote_disconnected"));
     for (const pending of this.#pending.values()) pending.reject(new Error("remote_disconnected"));
     this.#pending.clear();
@@ -226,6 +229,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
     if (credential === undefined || hello === undefined || !await verifyReadyProof(credential.secret, hello, ready)) throw new Error("remote_host_proof_invalid");
     this.#key = await deriveBrowserRemoteSessionKey(credential.secret, hello.clientNonce, ready.hostNonce);
     this.#status = "connected";
+    this.#capabilities = Object.freeze(Array.isArray(ready.capabilities) ? ready.capabilities.filter((value: unknown): value is string => typeof value === "string") : []);
     if (this.#ticket !== undefined) {
       this.#storage.setItem(storageKey(credential.hostId), JSON.stringify(credential));
       history.replaceState(null, "", `${this.#location.pathname}${this.#location.search}`);

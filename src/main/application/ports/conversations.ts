@@ -22,6 +22,8 @@ export interface ConversationForkSource {
 export interface ConversationSubmission {
   conversationId: string; workbenchId: string; turnId: string; requestId: string;
   text: string; at: string; config: ConversationConfigDto; revision?: PartnerRevision;
+  recoveryContext?: string;
+  questionRecovery?: { sourceTurnId: string; questionId: string };
 }
 export interface ConversationStore {
   existingFork(input: ConversationForkIdentity): Promise<ConversationDto | null>;
@@ -42,8 +44,10 @@ export interface ConversationStore {
   rename(id: string,title: string,at: string): Promise<ConversationSummaryDto>;
   setState(id: string, state: ConversationState, at: string): Promise<void>;
   get(id: string): Promise<ConversationDto | null>;
-  request(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string } | null>;
-  turn(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string; revision: PartnerRevision | null } | null>;
+  request(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string; questionRecoverySourceTurnId?: string } | null>;
+  latestQuestionRecovery(sourceTurnId: string): Promise<Pick<ConversationTurnDto,"turnId" | "status"> | null>;
+  turn(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string; revision: PartnerRevision | null;
+    recoveryContext?: string; questionRecoverySourceTurnId?: string } | null>;
   begin(turnId: string): Promise<boolean>;
   runningPiTurns(): Promise<string[]>;
   update(turnId: string, patch: Pick<ConversationTurnDto, "entries" | "artifacts" | "status"> & Pick<ConversationTurnDto,"errorCode" | "failure">): Promise<void>;

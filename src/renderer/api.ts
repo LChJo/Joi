@@ -25,6 +25,7 @@ import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
+import type { UserQuestionScope, UserQuestionDto, AnswerUserQuestionInput } from "../shared/user-questions";
 import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto,ConversationUpdateDto } from "../shared/conversations";
 
 export class ApiError extends Error {
@@ -46,6 +47,13 @@ export interface RequestOptions {
 interface AgentConversationOptions { cursor?: string; goalId?: string; latest?: boolean; limit?: number }
 
 export class DigitalLifeApi {
+  resumeConversationQuestion(conversationId: string, questionId: string) {
+    return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/questions/${encodeURIComponent(questionId)}/resume`,{method:"POST"});
+  }
+  answerQuestion(scope: UserQuestionScope, questionId: string, input: AnswerUserQuestionInput) {
+    const route = scope.kind === "GOAL" ? "joi/goals" : "conversations";
+    return this.request<UserQuestionDto>(`/api/v1/${route}/${encodeURIComponent(scope.id)}/questions/${encodeURIComponent(questionId)}/answer`,{ method: "POST",body: { ...input } });
+  }
   private csrfToken: string | null = null;
 
   constructor(readonly origin: string, readonly desktop = false) {}

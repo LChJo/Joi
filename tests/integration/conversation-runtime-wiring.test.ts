@@ -1,6 +1,8 @@
 /* Composition doubles provide only the ports this feature consumes. */
 /* eslint-disable @typescript-eslint/require-await */
 import path from "node:path";
+import { UserQuestionService } from "../../src/main/application/joi/user-question-service";
+import { SqliteUserQuestionStore } from "../../src/main/infrastructure/persistence/sqlite-user-question-store";
 import { createRuntimeFixture } from "../support/runtime-fixture";
 import { wireConversations } from "../../src/main/composition/wire-conversations";
 import { wirePersistence } from "../../src/main/composition/wire-persistence";
@@ -21,12 +23,12 @@ it("CHAT-15 starts another conversation in the same workbench while the first is
       await finish.promise;
       return { actionId: input.request.actionId,workId: input.request.workId,externalRunId: input.request.workId,status: "COMPLETED",artifacts: [],body: "Done" };
     });
-    const partnerStack = { piRuntime: { setSubagents: () => undefined },partnerInstances: { dispatch: run },partnerSkillCatalog: { validateRefs: () => undefined } } as unknown as PartnerBundle;
+    const partnerStack = { piRuntime: { setSubagents: () => undefined, setUserQuestions: () => undefined },partnerInstances: { dispatch: run },partnerSkillCatalog: { validateRefs: () => undefined } } as unknown as PartnerBundle;
     const modelSourceStack = { modelSources: { list: async () => [{ sourceId: "network",displayName: "Fixture",activeModel: { id: "fixture" },status: "READY" }] } } as unknown as ModelSourceBundle;
     const workbenchStack = wireWorkbenches({ clock: f.clock,ids: f.ids,diagnostics: { emit: () => undefined },persistence,partnerStack,artifactOpener: { open: async () => undefined } });
     const evolution = new MethodLearningService({ store: new SqliteMethodLearningStore(f.database),legacyStore: new SqliteEvolutionStore(f.database),
       model: { pin: async () => { throw new Error("No model call expected"); },call: vi.fn() },now: () => f.clock.now().toISOString(),id: () => f.ids.next("evolution") });
-    stack = wireConversations({ clock: f.clock,ids: f.ids,database: f.database,persistence,partnerStack,modelSourceStack,workbenchStack,evolution,userDataDirectory: f.root,
+    stack = wireConversations({ clock: f.clock,ids: f.ids,database: f.database,persistence,partnerStack,modelSourceStack,workbenchStack,evolution,userDataDirectory: f.root,questions: new UserQuestionService({store: new SqliteUserQuestionStore(f.database),clock:f.clock}),
       attachments: { read: async () => { throw new Error("No attachments"); },upload: async () => { throw new Error("No upload"); },importPath: async () => { throw new Error("No import"); } } });
     const wb = await stack.quickWorkbench(f.root);
     const input = { workbenchId: wb.workbenchId,partnerId: "joi-chat",networkId: "network",skills: [],attachmentIds: [],text: "Synthetic task" };
@@ -72,14 +74,14 @@ it("CHAT-02/06 wires path-only creation, default Joi partner, scoped memory inhe
       expect(input.request.requiredContext).not.toContain("OTHER_WORKBENCH_SENTINEL");
       return { actionId: input.request.actionId,workId: input.request.workId,externalRunId: "fixture",status: "COMPLETED",artifacts: [],body: "Scoped answer" };
     });
-    const partnerStack = { piRuntime: { setSubagents: () => undefined },partnerInstances: { dispatch: run },partnerSkillCatalog: { validateRefs: () => undefined } } as unknown as PartnerBundle;
+    const partnerStack = { piRuntime: { setSubagents: () => undefined, setUserQuestions: () => undefined },partnerInstances: { dispatch: run },partnerSkillCatalog: { validateRefs: () => undefined } } as unknown as PartnerBundle;
     const networks = [{ sourceId: "network",displayName: "Settings network",activeModel: { id: "configured",revisionId: "model-revision" },activeSourceRevisionId: "source-revision",status: "READY" }];
     const modelSourceStack = { modelSources: { list: async () => networks } } as unknown as ModelSourceBundle;
     const workbenchStack = wireWorkbenches({ clock: f.clock,ids: f.ids,diagnostics: { emit: () => undefined },persistence,partnerStack,artifactOpener: { open: async () => undefined } });
     const evolutionCall = vi.fn();
     const evolution = new MethodLearningService({ store: new SqliteMethodLearningStore(f.database),legacyStore: new SqliteEvolutionStore(f.database),
       model: { pin: async () => { throw new Error("No model call is permitted"); },call: evolutionCall },now: () => f.clock.now().toISOString(),id: () => f.ids.next("evolution") });
-    stack = wireConversations({ clock: f.clock,ids: f.ids,database: f.database,persistence,partnerStack,modelSourceStack,workbenchStack,evolution,userDataDirectory: f.root,
+    stack = wireConversations({ clock: f.clock,ids: f.ids,database: f.database,persistence,partnerStack,modelSourceStack,workbenchStack,evolution,userDataDirectory: f.root,questions: new UserQuestionService({store: new SqliteUserQuestionStore(f.database),clock:f.clock}),
       attachments: { read: async () => { throw new Error("No attachment selected"); },upload: async () => { throw new Error("No upload"); },importPath: async () => { throw new Error("No import"); } } });
     await expect(stack.quickWorkbench("relative/path")).rejects.toMatchObject({ code: "workspace_path_invalid" });
     const wb = await stack.quickWorkbench(f.root);

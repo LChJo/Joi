@@ -24,6 +24,7 @@ import { readStoredPartnerRevision } from "./sqlite-partner-registry-repository.
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { WorkItemDto } from "../../../shared/joi.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
+import { retireCanceledWorkQuestionsInTransaction } from "./sqlite-joi-inbox-repository.js";
 import { assertGoalRequirementsReady } from "./sqlite-goal-requirements-repository.js";
 import { DomainError } from "../../domain/errors.js";
 import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
@@ -530,6 +531,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         now: at,
         workId,
       });
+      retireCanceledWorkQuestionsInTransaction(connection,workId,at);
       return { canceled: true, cascadedWorkIds };
     });
   }

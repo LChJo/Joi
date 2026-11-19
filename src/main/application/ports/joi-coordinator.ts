@@ -4,6 +4,8 @@ import type { SourceFailureKind } from "../../domain/model-sources/model-source.
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import type { GoalEvidenceChangesQuery } from "./goal-evidence.js";
 import type { JoiTurnRetryState } from "./joi-task.js";
+import type { UserQuestionPrompt } from "../../../shared/user-questions.js";
+import type { JoiInboxRecord } from "./joi-inbox.js";
 
 /** Private persisted evidence for one goal; never a display or diagnostics projection. */
 export interface JoiGoalContext {
@@ -92,7 +94,9 @@ export interface JoiCoordinatorStore {
     kind: "PARTNER_QUESTION";
     runId: string;
     workId: string;
-  }, proposal?: WorkbenchProposalDto): Promise<void>;
+  }, proposal?: WorkbenchProposalDto, question?: UserQuestionPrompt & { toolCallId?: string }): Promise<void>;
+  /** Apply an already-persisted queue answer; safe to retry after a failed callback. */
+  applyAnsweredGoalQuestion?(questionId: string): Promise<JoiInboxRecord | null>;
   resumeGoal?(input: { inputId: string; turnId: string; requirementsRevision?: number }): Promise<{ status: "OPEN" }>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }

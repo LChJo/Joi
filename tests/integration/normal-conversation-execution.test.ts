@@ -10,6 +10,9 @@ import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persi
 import type { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import type { PartnerRunResult } from "../../src/main/application/ports/partner-execution";
 import { DomainError } from "../../src/main/domain/errors";
+import { UserQuestionService } from "../../src/main/application/joi/user-question-service";
+import { SqliteUserQuestionStore } from "../../src/main/infrastructure/persistence/sqlite-user-question-store";
+import type { ConversationUpdateDto } from "../../src/shared/conversations";
 import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure";
 import { ConversationHandoff } from "../../src/main/infrastructure/pi/conversation-handoff";
 
@@ -35,6 +38,73 @@ async function setup(run: PartnerInstanceManager["dispatch"], native = false) {
 }
 
 describe("normal conversation execution", () => {
+  it("保留旧式提问之前的正文与工具记录", async () => {
+    const { f,service,accept } = await setup(async call => ({actionId:call.request.actionId,workId:call.request.workId,externalRunId:"question",status:"WAITING_INPUT",body:"已有分析",pendingQuestion:"选择哪一个？",artifacts:[],conversation:[
+      {kind:"MARKDOWN",role:"AGENT",text:"已有分析"},{kind:"TOOL_CALL",role:"TOOL",toolName:"read",toolCallId:"read-1",text:"fixture.ts"},
+    ]}));
+    try { const turn = await accept();await service.deliver(turn.turnId);const saved = (await service.get("chat")).turns[0];
+      expect(saved?.entries.map(entry => entry.text)).toEqual(expect.arrayContaining(["已有分析","fixture.ts","选择哪一个？"]));
+    } finally { service.close();await f.close(); }
+  });
+  it("中断问题显式续接读取保存答案且重复请求不增加执行轮", async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async call => ({actionId:call.request.actionId,workId:call.request.workId,externalRunId:"resume",status:"COMPLETED",body:"继续完成",artifacts:[]}));
+    const { f,service,accept,store,dependencies } = await setup(run);
+    const questions = new UserQuestionService({store:new SqliteUserQuestionStore(f.database),clock:f.clock});
+    const restarted = new ConversationService({...dependencies,questions});
+    try {
+      const turn = await accept();await store.begin(turn.turnId);
+      await questions.enqueue({questionId:"interrupted-question",scope:{kind:"CONVERSATION",id:"chat"},ownerId:turn.turnId,sourceName:"Pi",question:"使用哪个环境？",defaultAnswer:"测试环境"});
+      await questions.answer({kind:"CONVERSATION",id:"chat"},"interrupted-question",{version:1,text:"本地环境"});
+      await questions.enqueue({questionId:"unanswered-question",scope:{kind:"CONVERSATION",id:"chat"},ownerId:turn.turnId,sourceName:"Pi",question:"另一个未答问题",defaultAnswer:"不要替用户选择这个默认"});
+      await questions.interruptOwner(turn.turnId);
+      await store.recoverInterrupted(f.clock.now().toISOString());
+      expect((await restarted.get("chat")).turns[0]?.questions?.[0]?.delivery).toBe("INTERRUPTED");
+      const saved = await restarted.resumeQuestion("chat","interrupted-question");
+      expect(saved.turns).toHaveLength(2);expect(saved.turns[1]?.text).not.toContain("本地环境");
+      const recovery = (await store.turn(saved.turns[1]?.turnId ?? "missing"))?.recoveryContext;
+      expect(recovery).toContain("本地环境");expect(recovery).toContain("尚未回答的问题：另一个未答问题");expect(recovery).not.toContain("不要替用户选择这个默认");
+      await restarted.resumeQuestion("chat","interrupted-question");
+      expect((await restarted.get("chat")).turns).toHaveLength(2);expect(run).not.toHaveBeenCalled();
+      await restarted.deliver(saved.turns[1]?.turnId ?? "missing");expect(run).toHaveBeenCalledTimes(1);
+      expect(run.mock.calls[0]?.[0].request.requiredContext).toContain("本地环境");
+    } finally { service.close();restarted.close();questions.close();await f.close(); }
+  });
+  it("ASK-06/10 retains the recovery receipt until a successful durable turn and retries preflight failure once per attempt", async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>().mockRejectedValueOnce(new DomainError("fixture_preflight_failed","Fixture preflight failed"))
+      .mockImplementation(async ({ request }) => ({ actionId:request.actionId,workId:request.workId,externalRunId:"fixture",status:"COMPLETED",body:"Recovered",artifacts:[] }));
+    const { f,service,accept,store,dependencies } = await setup(run);
+    const questionStore = new SqliteUserQuestionStore(f.database);
+    const questions = new UserQuestionService({ store: questionStore, clock:f.clock });
+    const restarted = new ConversationService({...dependencies,questions});
+    const onUpdate = vi.fn<(update: ConversationUpdateDto) => void>();
+    const unsubscribe = restarted.subscribe("chat",onUpdate);
+    try {
+      const turn = await accept();await store.begin(turn.turnId);
+      await questions.enqueue({ questionId:"saved",scope:{kind:"CONVERSATION",id:"chat"},ownerId:turn.turnId,sourceName:"Pi",question:"Pick",defaultAnswer:"Choice A" });
+      await restarted.recoverInterrupted();
+      const [first, duplicate] = await Promise.all([restarted.resumeQuestion("chat","saved"),restarted.resumeQuestion("chat","saved")]);
+      expect(duplicate.turns.map(item => item.turnId)).toEqual(first.turns.map(item => item.turnId));
+      const queued = first.turns.at(-1);
+      expect(queued?.status).toBe("QUEUED");
+      expect(await questionStore.get("saved")).toMatchObject({ status:"ANSWERED",delivery:"INTERRUPTED",answer:{ text:"Choice A",source:"USER_DEFAULT" } });
+      await restarted.deliver(queued?.turnId ?? "missing");
+      expect((await restarted.get("chat")).turns.at(-1)?.status).toBe("FAILED");
+      expect((await questionStore.get("saved"))?.delivery).toBe("INTERRUPTED");
+      const [retry, repeated] = await Promise.all([restarted.resumeQuestion("chat","saved"),restarted.resumeQuestion("chat","saved")]);
+      expect(repeated.turns.map(item => item.turnId)).toEqual(retry.turns.map(item => item.turnId));
+      expect(retry.turns).toHaveLength(3);
+      expect(retry.turns.at(-1)?.status).toBe("QUEUED");
+      await restarted.deliver(retry.turns.at(-1)?.turnId ?? "missing");
+      expect((await questionStore.get("saved"))?.delivery).toBe("DELIVERED");
+      await vi.waitFor(() => {
+        const completed = onUpdate.mock.calls.map(([item]) => item).find(item => item.turn.turnId === retry.turns.at(-1)?.turnId && item.turn.status === "COMPLETED");
+        expect(completed?.relatedTurn?.turnId).toBe(turn.turnId);
+        expect(completed?.relatedTurn?.questions?.[0]).toMatchObject({ questionId:"saved",delivery:"DELIVERED" });
+      });
+      expect(run.mock.calls[1]?.[0].request.requiredContext).toContain("Choice A");
+      expect((await restarted.resumeQuestion("chat","saved")).turns).toHaveLength(3);
+    } finally { unsubscribe();service.close();restarted.close();questions.close();await f.close(); }
+  });
   it("CHAT-48 forks a completed turn into a durable independent conversation without replaying later turns", async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async call => {
       await call.session?.save({ engine: call.revision.engine, messages: [...(call.session.state?.messages ?? []),

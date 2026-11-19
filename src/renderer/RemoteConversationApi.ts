@@ -1,9 +1,10 @@
 import { ApiError, DigitalLifeApi, type RequestOptions } from "./api";
 import { randomUuid } from "./random-uuid";
-import type { RemoteCommand } from "../shared/remote";
+import { isRemoteQuestionAnswerInput, type RemoteCommand } from "../shared/remote";
 import type { SendConversationInput } from "../shared/conversations";
 
 export interface RemoteConversationTransport {
+  capabilities?(): readonly string[];
   command<T>(command: RemoteCommand, signal?: AbortSignal): Promise<T>;
 }
 
@@ -28,6 +29,20 @@ export class RemoteConversationApi extends DigitalLifeApi {
     if (url.pathname === "/api/v1/conversations") {
       if (method === "GET") return read({ kind: "conversation.list",requestId,archived: url.searchParams.get("archived") === "true" });
       if (method === "POST") return read({ kind: "conversation.send",requestId,input: options.body as unknown as SendConversationInput });
+    }
+    const resume = /^\/api\/v1\/conversations\/([^/]+)\/questions\/([^/]+)\/resume$/.exec(url.pathname);
+    if (method === "POST" && resume !== null) {
+      if (!this.transport.capabilities?.().includes("questions.v1")) throw new ApiError("remote_upgrade_required", "Questions are unavailable on this host.", 409);
+      return read({ kind: "conversation.resumeQuestion", requestId, conversationId: decodeURIComponent(resume[1] ?? ""), questionId: decodeURIComponent(resume[2] ?? "") });
+    }
+    const answer = /^\/api\/v1\/(conversations|joi\/goals)\/([^/]+)\/questions\/([^/]+)\/answer$/.exec(url.pathname);
+    if (method === "POST" && answer !== null) {
+      if (!this.transport.capabilities?.().includes("questions.v1")) throw new ApiError("remote_upgrade_required", "Questions are unavailable on this host.", 409);
+      if (!isRemoteQuestionAnswerInput(options.body)) throw new ApiError("question_answer_invalid", "The answer is invalid.", 400);
+      const scopeId = decodeURIComponent(answer[2] ?? ""), questionId = decodeURIComponent(answer[3] ?? ""), input = options.body;
+      return read(answer[1] === "conversations"
+        ? { kind: "conversation.answerQuestion", requestId, conversationId: scopeId, questionId, input }
+        : { kind: "question.answer", requestId, scopeKind: "GOAL", scopeId, questionId, input });
     }
     const skills = /^\/api\/v1\/engines\/([^/]+)\/skills$/.exec(url.pathname);
     if (method === "GET" && skills !== null) return read({ kind: "conversation.skills",requestId,engine: decodeURIComponent(skills[1] ?? "") });

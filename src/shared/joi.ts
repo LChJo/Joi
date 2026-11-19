@@ -1,3 +1,5 @@
+import type { UserQuestionDto } from "./user-questions.js";
+
 /** Fixed task input remains independent of the interface locale. */
 export const REVIEW_RETRY_TEXT = "沿用已保存的回答，重试评审。";
 
@@ -298,6 +300,7 @@ export interface WorkbenchBindingDto {
 }
 
 export interface JoiAcceptedMessageDto {
+  questions?: UserQuestionDto[];
   workbenchProposal?: WorkbenchProposalDto;
   acceptedAt: string;
   workbenchId?: string;
@@ -440,6 +443,7 @@ export interface JoiGoalWorkDto {
 
 export interface JoiGoalCardBaseDto {
   agentCount: number;
+  questions?: UserQuestionDto[];
   artifacts?: WorkbenchArtifactDto[];
   artifactCount?: number;
   artifactNextCursor?: string;

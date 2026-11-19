@@ -2910,6 +2910,18 @@ export async function applyMigrations(database: DatabaseSync, migrationsDirector
   const entries = (await readdir(migrationsDirectory, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && /^\d+_.+\.sql$/.test(entry.name))
     .sort((left, right) => left.name.localeCompare(right.name));
+  if (entries.some(entry => entry.name === "107_user_questions.sql")
+    && entries.some(entry => entry.name === "108_question_recovery_lifecycle.sql")) {
+    // The draft Ask schemas reserved 104/105 before integration. Renumber only their
+    // exact ledger entries so the parent migrations can claim those versions.
+    database.exec(`UPDATE schema_migrations
+      SET version = version + 3, filename = CASE version
+        WHEN 104 THEN '107_user_questions.sql'
+        WHEN 105 THEN '108_question_recovery_lifecycle.sql'
+      END
+      WHERE (version = 104 AND filename = '104_user_questions.sql')
+        OR (version = 105 AND filename = '105_question_recovery_lifecycle.sql')`);
+  }
   for (const entry of entries) {
     const version = Number.parseInt(entry.name.split("_", 1)[0] ?? "", 10);
     const existing = database.prepare("SELECT 1 FROM schema_migrations WHERE version = ?").get(version);

@@ -1,0 +1,187 @@
+.user-question-queue {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.user-question-queue > li { min-width: 0; }
+
+.user-question-card {
+  box-sizing: border-box;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.user-question-card-active { border-inline-start: 3px solid var(--forest); }
+.user-question-card p { margin: 0; white-space: pre-wrap; }
+
+.user-question-header,
+.user-question-answer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.user-question-status { color: var(--forest); font-weight: 600; font-size: 12px; }
+.user-question-source,
+.user-question-hint,
+.user-question-timing time,
+.user-question-answer-meta time { color: var(--muted); font-size: 12px; }
+.user-question-source { min-width: 0; }
+.user-question-form { display: grid; gap: 16px; min-width: 0; }
+
+.user-question-form fieldset {
+  display: grid;
+  gap: 12px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.user-question-form legend,
+.user-question-title {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.user-question-title { margin: 0; }
+.user-question-options { display: grid; gap: 8px; }
+.user-question-card .user-question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.user-question-option:has(input:checked) {
+  border-color: var(--forest);
+  background: color-mix(in srgb, var(--forest) 7%, var(--paper-strong));
+}
+
+.user-question-card .user-question-option input {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--forest);
+  appearance: auto;
+}
+
+.user-question-option-copy { display: grid; gap: 3px; min-width: 0; }
+.user-question-option-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.user-question-recommended { color: var(--forest); font-size: 11px; font-weight: 600; }
+.user-question-card .user-question-custom { display: grid; gap: 6px; min-width: 0; }
+
+.user-question-card textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 88px;
+  padding: 10px 12px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.6;
+}
+
+.user-question-timing { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.user-question-timing > p { flex-basis: 100%; }
+.user-question-countdown { color: var(--forest); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.user-question-default {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-inline-start: 2px solid var(--line);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--forest) 4%, var(--paper-strong));
+}
+
+.user-question-default > strong { font-size: 12px; color: var(--muted); }
+.user-question-selected { display: flex; flex-wrap: wrap; gap: 4px 8px; list-style: none; padding: 0; margin: 0; }
+.user-question-selected > li { padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.user-question-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.user-question-card .user-question-button {
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.user-question-card .user-question-button-submit { border-color: var(--forest); color: var(--forest); }
+.user-question-card .user-question-button-default { background: var(--forest); border-color: var(--forest); color: var(--paper-strong); }
+
+@media (hover: hover) {
+  .user-question-option:not(:has(input:disabled)):hover,
+  .user-question-card .user-question-button-submit:not(:disabled):hover { background: color-mix(in srgb, var(--forest) 9%, var(--paper-strong)); }
+  .user-question-card .user-question-button-default:not(:disabled):hover { background: color-mix(in srgb, var(--forest) 88%, var(--ink)); }
+}
+
+.user-question-card :is(input, textarea, button, summary):focus-visible {
+  outline: 2px solid var(--forest);
+  outline-offset: 3px;
+}
+
+.user-question-card :is(textarea, button):disabled { opacity: .6; cursor: not-allowed; }
+.user-question-option:has(input:disabled) { cursor: default; }
+.user-question-notice { font-size: 12px; color: var(--muted); }
+.user-question-notice:empty { display: none; }
+.user-question-error { color: var(--ink); padding-inline-start: 10px; border-inline-start: 2px solid var(--forest); font-size: 12px; }
+.user-question-answer { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.user-question-answer-meta strong { font-size: 12px; font-weight: 600; }
+.user-question-preview { min-width: 0; }
+.user-question-preview summary { min-height: 44px; padding-block: 8px; font-weight: 600; cursor: pointer; }
+.user-question-preview:not([open]) summary { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.user-question-preview[open] summary { white-space: pre-wrap; margin-bottom: 8px; }
+
+@media (max-width: 480px) {
+  .user-question-card { padding: 14px 12px; }
+  .user-question-actions { flex-direction: column; }
+  .user-question-card .user-question-button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-question-card *, .user-question-card *::before, .user-question-card *::after { transition: none; animation: none; }
+}

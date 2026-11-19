@@ -82,6 +82,69 @@ class RemoteWorkbenchProposal {
   }
 }
 
+class RemoteUserQuestion {
+  RemoteUserQuestion.fromJson(Map<String, dynamic> json)
+    : questionId = json['questionId'] as String? ?? '',
+      version = json['version'] as int? ?? 1,
+      scopeKind = (json['scope'] as Map?)?['kind'] as String? ?? '',
+      scopeId = (json['scope'] as Map?)?['id'] as String? ?? '',
+      sourceName = json['sourceName'] as String? ?? '',
+      question = json['question'] as String? ?? '',
+      kind = json['kind'] as String? ?? 'QUESTION',
+      status = json['status'] as String? ?? 'CANCELED',
+      delivery = json['delivery'] as String? ?? 'PENDING',
+      options = (json['options'] as List? ?? const [])
+          .whereType<Map>()
+          .map((value) => Map<String, dynamic>.from(value))
+          .toList(growable: false),
+      multiSelect = json['multiSelect'] == true,
+      allowCustom = json['allowCustom'] == true,
+      defaultAnswer = json['defaultAnswer'] as String? ?? '',
+      defaultOptionIds = (json['defaultOptionIds'] as List? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+      expiresAt = DateTime.tryParse(json['expiresAt'] as String? ?? ''),
+      answer = json['answer'] is Map
+          ? Map<String, dynamic>.from(json['answer'] as Map)
+          : null;
+  final String questionId,
+      scopeKind,
+      scopeId,
+      sourceName,
+      question,
+      kind,
+      status,
+      delivery,
+      defaultAnswer;
+  final int version;
+  final bool multiSelect, allowCustom;
+  final List<Map<String, dynamic>> options;
+  final List<String> defaultOptionIds;
+  final DateTime? expiresAt;
+  final Map<String, dynamic>? answer;
+  bool get active => status == 'ACTIVE' && delivery != 'INTERRUPTED';
+  String get identity =>
+      '${scopeKind.length}:$scopeKind:${scopeId.length}:$scopeId:${questionId.length}:$questionId:$version';
+  static List<RemoteUserQuestion> list(dynamic value) =>
+      (value is List ? value : const [])
+          .whereType<Map>()
+          .map(
+            (item) =>
+                RemoteUserQuestion.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(growable: false);
+}
+
+abstract interface class QuestionRemoteController {
+  bool get supportsQuestions;
+  Future<Map<String, dynamic>> answerQuestion(
+    String scopeKind,
+    String scopeId,
+    String questionId,
+    Map<String, Object?> input,
+  );
+}
+
 class RemoteGoalCard {
   const RemoteGoalCard({
     required this.activeWork,
@@ -108,6 +171,7 @@ class RemoteGoalCard {
     this.executingWork,
     this.resourceWaitingWork,
     this.waitingReasons = const [],
+    this.questions = const [],
   });
 
   final int activeWork;
@@ -118,6 +182,7 @@ class RemoteGoalCard {
   final int? executingWork;
   final int? resourceWaitingWork;
   final List<String> waitingReasons;
+  final List<RemoteUserQuestion> questions;
   final String goalId;
   final String workbenchId;
   final String workbenchName;
@@ -160,6 +225,7 @@ class RemoteGoalCard {
     executingWork: executingWork,
     resourceWaitingWork: resourceWaitingWork,
     waitingReasons: waitingReasons,
+    questions: questions,
   );
   final String? summary;
   final String? resultId;
@@ -217,6 +283,7 @@ class RemoteGoalCard {
             .whereType<String>()
             .toSet(),
       ),
+      questions: RemoteUserQuestion.list(json['questions']),
       agentCount: json['agentCount'] as int? ?? 0,
       canArchive: json['canArchive'] == true,
       canDelete: json['canDelete'] == true,

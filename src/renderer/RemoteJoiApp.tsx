@@ -9,8 +9,10 @@ import { ConversationPage } from "./ConversationPage";
 import { RemoteConversationApi, type RemoteConversationTransport } from "./RemoteConversationApi";
 import { ArchivedConversations } from "./ArchivePage";
 import { submitComposerOnEnter } from "./composer-keyboard";
+import { QuestionQueue } from "./UserQuestionCard";
 
 export interface RemoteJoiConnection {
+  capabilities?(): readonly string[];
   command?: RemoteConversationTransport["command"];
   feed(): Promise<JoiHomeFeedDto>;
   sendMessage(text: string, idempotencyKey: string): Promise<JoiAcceptedMessageDto>;
@@ -58,7 +60,7 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
   const [notice, setNotice] = useNotice();
   const [sending, setSending] = useState(false);
   const [section,setSection] = useState<"tasks" | "conversations" | "archived">("tasks");
-  const conversationApi = useMemo(() => new RemoteConversationApi({ command: (command,signal) => {
+  const conversationApi = useMemo(() => new RemoteConversationApi({ capabilities: () => connection.capabilities?.() ?? [], command: (command,signal) => {
     if (connection.command === undefined) return Promise.reject(new Error("remote_upgrade_required"));
     return connection.command(command,signal);
   } }),[connection]);
@@ -113,6 +115,7 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
       <button aria-current={section === "conversations" ? "page" : undefined} onClick={() => setSection("conversations")} type="button">{t("chat.title")}</button>
       <button aria-current={section === "archived" ? "page" : undefined} onClick={() => setSection("archived")} type="button">{t("chat.archivedConversations")}</button>
     </nav>
+    {connectionStatus === "connected" && !connection.capabilities?.().includes("questions.v1") ? <p role="status">{t("chat.questionRemoteUnavailable")}</p> : null}
     {section === "conversations" ? <ConversationPage api={conversationApi} /> : section === "archived" ? <ArchivedConversations api={conversationApi} /> : <>
     <section aria-label={t("remote.joiTasks")} className="remote-goal-list">
       {feed.goals.length === 0 ? <div className="remote-empty"><CircleNotchIcon aria-hidden /><h1>{t("remote.noTasksToShowYet")}</h1><p>{t("remote.tellJoiWhatYouWantToDoBelow")}</p></div> : feed.goals.map((goal) => <article className={`remote-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
@@ -120,7 +123,13 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
         <h1>{goal.title}</h1>
         <p>{workSummary(goal.work)}</p>
         {goal.completionSummary === undefined ? null : <div className="remote-goal-result"><CheckCircleIcon aria-hidden /><span>{goal.completionSummary}</span></div>}
-        {goal.status !== "NEEDS_ATTENTION" ? null : <div className="remote-goal-attention"><WarningCircleIcon aria-hidden /><span>{goal.clarification.prompt ?? t("remote.returnToTheDesktopToConfirmThisTask")}</span></div>}
+        {goal.status !== "NEEDS_ATTENTION" || goal.clarification.reasonCode === "question_required" && (goal.questions?.length ?? 0) > 0 ? null : <div className="remote-goal-attention"><WarningCircleIcon aria-hidden /><span>{goal.clarification.prompt ?? t("remote.returnToTheDesktopToConfirmThisTask")}</span></div>}
+        {(goal.questions?.length ?? 0) === 0 ? null : <fieldset disabled={connectionStatus !== "connected" || !connection.capabilities?.().includes("questions.v1")} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          <QuestionQueue questions={goal.questions ?? []} onAnswer={async (questionId, input) => {
+            await conversationApi.answerQuestion({ kind: "GOAL", id: goal.goalId }, questionId, input);
+            await refresh();
+          }} />
+        </fieldset>}
       </article>)}
     </section>
     <footer className="remote-composer-wrap">

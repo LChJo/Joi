@@ -27,6 +27,28 @@ it.each([
   expect(command).toHaveBeenCalledWith(expect.objectContaining(expected),controller.signal);
 });
 
+it.each([
+  ["/api/v1/conversations/chat%201/questions/q%201/answer", { kind: "conversation.answerQuestion", conversationId: "chat 1", questionId: "q 1" }],
+  ["/api/v1/joi/goals/goal%201/questions/q%202/answer", { kind: "question.answer", scopeKind: "GOAL", scopeId: "goal 1", questionId: "q 2" }],
+])("maps question answer route %s only for negotiated hosts", async (path, expected) => {
+  const command = vi.fn().mockResolvedValue({ status: "ANSWERED" });
+  const api = new RemoteConversationApi({ capabilities: () => ["questions.v1"], command: <T>(input: RemoteCommand) => command(input) as Promise<T> });
+  const input = { version: 4, useDefault: true };
+  await expect(api.request(path, { method: "POST", body: input })).resolves.toEqual({ status: "ANSWERED" });
+  expect(command).toHaveBeenCalledWith(expect.objectContaining({ ...expected as object, input }));
+  const oldApi = new RemoteConversationApi({ command: <T>(input: RemoteCommand) => command(input) as Promise<T> });
+  await expect(oldApi.request(path, { method: "POST", body: input })).rejects.toMatchObject({ code: "remote_upgrade_required" });
+  expect(command).toHaveBeenCalledTimes(1);
+});
+
+it("maps explicit interrupted-question resume without resending an answer", async () => {
+  const command = vi.fn().mockResolvedValue({ conversationId: "chat" });
+  const api = new RemoteConversationApi({ capabilities: () => ["questions.v1"], command: <T>(input: RemoteCommand) => command(input) as Promise<T> });
+  await api.request("/api/v1/conversations/chat/questions/q1/resume", { method: "POST" });
+  expect(command).toHaveBeenCalledWith(expect.objectContaining({ kind: "conversation.resumeQuestion", conversationId: "chat", questionId: "q1" }));
+  expect(command.mock.calls[0]?.[0]).not.toHaveProperty("input");
+});
+
 it("uses only paired catalog metadata, preserves send identity and has no local workspace or attachment transport", async () => {
   const command = vi.fn().mockResolvedValue({ workbenches: [{ workbenchId: "w" }],networks: [{ sourceId: "n" }],partners: [{ partnerId: "p" }] });
   const api = new RemoteConversationApi({ command: <T>(input: RemoteCommand) => command(input) as Promise<T> });

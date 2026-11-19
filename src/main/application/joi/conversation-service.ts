@@ -1,6 +1,8 @@
 import { DomainError } from "../../domain/errors.js";
+import type { UserQuestionService } from "./user-question-service.js";
+import type { AnswerUserQuestionInput } from "../../../shared/user-questions.js";
 import { CONVERSATION_PI_EXTENSIONS,CONVERSATION_TITLE_MAX_LENGTH,isConversationPiExtensions,type SendConversationInput,type ConversationDto,type ConversationInheritanceDto } from "../../../shared/conversations.js";
-import type { ConversationStore, ConversationHandoffPort, ConversationSegment } from "../ports/conversations.js";
+import type { ConversationStore, ConversationHandoffPort, ConversationSegment, ConversationSubmission } from "../ports/conversations.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchCatalog, WorkbenchContextSnapshotStore, WorkbenchWorkspaceRepository } from "../ports/workbench-context.js";
 import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
@@ -70,7 +72,16 @@ export class ConversationService {
     inheritance: ConversationInheritancePort;
     attachments?: { validate(ids: string[]): Promise<void>; stage(input: { ids: string[]; turnId: string }): Promise<string> };
     subagents?: Pick<ConversationSubagentPort,"list" | "cancel">;
-  }) {}
+    questions?: Pick<UserQuestionService,"answer" | "subscribe" | "cancelOwner" | "recoveryRecords" | "interruptUnfinishedConversations">;
+  }) {
+    dependencies.questions?.subscribe(scope => {
+      if (scope.kind !== "CONVERSATION") return;
+      void this.get(scope.id).then(item => {
+        const current = item.turns.at(-1);
+        if (current !== undefined) this.#publish({ conversationId: scope.id,turn: current,...(item.context === undefined ? {} : { context: item.context }) });
+      }).catch(() => undefined);
+    });
+  }
   list(archived = false) { return this.dependencies.store.list(archived); }
   subscribe(id: string,listener: (update: ConversationUpdateDto) => void): () => void {
     identity(id);
@@ -79,6 +90,16 @@ export class ConversationService {
     return () => { listeners.delete(listener);if (listeners.size === 0) this.#listeners.delete(id); };
   }
   #publish(update: ConversationUpdateDto): void {
+    if (this.dependencies.questions !== undefined) {
+      void this.get(update.conversationId).then(item => {
+        const turn = item.turns.find(candidate => candidate.turnId === update.turn.turnId);
+        if (turn !== undefined) this.#emit({ ...update,turn });
+      }).catch(() => undefined);
+      return;
+    }
+    this.#emit(update);
+  }
+  #emit(update: ConversationUpdateDto): void {
     for (const listener of this.#listeners.get(update.conversationId) ?? []) {
       try { listener(update); } catch { /* Observers cannot interrupt conversation execution. */ }
     }
@@ -96,6 +117,7 @@ export class ConversationService {
     const conversation = await this.get(id),parent = conversation.turns.at(-1);
     if (parent === undefined || !(await this.dependencies.subagents?.list(parent.turnId))?.some(child => child.childId === childId)) throw new DomainError("subagent_not_found","Child does not belong to this conversation turn.");
     await this.dependencies.subagents?.cancel(parent.turnId,childId);
+    await this.dependencies.questions?.cancelOwner(childId);
   }
   async archive(id: string) { identity(id);await this.dependencies.store.setState(id,"ARCHIVED",this.dependencies.clock.now().toISOString()); }
   async restore(id: string) { identity(id);await this.dependencies.store.setState(id,"ACTIVE",this.dependencies.clock.now().toISOString()); }
@@ -104,6 +126,37 @@ export class ConversationService {
     const item = await this.dependencies.store.get(id);
     if (item === null) throw new DomainError("conversation_not_found", "Conversation was not found.");
     return item;
+  }
+  async answerQuestion(id: string, questionId: string, input: AnswerUserQuestionInput) {
+    await this.get(id);
+    if (this.dependencies.questions === undefined) throw new DomainError("question_unavailable", "Questions are unavailable.");
+    return this.dependencies.questions.answer({ kind: "CONVERSATION",id },questionId,input);
+  }
+  async resumeQuestion(id: string, questionId: string): Promise<ConversationDto> {
+    const conversation = await this.get(id);
+    const service = this.dependencies.questions;
+    if (service === undefined) throw new DomainError("question_unavailable", "Questions are unavailable.");
+    const records = await service.recoveryRecords({kind:"CONVERSATION",id});
+    const question = records.find(item => item.questionId === questionId);
+    if (question === undefined) throw new DomainError("question_stale", "The question is not interrupted.");
+    const parentTurnId = question.parentTurnId ?? question.ownerId;
+    const prior = await this.dependencies.store.latestQuestionRecovery(parentTurnId);
+    if (prior !== null && ["QUEUED","RUNNING","COMPLETED"].includes(prior.status)) return this.get(id);
+    const questions = records.filter(item => (item.parentTurnId ?? item.ownerId) === parentTurnId && item.delivery === "INTERRUPTED"
+      && (item.status === "ACTIVE" || item.status === "QUEUED" || item.status === "ANSWERED"));
+    if (question.delivery !== "INTERRUPTED" || question.status === "CANCELED" || question.status === "SUPERSEDED") throw new DomainError("question_stale", "The question is not interrupted.");
+    const record = await this.dependencies.store.turn(parentTurnId);
+    if (record?.conversation.conversationId !== id || !["INTERRUPTED","FAILED","STOPPED"].includes(record.turn.status)) throw new DomainError("question_stale", "The original turn cannot be resumed.");
+    const recoveryContext = ["用户明确要求从已保存的回答继续此前中断的任务。先核验已有执行事实和未知副作用；不要重放历史工具，不要把默认回答视为权限授权。",`原请求：${record.text}`,
+      ...questions.map(item => item.answer !== undefined
+        ? `问题：${item.question}\n已保存回答（${item.answer.source}，默认来源不代表人工授权）：${item.answer.text}`
+        : item.questionId === questionId ? `问题：${item.question}\n用户主动采用此卡已展示的默认方案，非额外授权：${item.defaultAnswer}`
+          : `尚未回答的问题：${item.question}\n此问题没有用户回答或默认选择；必要时重新提问，不得推定同意。`)].join("\n\n");
+    const requestId = prior === null ? `question_resume_${parentTurnId}` : `question_retry_${prior.turnId}`;
+    return this.send({conversationId:id,workbenchId:conversation.workbenchId,requestId,
+      text:"请根据已保存的问题与答案继续中断任务，先核验已有事实，不重放未知副作用。",partnerId:record.turn.config.partnerId,networkId:record.turn.config.networkId,skills:record.turn.config.skills,attachmentIds:record.turn.config.attachmentIds,
+      subagentsEnabled:record.turn.config.subagentsEnabled ?? true,piExtensions:record.turn.config.piExtensions ?? []},
+      { recoveryContext,questionRecovery:{ sourceTurnId:parentTurnId,questionId } });
   }
   async fork(sourceId: string,turnId: string,targetId: string): Promise<ConversationDto> {
     identity(sourceId);identity(turnId);identity(targetId);
@@ -122,7 +175,7 @@ export class ConversationService {
     const value = await this.dependencies.inheritance.read(workbenchId,partnerId,networkId);
     return { memoryCount: value.memoryCount,evolutionRevisionId: value.evolutionRevisionId };
   }
-  async send(input: SendConversationInput) {
+  async send(input: SendConversationInput, recovery?: Pick<ConversationSubmission,"recoveryContext" | "questionRecovery">) {
     if (this.#closed) throw new DomainError("conversation_stopped", "Conversation execution has been stopped. Restart Joi to continue.");
     identity(input.conversationId); identity(input.requestId);
     if (typeof input.text !== "string" || input.text.trim() === "" || input.text.length > 64_000) throw new DomainError("conversation_text_invalid", "Enter a message of at most 64000 characters.");
@@ -134,6 +187,7 @@ export class ConversationService {
     const prior = await this.dependencies.store.request(input.requestId);
     if (prior !== null) {
       if (prior.conversation.conversationId !== input.conversationId || prior.conversation.workbenchId !== input.workbenchId || prior.text !== input.text.trim()
+        || prior.questionRecoverySourceTurnId !== recovery?.questionRecovery?.sourceTurnId
         || prior.turn.config.partnerId !== input.partnerId || prior.turn.config.networkId !== input.networkId
         || (prior.turn.config.subagentsEnabled ?? true) !== (input.subagentsEnabled ?? true)
         || JSON.stringify(CONVERSATION_PI_EXTENSIONS.filter(id => prior.turn.config.piExtensions?.includes(id))) !== JSON.stringify(piExtensions)
@@ -159,6 +213,7 @@ export class ConversationService {
     const base = { ...revision };
     delete base.modelIdOverride; delete base.modelSourceId;
     return this.dependencies.store.submit({ conversationId: input.conversationId,workbenchId: input.workbenchId,
+      ...recovery,
       turnId: this.dependencies.ids.next("chat_turn"),requestId: input.requestId,text: input.text.trim(),at: this.dependencies.clock.now().toISOString(),
       revision: { ...base,skills: [...input.skills],...(revision.engine === "pi-core" ? { modelSourceId: input.networkId } : {}) },
       config: { partnerId: revision.partnerId,partnerName: revision.displayName,
@@ -168,19 +223,35 @@ export class ConversationService {
         subagentsEnabled: input.subagentsEnabled ?? true,piExtensions,skills: [...input.skills],attachmentIds: [...input.attachmentIds] } });
   }
   async stop(id: string) {
-    await this.get(id);
+    const previous = await this.get(id);
     const active = this.#active.get(id);
     active?.controller.abort();
+    for (const turn of previous.turns.filter(item => item.status === "RUNNING" || item.status === "QUEUED")) {
+      await this.dependencies.questions?.cancelOwner(turn.turnId);
+    }
+    for (const child of previous.children ?? []) await this.dependencies.questions?.cancelOwner(child.childId);
     await active?.done;
     await this.dependencies.store.stop(id);
     const conversation = await this.get(id),turn = conversation.turns.at(-1);
     if (turn !== undefined) this.#publish({ conversationId: id,turn,...(conversation.context === undefined ? {} : { context: conversation.context }) });
   }
-  close(): void { this.#closed = true; for (const active of this.#active.values()) active.controller.abort(); }
-  async emergencyStop(): Promise<void> { this.close();await Promise.all([...this.#active.values()].map(active => active.done));await this.dependencies.store.stopAll(); }
+  close(): void { this.#closed = true; for (const active of this.#active.values()) active.controller.abort(new DomainError("conversation_shutdown", "The host is shutting down.")); }
+  async emergencyStop(): Promise<void> {
+    this.#closed = true;
+    for (const [id,active] of this.#active) {
+      active.controller.abort();
+      const item = await this.get(id);
+      for (const turn of item.turns.filter(candidate => candidate.status === "RUNNING" || candidate.status === "QUEUED")) {
+        await this.dependencies.questions?.cancelOwner(turn.turnId);
+      }
+      for (const child of item.children ?? []) await this.dependencies.questions?.cancelOwner(child.childId);
+    }
+    await Promise.all([...this.#active.values()].map(active => active.done));await this.dependencies.store.stopAll();
+  }
 
   async recoverInterrupted(): Promise<void> {
     const { instances,store,clock } = this.dependencies;
+    await this.dependencies.questions?.interruptUnfinishedConversations();
     if (instances.readSettledResult !== undefined) {
       for (const turnId of await store.runningPiTurns()) {
         const record = await store.turn(turnId);
@@ -230,8 +301,9 @@ export class ConversationService {
     let lastFlush = 0;
     let pendingFlush: ReturnType<typeof setTimeout> | undefined;
     let currentContext: ConversationContextDto | undefined;
-    const publish = (update: Pick<ConversationTurnDto,"entries" | "artifacts" | "status" | "errorCode" | "failure">,context = currentContext) => {
-      this.#publish({ conversationId: record.conversation.conversationId,turn: { ...record.turn,...update },...(context === undefined ? {} : { context }) });
+    const publish = (update: Pick<ConversationTurnDto,"entries" | "artifacts" | "status" | "errorCode" | "failure">,context = currentContext,relatedTurn?: ConversationTurnDto) => {
+      this.#publish({ conversationId: record.conversation.conversationId,turn: { ...record.turn,...update },
+        ...(context === undefined ? {} : { context }),...(relatedTurn === undefined ? {} : { relatedTurn }) });
     };
     const flush = async (force = false): Promise<void> => {
       entries = activity.project(baseEntries);
@@ -260,7 +332,10 @@ export class ConversationService {
     const settle = async (patch: Parameters<ConversationStore["update"]>[1]) => {
       try { await this.dependencies.store.update(turnId,patch); }
       catch { throw wrapPartnerRunFailure({ code: "conversation_persistence_failed" },{ phase: "RECOVERY",sideEffectState: "UNKNOWN" }); }
-      publish(patch);
+      const sourceTurnId = record.questionRecoverySourceTurnId;
+      const related = patch.status === "COMPLETED" && sourceTurnId !== undefined && this.#listeners.has(record.conversation.conversationId)
+        ? await this.dependencies.store.turn(sourceTurnId).catch(() => null) : null;
+      publish(patch,currentContext,related?.turn);
     };
     try {
       if (!await this.dependencies.store.begin(turnId)) return;
@@ -299,7 +374,7 @@ export class ConversationService {
       const attachmentSection = await this.dependencies.attachments?.stage({ ids: record.turn.config.attachmentIds,turnId }) ?? "";
       const priorStatus = record.conversation.turns.filter(turn => turn.turnId !== turnId).at(-1)?.status;
       const requiredContext = ["Normal conversation: execute the current user's request using prior turns and workbench records as reference. Do not resume earlier tasks without the user's instruction. Runtime continuations and child results support this same request. Follow the partner's tool and safety policy.",
-        `Workbench persona:\n${wb.profile.personaSummary}`,inherited.instructions,
+        `Workbench persona:\n${wb.profile.personaSummary}`,inherited.instructions,record.recoveryContext,
         "Retain prior execution facts, including stopped or failed turns. Unrecorded tool results have unknown side effects: inspect current state before retrying any such action.",
         ...(priorStatus === undefined ? [] : [`The preceding conversation turn ended with status ${priorStatus}. This status is an execution fact, not authorization to replay its tools.`]),
         attachmentSection].filter(Boolean).join("\n\n");
@@ -340,7 +415,11 @@ export class ConversationService {
       controller.signal.throwIfAborted();
       if (result.conversation !== undefined) await progress(result.conversation);
       if (!entries.some(e => e.kind === "MARKDOWN" && e.role === "AGENT") && result.body !== "") await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.body }]);
-      if (result.pendingQuestion !== undefined) await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.pendingQuestion }]);
+      if (result.pendingQuestion !== undefined) {
+        const questionEntries = projectDrafts(record.conversation.conversationId,record.turn,[{ kind: "MARKDOWN",role: "AGENT",text: result.pendingQuestion }]);
+        baseEntries = [...baseEntries,...questionEntries.map(entry => ({ ...entry,entryId: `question:${entry.entryId}`,sequence: baseEntries.length + entry.sequence }))];
+        await flush(true);
+      }
       artifacts = projectArtifacts(result.artifacts);
       acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
       await settle({ entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" : "FAILED",

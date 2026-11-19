@@ -29,6 +29,10 @@ The approved prototype defines the layout; these criteria define production beha
 
 Production completion requires focused behavioral tests plus the fixed repository gates in `.agent/commands/README.md`. Actual provider calls and remote Git writes are not part of automated verification; disposable engines and local repositories are used.
 
+## 提问与回答
+
+[提问队列验收 ASK-01–12](user-question-acceptance.md) 定义内嵌问题卡、逐会话 FIFO、激活后 30 分钟推荐默认回答、Pi 原工具调用答复、取消、投递确认和显式中断恢复。待答普通轮次仍是非终态 RUNNING，以 `waitingForUser` 区分等待，原正文和工具历史不被问题覆盖；问题变更进入持久游标。
+
 ## Continuous context acceptance
 
 | ID | Acceptance |

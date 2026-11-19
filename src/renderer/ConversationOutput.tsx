@@ -6,6 +6,8 @@ import { ConversationContext } from "./ConversationContext";
 import { contextStateLabel } from "./conversation-activity-labels";
 import { SafeMarkdown } from "./SafeMarkdown";
 import { t } from "./i18n";
+import { UserQuestionCard } from "./UserQuestionCard";
+import type { UserQuestionDto, AnswerUserQuestionInput } from "../shared/user-questions";
 
 type ToolState = "started" | "completed" | "failed" | "stopped" | "interrupted" | "unknown";
 type OutputStatus = ConversationTurnStatus | "IDLE";
@@ -31,6 +33,9 @@ interface OutputProps {
   onCancel?: (childId: string) => void;
   renderEntry?: (entry: AgentConversationEntryDto) => ReactNode;
   renderToolDetails?: (result: string | undefined, revealableCallId: string | undefined) => ReactNode;
+  questions?: UserQuestionDto[];
+  onAnswerQuestion?: (id: string,input: AnswerUserQuestionInput) => Promise<unknown>;
+  onResumeQuestion?: (id: string) => Promise<unknown>;
 }
 function thinkingLabel(thinking: ConversationThinkingDto): string {
   return t(thinking.state === "STARTED" ? "chat.thinkingStarted" : thinking.state === "COMPLETED" ? "chat.thinkingCompleted" : "chat.thinkingInterrupted");
@@ -83,7 +88,7 @@ function ToolGroup({ entries,status,context: fallbackContext,children = [],onCan
   </details>;
 }
 
-export function ConversationOutput({ entries,status,context,children,onCancel,renderEntry,renderToolDetails }: OutputProps) {
+export function ConversationOutput({ entries,status,context,children,onCancel,renderEntry,renderToolDetails,questions = [],onAnswerQuestion,onResumeQuestion }: OutputProps) {
   const output: ReactNode[] = [];
   const lastThinking = entries.findLast(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING");
   const lastActivity = entries.findLast(entry => entry.kind === "ACTIVITY" || entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT");
@@ -93,7 +98,19 @@ export function ConversationOutput({ entries,status,context,children,onCancel,re
   let tools: ConversationEntryDto[] = [],groupKey = "first-activity";
   if (lastActivity === undefined && (context !== undefined || (children?.length ?? 0) > 0)) output.push(<ToolGroup activeSince={activeSince} entries={[]} key="first-activity" status={status} {...fallback} />);
   const flush = () => { if (tools.length > 0) { output.push(<ToolGroup activeSince={activeSince} entries={tools} key={groupKey} status={status} {...toolDetails} {...(tools.at(-1) === lastActivity ? fallback : {})} />);tools = []; } };
+  const pendingQuestions = [...questions];
+  const renderQuestionsBefore = (createdAt?: string) => {
+    while (pendingQuestions.length > 0 && (createdAt === undefined || (pendingQuestions[0]?.createdAt ?? "") <= createdAt)) {
+      const question = pendingQuestions.shift();
+      if (question === undefined) break;
+      flush();
+      output.push(<UserQuestionCard key={`question:${question.questionId}:${String(question.version)}`} question={question} {...(onResumeQuestion === undefined || !["INTERRUPTED","FAILED","STOPPED"].includes(status) ? {} : {onResume: () => onResumeQuestion(question.questionId)})} onAnswer={input => onAnswerQuestion?.(question.questionId,input) ?? Promise.reject(new Error("question_unavailable"))} />);
+      groupKey = `activity-after-question:${question.questionId}`;
+    }
+  };
   for (const entry of entries) {
+    renderQuestionsBefore(entry.createdAt);
+    if (questions.length > 0 && (entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT") && entry.toolName === "ask_user") continue;
     if (entry.kind === "ACTIVITY" && entry.activity.type === "THINKING" && entry !== lastThinking) continue;
     if (entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT" || entry.kind === "ACTIVITY") { tools.push(entry);continue; }
     flush();
@@ -102,5 +119,6 @@ export function ConversationOutput({ entries,status,context,children,onCancel,re
       : entry.kind === "ARTIFACT" ? <div className="chat-artifact" key={entry.entryId}><FolderIcon />{entry.artifact?.name}</div> : <p key={entry.entryId}>{entry.text}</p>));
   }
   flush();
+  renderQuestionsBefore();
   return <>{output}</>;
 }
