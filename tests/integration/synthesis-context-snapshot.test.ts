@@ -1,3 +1,4 @@
+import { constants } from "node:sqlite";
 import { enqueueGoalResultSynthesis } from "../../src/main/infrastructure/persistence/sqlite-goal-result-synthesis.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { composeJoiContinuationBackground } from "../../src/main/application/joi/joi-continuation-prompt.js";
@@ -42,8 +43,14 @@ describe("versioned synthesis background", () => {
             VALUES (?,?,?,?,?,'COMPLETED',?)`).run(`ev-${id}`, `sr-${id}`, workbench.workbenchId, `sw-${id}`, partner.partnerRevisionId, now);
           db.prepare(`INSERT INTO joi_goal_result_members (original_input_id,event_id,revision) VALUES ('snapshot-goal',?,?)`).run(`ev-${id}`, i);
         }
+        db.prepare("UPDATE work_result_bodies SET body=? WHERE body_ref='sb-1'")
+          .run(`PRIVATE_LARGE_HEAD ${"字".repeat(15_000_000)} PRIVATE_LARGE_END`);
       });
       const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      fixture.database.transaction(db => db.setAuthorizer((action, table, column) =>
+        action === constants.SQLITE_READ && (table === "work_result_bodies" ||
+          table === "work_results" && ["summary","handoff_json"].includes(column ?? ""))
+          ? constants.SQLITE_DENY : constants.SQLITE_OK));
       for (let round = 0; round < 7; round++) {
         const revision = round === 0 ? 163 : 163 + round;
         fixture.database.transaction(db => db.prepare("UPDATE joi_goal_result_sets SET revision=? WHERE original_input_id='snapshot-goal'").run(revision));
@@ -60,10 +67,13 @@ describe("versioned synthesis background", () => {
         expect(loaded.synthesisContext?.originalRequest).toBe(original);
         const background = composeJoiContinuationBackground(loaded);
         expect(background).toContain("work_read_evidence");
+        expect(background).toContain("mode=roadmap");
         expect(background).not.toContain("PRIVATE_BODY_");
+        expect(background).not.toContain("PRIVATE_LARGE_");
+        expect(background).not.toContain("summary 1");
         expect(background?.length).toBeLessThanOrEqual(24_000);
         if (round > 0) {
-          expect(background).toContain(`previous conclusion ${String(round - 1)}`);
+          expect(background).not.toContain(`previous conclusion ${String(round - 1)}`);
           expect(background).not.toContain("summary 1");
         }
         expect(await inbox.loadInput(inputId ?? "")).toEqual(loaded);
@@ -74,6 +84,7 @@ describe("versioned synthesis background", () => {
           db.prepare("UPDATE joi_goal_result_sets SET synthesized_revision=? WHERE original_input_id='snapshot-goal'").run(revision);
         });
       }
+      fixture.database.transaction(db => db.setAuthorizer(null));
       expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_result_bodies").get())?.n).toBe(163);
     } finally { await fixture.close(); }
   });

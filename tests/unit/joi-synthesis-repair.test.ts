@@ -23,8 +23,9 @@ describe("synthesis outcome repair", () => {
         sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }) },
         store: { completeInput: async () => undefined, createTurn: async () => undefined, requireClarification: async () => undefined,
           loadInput: async () => ({ inputId: "synthesis", goalInputId: "goal", resultRevision: r, requirementsRevision: q, workbenchId: "workbench", body: "Synthesize this version", status: "PENDING",
-            synthesisContext: { originalRequest: "MANDATORY_REQUIREMENT", resultRevision: r, requirementsRevision: q, changedResults: [], totalResults: 163, gapCount: 0, omittedChanges: 0,
-              previous: { resultRevision: r - 1, disposition: "CONTINUE", summary: "PRIVATE_PREVIOUS_CONCLUSION" } } }) },
+            synthesisContext: { originalRequest: "MANDATORY_REQUIREMENT", resultRevision: r, requirementsRevision: q, totalChanges: 1, totalResults: 163, gapCount: 0,
+              changesRead: { resultRevision: r,requirementsRevision: q,afterResultRevision: r - 1 },
+              previous: { disposition: "CONTINUE",stateRef: `r${String(r - 1)}:q${String(q)}:current` } } }) },
       });
       await coordinator.handle("synthesis");
     }
@@ -32,7 +33,8 @@ describe("synthesis outcome repair", () => {
     expect(turns.at(-1)?.sessionId).toBe(turns.at(-2)?.sessionId);
     for (const turn of turns) {
       expect(turn.prompt).not.toContain("PRIVATE_PREVIOUS_CONCLUSION");
-      expect(turn.backgroundContext).toContain("PRIVATE_PREVIOUS_CONCLUSION");
+      expect(turn.backgroundContext).not.toContain("PRIVATE_PREVIOUS_CONCLUSION");
+      expect(turn.backgroundContext).toContain("mode=roadmap");
       expect(turn.requiredContext).toBe("MANDATORY_REQUIREMENT");
       expect(turn.sessionId).toMatch(/^joi_synthesis_snapshot_v1:/u);
     }

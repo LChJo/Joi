@@ -7,6 +7,10 @@ import { withPiSummaryUsage } from "./pi-summary-usage.js";
 import { normalizeImportedHandoff } from "./conversation-session.js";
 import { isCheckpointMessage } from "./pi-compaction.js";
 import { joiPiSystemPrompt, type JoiPiPromptOptions } from "./joi-pi-system-prompt.js";
+import { assertPiRequestCapacity } from "./pi-model-budget.js";
+import { WORKBENCH_HISTORY_TOOL } from "./pi-historical-memory-tools.js";
+
+const retainedEvidenceReference = "Reference evidence was read in an earlier execution. Check the source reference again if needed.";
 
 type Snapshot = NonNullable<PartnerSessionState["piSession"]>;
 
@@ -47,6 +51,10 @@ export function retainUnknownEffects(manager: SessionManager): void {
       manager.appendContextEdit(item.id, null);
       continue;
     }
+    if (item?.message.role === "toolResult" && item.message.toolName === WORKBENCH_HISTORY_TOOL
+      && !item.message.content.some(block => block.type === "text" && block.text === retainedEvidenceReference)) {
+      manager.appendContextEdit(item.id,{ content: [{ type: "text", text: retainedEvidenceReference }] });
+    }
     if (item?.message.role !== "assistant") continue;
     if (item.message.content.length === 0 && (item.message.stopReason === "error" || item.message.stopReason === "aborted")) {
       manager.appendContextEdit(item.id, null);
@@ -79,8 +87,15 @@ export async function createJoiPiSession(agent: { state: Pick<AgentState,"model"
   const provider = models.getProvider(agent.state.model.provider);
   if (provider !== undefined) runtime.registerNativeProvider(provider);
   const modelRuntime = new Proxy(runtime,{ get(target,key) {
-    if (key === "streamSimple") return summaryModels.streamSimple.bind(summaryModels);
-    if (key === "checkAuth" || key === "getAuth" || key === "completeSimple") return models[key].bind(models);
+    if (key === "streamSimple") return (...args: Parameters<Models["streamSimple"]>) => {
+      assertPiRequestCapacity(...args);
+      return summaryModels.streamSimple(...args);
+    };
+    if (key === "completeSimple") return (...args: Parameters<Models["completeSimple"]>) => {
+      assertPiRequestCapacity(...args);
+      return models.completeSimple(...args);
+    };
+    if (key === "checkAuth" || key === "getAuth") return models[key].bind(models);
     if (key === "hasConfiguredAuth") return () => false;
     const value: unknown = Reflect.get(target,key,target);
     return typeof value === "function" ? value.bind(target) as unknown : value;

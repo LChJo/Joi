@@ -1,4 +1,4 @@
-import type { WorkbenchAgentRepository } from "../ports/workbench-agents.js";
+import type { WorkbenchAgentConversationQuery, WorkbenchAgentRepository } from "../ports/workbench-agents.js";
 import type { WorkbenchArtifactOpenMode, WorkbenchArtifactOpener, WorkbenchArtifactSource } from "../ports/workbench-artifacts.js";
 import type { Clock } from "../ports/runtime-store.js";
 import { DomainError } from "../../domain/errors.js";
@@ -15,15 +15,12 @@ export class WorkbenchAgentService {
     });
   }
 
-  conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit?: number }) {
-    return this.dependencies.repository.conversation({
-      agentId: input.agentId,
-      ...(input.latest === undefined ? {} : { latest: input.latest }),
-      ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
-      workbenchId: input.workbenchId,
-      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
-      limit: input.limit ?? 50,
-    });
+  conversation(input: WorkbenchAgentConversationQuery) {
+    return this.dependencies.repository.conversation({ ...input, limit: input.limit ?? 50 });
+  }
+
+  conversationMessages(input: WorkbenchAgentConversationQuery) {
+    return this.dependencies.repository.conversationMessages({ ...input, limit: input.limit ?? 50 });
   }
 
   dismiss(input: { agentId: string; workbenchId: string }) {

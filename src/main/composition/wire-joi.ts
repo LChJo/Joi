@@ -78,6 +78,7 @@ export function wireJoi(input: {
     transcodeBitmap: input.transcodeBitmap,
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
+    memory: persistence.historicalMemory,
     nativeSessions: partnerStack.nativeSessions,
     diagnostics,
     usage: modelSourceStack.statistics,
@@ -101,7 +102,10 @@ export function wireJoi(input: {
       harness: persistence.joiHarnessRepository,
       inputId: turn.inputId,
       instances: partnerStack.partnerInstances,
-      memory: partnerStack.partnerMemory,
+      memory: { digest: async (workbenchId,partnerId) => {
+        const digest = await partnerStack.partnerMemory.digest(workbenchId,partnerId);
+        return { successRate: digest.successRate,last3: [] };
+      } },
       models: modelSourceStack.modelSources,
       partners: partnerStack.partners,
       results: workbenchStack.workResults,

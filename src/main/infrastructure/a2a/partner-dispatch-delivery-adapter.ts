@@ -176,6 +176,18 @@ function terminalInvocation(status: InvocationStatus): PartnerRunStatus | null {
 export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
   constructor(private readonly database: TransactionalDatabase) {}
 
+  /** Startup owns the dispatch queue before any actor holds a claim in this process. */
+  async recoverOnBoot(): Promise<void> {
+    this.database.transaction((connection) => {
+      connection.prepare(`UPDATE outbox AS claimed SET claim_owner = NULL, claim_until = NULL,
+        status = CASE WHEN kind = 'partner.dispatch' AND EXISTS (
+          SELECT 1 FROM dispatch_attempts a JOIN partner_runs run ON run.dispatch_attempt_id = a.dispatch_attempt_id
+          WHERE a.outbox_id = claimed.outbox_id
+        ) THEN 'DONE' ELSE 'PENDING' END
+        WHERE status = 'CLAIMED' AND kind IN ('partner.dispatch', 'partner.continue')`).run();
+    });
+  }
+
   async listClaimable(input: { workbenchId: string; now: string; partnerId: string }): Promise<PartnerDispatchClaimRow[]> {
     const initial = (this.database.transaction((connection) => connection.prepare(`
       WITH due AS MATERIALIZED (

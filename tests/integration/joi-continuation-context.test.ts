@@ -2,9 +2,12 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { WorkResultService } from "../../src/main/application/work/work-result-service.js";
 import type { StartReasoningTurnInput } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
+import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import path from "node:path";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture.js";
 
@@ -109,7 +112,7 @@ describe("Joi continuation context", () => {
     } finally { await fixture.close(); }
   });
 
-  it("hydrates full evidence for an internal review rather than relying on its short summary", async () => {
+  it("lets an internal review fetch full evidence and the previous conclusion after startup", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const { goal, workbench } = await seed(fixture);
@@ -120,9 +123,16 @@ describe("Joi continuation context", () => {
         VALUES (?, ?, 'Harness review: Latest completion: 诊断已完成', 'PENDING', ?, ?, ?, ?)`)
         .run(reviewId, reviewId, workbench.workbenchId, goal.inputId, now, now));
       const prompt = await promptFor(fixture, reviewId);
-      expect(prompt).toContain(ROOT_CAUSE);
-      expect(prompt).toContain(OUTCOME);
+      expect(prompt).not.toContain(ROOT_CAUSE);
+      expect(prompt).not.toContain(OUTCOME);
       expect(prompt).toContain("Harness review");
+      expect(prompt).toContain("mode=roadmap");
+      const service = new WorkResultService(new SqliteWorkResultRepository(fixture.database),new SqliteGoalEvidenceRepository(fixture.database));
+      const scope = { goalInputId: goal.inputId,workbenchId: workbench.workbenchId };
+      expect((await service.read({ ...scope,resultId: "result-original" })).content).toBe(ROOT_CAUSE);
+      const { outcomeId } = await service.readRoadmap(scope);
+      if (outcomeId === undefined) throw new Error("Missing conclusion reference");
+      expect((await service.readConclusion({ ...scope,outcomeId })).content).toBe(OUTCOME);
     } finally { await fixture.close(); }
   });
 

@@ -654,6 +654,7 @@ export interface RuntimeDiagnosticEventMap {
   "joi.context.checkpoint_reused": { runtime: "joi"; coveredCount: number; count: number };
   "joi.work.handoff": { workbenchId: string; workId: string; resultId: string; handoffStatus: string; handoffChars: number; isAuthoritative: boolean };
   "joi.partner.memory_refreshed": { workbenchId: string; partnerId: string; coveredSequence: number; entryCount: number; durationMs: number; status: "generated" | "fallback" };
+  "joi.history.organized": { ownerType: "joi" | "workbench" | "partner"; count: number; durationMs: number; status: "updated" | "fallback" };
   "joi.context.request": {
     runtime: "joi" | "pi";
     contextChars: number;

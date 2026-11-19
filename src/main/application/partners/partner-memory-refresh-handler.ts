@@ -3,6 +3,7 @@ import type { Clock, RuntimeStore } from "../ports/runtime-store.js";
 import type { RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { PARTNER_MEMORY_REFRESH_KIND } from "../ports/partner-memory.js";
 import type { PartnerWorkMemoryService } from "./partner-work-memory-service.js";
+import { HISTORICAL_MEMORY_KIND } from "../ports/historical-memory.js";
 
 export function createPartnerMemoryRefreshHandler(service: Pick<PartnerWorkMemoryService, "refreshSummary">): OutboxHandler {
   return async (record) => {
@@ -18,9 +19,12 @@ export function createPartnerMemoryRefreshHandler(service: Pick<PartnerWorkMemor
 export function createPartnerMemoryRefreshDispatcher(input: {
   clock: Clock; store: RuntimeStore; memory: Pick<PartnerWorkMemoryService, "refreshSummary">;
   owner: string; canStart: () => boolean; diagnostics?: RuntimeDiagnostics; onBackgroundError?: (error: unknown) => void;
+  historical?: OutboxHandler;
 }): OutboxDispatcher {
   return new OutboxDispatcher({ clock: input.clock, store: input.store, owner: input.owner, canStart: input.canStart,
-    includeKinds: [PARTNER_MEMORY_REFRESH_KIND], handlers: { [PARTNER_MEMORY_REFRESH_KIND]: createPartnerMemoryRefreshHandler(input.memory) },
+    includeKinds: [PARTNER_MEMORY_REFRESH_KIND,...(input.historical === undefined ? [] : [HISTORICAL_MEMORY_KIND])],
+    handlers: { [PARTNER_MEMORY_REFRESH_KIND]: createPartnerMemoryRefreshHandler(input.memory),
+      ...(input.historical === undefined ? {} : { [HISTORICAL_MEMORY_KIND]: input.historical }) },
     ...(input.diagnostics === undefined ? {} : { diagnostics: input.diagnostics }),
     ...(input.onBackgroundError === undefined ? {} : { onBackgroundError: input.onBackgroundError }),
   });

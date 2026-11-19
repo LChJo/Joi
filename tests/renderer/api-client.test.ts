@@ -54,6 +54,8 @@ describe("renderer API client", () => {
     await api.bindWorkbenchWorkspace("workbench 1"); await api.rebuildWorkbenchWorkspace("workbench 1");
     await api.joiHomeFeed(); await api.listWorkbenchAgents("workbench 1", { cursor: "agent cursor", limit: 12 });
     await api.agentConversation("workbench 1", "agent 1", { cursor: "entry cursor", limit: 30 });
+    await api.agentConversation("workbench 1", "agent 1", { latest: true, goalId: "goal 1", limit: 50, view: "messages" });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:43130/api/v1/workbenches/workbench%201/agents/agent%201/conversation?latest=true&goalId=goal%201&limit=50&view=messages", expect.objectContaining({ method: "GET" }));
     await api.openWorkbenchArtifact("workbench 1", { artifactId: "artifact 1", mode: "REVEAL", source: "GOAL", sourceId: "goal 1" });
     await api.revealWorkbenchToolTrace("workbench 1", "agent 1", "toolu 1");
     await api.deleteWorkbenchAgent("workbench 1", "agent 1");

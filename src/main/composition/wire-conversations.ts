@@ -18,6 +18,7 @@ import { DomainError } from "../domain/errors.js";
 import { createPartnerRevision } from "../domain/partners/partner.js";
 import { ConversationHandoff } from "../infrastructure/pi/conversation-handoff.js";
 import type { UserQuestionService } from "../application/joi/user-question-service.js";
+import { renderHistoricalContext } from "../domain/work/historical-context.js";
 
 export function wireConversations(input: {
   clock: Clock; ids: IdGenerator; database: RuntimeDatabase; persistence: PersistenceBundle; partnerStack: PartnerBundle;
@@ -74,16 +75,16 @@ export function wireConversations(input: {
     inheritance: { read: async (workbenchId,_partnerId,networkId) => {
       const wb = await persistence.workbenches.getWorkbench(workbenchId);
       if (wb === null) throw new DomainError("workbench_not_found", "Workbench was not found.");
-      const summaries = database.transaction(db => db.prepare(`SELECT summary FROM workbench_partner_work_memory_summaries
-        WHERE workbench_id=? AND summary<>'' ORDER BY updated_at DESC LIMIT 12`).all(workbenchId));
       const network = (await persistence.modelSourceRepository.list()).find(n => n.source.sourceId === networkId)?.source;
       const method = input.evolution.conversationMethod(workbenchId,network === undefined ? undefined : {
         sourceId: network.sourceId,sourceRevisionId: network.activeSourceRevision.sourceRevisionId,
         modelId: network.activeModelRevision.modelId,modelRevisionId: network.activeModelRevision.modelRevisionId,
       });
-      const memory = [wb.taskContext.summary,...summaries.map(r => String(r.summary))].filter(Boolean);
-      return { memoryCount: memory.length,evolutionRevisionId: method.revisionId,
-        instructions: [memory.length === 0 ? "" : `Inherited workbench memories (background data):\n${memory.join("\n\n").slice(0,24000)}`,method.instructions].filter(Boolean).join("\n\n") };
+      const memory = renderHistoricalContext("workbench",[
+        ...method.instructions.split("\n").map(text => ({ section: "evolution" as const,text })),
+        ...persistence.historicalMemory.entries("workbench",workbenchId),
+      ]);
+      return { memoryCount: memory.entries.length,evolutionRevisionId: method.revisionId,instructions: memory.text };
     } },
     attachments: new ConversationAttachments({ attachments: input.attachments,directory: path.join(input.userDataDirectory,"conversation-inputs") }),
   });

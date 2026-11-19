@@ -1,6 +1,6 @@
 # SQLite migrations
 
-Migration 105 limits the unique active-question slot and due index to pending deliveries. It links persisted conversation recovery turns to their original turns, including previously queued recoveries with a matching request identity. It preserves existing answer and delivery records.
+Migration 107 adds durable user questions. Migration 108 limits the active-question slot and due index to pending deliveries and links persisted conversation recoveries to their original turns. The migration loader reassigns draft Ask ledger entries by their exact filenames so the historical migrations at 104 and 105 can run while preserving existing questions and receipts.
 
 Migration 099 releases the unique execution slot for `PAUSED` method experiments whose checkpoint reason is `insufficient_samples`. Their candidate, trials, costs and private cases remain unchanged. RUNNING and all other PAUSED experiments still share one unique slot. The migration does not resume learning or replay work.
 
@@ -100,3 +100,9 @@ Migration 101 新增普通对话执行段和 turn 到执行段的绑定。同搭
 Migration 102 扩展既有目录等待表，读写请求共用序号，旧条目默认 WRITE 并保留身份和顺序。租约释放、队列退出通过事务触发器提前已有 outbox 的可派发时间，目标暂停及 Work 终态清理等待位置；工作结果、用户文件和执行事实保持原样。见 AC-WR-01/09。
 
 Migration 103 保存对话分支的来源、初始配置和私有交接，以及执行段内的逐轮消息位置。旧轮次缺少私有截止位置时可从该轮的业务历史交接。创建分支不写入执行 outbox。见 CHAT-48。
+
+Migration 104 保存 Joi、工作台和搭档的有界分节历史、带版本的来源引用及去重回执。历史从升级后的合格结算增量生成，原始依据经来源引用按权限读取。见 [HIST-01–07](../../docs/historical-context-policy-spec.md)。
+
+Migration 105 为每个已记录的全局偏好主题保存最后采纳的输入顺序，并从现有条目初始化。该顺序在来源失效后仍保留，避免延迟整理恢复已被纠正的偏好。见 [HIST-04](../../docs/historical-context-policy-spec.md)。
+
+Migration 106 添加主 Joi 取证回执，记录授权目标、结果与需求版本、来源引用及实际返回的正文区间。回执按 Turn 和工具调用去重，供恢复和结案核对。见 [REV-04–07](../../docs/joi-review-evidence-spec.md)。

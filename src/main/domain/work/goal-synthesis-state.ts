@@ -1,6 +1,11 @@
 export interface GoalSynthesisClaim { statement: string; requirementIds: string[]; resultIds: string[] }
 export interface GoalSynthesisGap { description: string; requirementIds: string[]; resultIds: string[] }
-export interface GoalSynthesisConflict { description: string; resultIds: string[] }
+export interface GoalSynthesisConflict {
+  description: string;
+  resultIds: string[];
+  requirementIds?: string[];
+  resolution?: { rationale: string; resultIds: string[] };
+}
 export interface GoalSynthesisDraft {
   version: 1;
   claims: GoalSynthesisClaim[];
@@ -24,7 +29,11 @@ export const GOAL_SYNTHESIS_STATE_SCHEMA = { type: "object", additionalPropertie
     unresolved: { type: "array", maxItems: 64, items: { type: "object", additionalProperties: false,
       required: ["description", "requirementIds", "resultIds"], properties: { description, requirementIds: references, resultIds: references } } },
     conflicts: { type: "array", maxItems: 64, items: { type: "object", additionalProperties: false,
-      required: ["description", "resultIds"], properties: { description, resultIds: references } } },
+      required: ["description", "resultIds"], properties: {
+        description, resultIds: references, requirementIds: references,
+        resolution: { type: "object", additionalProperties: false, required: ["rationale", "resultIds"],
+          properties: { rationale: description, resultIds: { ...references, minItems: 1 } } },
+      } } },
   },
 } as const;
 
@@ -40,6 +49,14 @@ function row(value: unknown, text: string, withRequirements: boolean): boolean {
     && refs(item.resultIds) && (!withRequirements || refs(item.requirementIds));
 }
 
+function conflict(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const { requirementIds, resolution, ...base } = value as Record<string, unknown>;
+  if (!row(base, "description", false) || (requirementIds !== undefined && !refs(requirementIds))) return false;
+  if (resolution === undefined) return true;
+  return row(resolution, "rationale", false) && (resolution as { resultIds: string[] }).resultIds.length > 0;
+}
+
 /** Validates semantic state only; evidence identity and acceptance are runtime facts. */
 export function parseGoalSynthesisDraft(value: unknown): GoalSynthesisDraft | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -47,7 +64,7 @@ export function parseGoalSynthesisDraft(value: unknown): GoalSynthesisDraft | un
   if (data.version !== 1 || Object.keys(data).length !== 4 || Object.keys(data).some(key => !["version", "claims", "unresolved", "conflicts"].includes(key))
     || !Array.isArray(data.claims) || data.claims.length > 128 || !data.claims.every(item => row(item, "statement", true))
     || !Array.isArray(data.unresolved) || data.unresolved.length > 64 || !data.unresolved.every(item => row(item, "description", true))
-    || !Array.isArray(data.conflicts) || data.conflicts.length > 64 || !data.conflicts.every(item => row(item, "description", false))
+    || !Array.isArray(data.conflicts) || data.conflicts.length > 64 || !data.conflicts.every(conflict)
     || JSON.stringify(value).length > 60_000) return undefined;
   return JSON.parse(JSON.stringify(value)) as GoalSynthesisDraft;
 }

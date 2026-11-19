@@ -1,9 +1,11 @@
 /* SQLite implements the asynchronous port with synchronous transactions. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
-import type { GoalEvidenceCatalog,GoalEvidenceChange,GoalEvidenceChangesPage,GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope } from "../../application/ports/goal-evidence.js";
+import type { GoalEvidenceCatalog,GoalEvidenceChange,GoalEvidenceChangesPage,GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope,GoalResultReadReceipt,GoalRoadmapQuery } from "../../application/ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import { parseWorkHandoff,type WorkHandoffStatus } from "../../domain/work/work-handoff.js";
+import { readGoalRoadmap } from "./sqlite-goal-review-roadmap.js";
+import { harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (connection: DatabaseSync) => T): T }
 
@@ -117,6 +119,22 @@ function outcomeVersion(outcomeId: string) {
   return { result: Number(match[1]),requirements: Number(match[2]) };
 }
 
+function outcomeTextQuery(connection: DatabaseSync,outcomeId: string,state: boolean) {
+  const version = outcomeVersion(outcomeId);
+  const text = state ? "synthesisState" : "body";
+  const current = outcomeId.endsWith(":current");
+  const source = current ? "current" : "conclusions WHERE outcomeId=?";
+  return { query: `${conclusionQuery(connection,undefined,version,state)}, requested AS (SELECT ${text} AS text FROM ${source})`,
+    extraParameters: current ? [] : [outcomeId] };
+}
+
+function outcomeTextBinding(connection: DatabaseSync,input: GoalEvidenceScope & { outcomeId: string },mode: "state" | "conclusion"): string {
+  const current = input.outcomeId.endsWith(":current")
+    ? connection.prepare("SELECT completion_key,updated_at FROM joi_goal_outcomes WHERE input_id=?").get(input.goalInputId)
+    : undefined;
+  return JSON.stringify([mode,input.goalInputId,input.workbenchId,input.outcomeId,current?.completion_key ?? null,current?.updated_at ?? null]);
+}
+
 function readSqlText(connection: DatabaseSync,query: string,parameters: (string | number)[],binding: string,cursor?: string) {
   const identity = connection.prepare(`${query} SELECT text IS NOT NULL AS available,length(COALESCE(text,'')) AS codepoints,${utf16Length("COALESCE(text,'')")} AS total FROM requested`).get(...parameters);
   if (identity === undefined) throw new DomainError("goal_evidence_not_found","Evidence was not found in this goal.");
@@ -146,14 +164,7 @@ function readSqlText(connection: DatabaseSync,query: string,parameters: (string 
 
 function textPage({ available: _available,...page }: ReturnType<typeof readSqlText>) { return page; }
 
-/** The result/requirements pair and delta baseline bind every continuation to one synthesis view. */
-export function loadGoalEvidenceChanges(connection: DatabaseSync,input: GoalEvidenceChangesQuery): GoalEvidenceChangesPage {
-  if ([input.resultRevision,input.requirementsRevision,input.afterResultRevision].some(value => !Number.isSafeInteger(value) || value < 0)
-    || input.afterResultRevision > input.resultRevision) throw new DomainError("goal_evidence_revision_invalid","Evidence revisions are invalid.");
-  const binding = JSON.stringify([input.goalInputId,input.workbenchId,input.resultRevision,input.requirementsRevision,input.afterResultRevision,input.afterUpdatedAt ?? null]);
-  const after = input.cursor === undefined ? undefined : decodeCursor(input.cursor,"d1:",(value): value is { binding: string; revision: number; resultId: string } => value !== null && typeof value === "object"
-    && (value as { binding?: unknown }).binding === binding && Number.isSafeInteger((value as { revision?: unknown }).revision)
-    && typeof (value as { resultId?: unknown }).resultId === "string");
+function goalEvidenceChangesSelection(connection: DatabaseSync,input: GoalEvidenceChangesQuery) {
   const query = `WITH candidates AS (
     SELECT MIN(m.revision) AS revision,r.result_id AS resultId
     FROM joi_goal_result_members m JOIN partner_result_events e ON e.event_id=m.event_id
@@ -168,6 +179,23 @@ export function loadGoalEvidenceChanges(connection: DatabaseSync,input: GoalEvid
         WHERE newer.original_input_id=m.original_input_id AND ne.work_id=r.work_id AND newer.revision>? AND newer.revision<=?))
     GROUP BY r.result_id)`;
   const parameters = [input.goalInputId,input.resultRevision,input.workbenchId,input.afterResultRevision,input.afterUpdatedAt ?? null,input.afterUpdatedAt ?? null,input.afterResultRevision,input.resultRevision];
+  return { query,parameters };
+}
+
+export function countGoalEvidenceChanges(connection: DatabaseSync,input: GoalEvidenceChangesQuery): number {
+  const { query,parameters } = goalEvidenceChangesSelection(connection,input);
+  return connection.prepare(`${query} SELECT COUNT(*) AS n FROM candidates`).get(...parameters)?.n as number;
+}
+
+/** The result/requirements pair and delta baseline bind every continuation to one synthesis view. */
+export function loadGoalEvidenceChanges(connection: DatabaseSync,input: GoalEvidenceChangesQuery): GoalEvidenceChangesPage {
+  if ([input.resultRevision,input.requirementsRevision,input.afterResultRevision].some(value => !Number.isSafeInteger(value) || value < 0)
+    || input.afterResultRevision > input.resultRevision) throw new DomainError("goal_evidence_revision_invalid","Evidence revisions are invalid.");
+  const binding = JSON.stringify([input.goalInputId,input.workbenchId,input.resultRevision,input.requirementsRevision,input.afterResultRevision,input.afterUpdatedAt ?? null,input.metadataOnly === true]);
+  const after = input.cursor === undefined ? undefined : decodeCursor(input.cursor,"d1:",(value): value is { binding: string; revision: number; resultId: string } => value !== null && typeof value === "object"
+    && (value as { binding?: unknown }).binding === binding && Number.isSafeInteger((value as { revision?: unknown }).revision)
+    && typeof (value as { resultId?: unknown }).resultId === "string");
+  const { query,parameters } = goalEvidenceChangesSelection(connection,input);
   const totalChanges = connection.prepare(`${query} SELECT COUNT(*) AS n FROM candidates`).get(...parameters)?.n as number;
   const handoff = hasColumn(connection,"work_results","handoff_json") ? "r.handoff_json" : "NULL";
   const handoffStatus = hasColumn(connection,"work_results","handoff_status") ? "r.handoff_status" : "'MISSING'";
@@ -176,14 +204,16 @@ export function loadGoalEvidenceChanges(connection: DatabaseSync,input: GoalEvid
     SELECT selected.revision,r.result_id AS resultId,r.work_id AS workId,r.status,substr(r.summary,1,320) AS summary,
       r.is_late AS isLate,r.is_authoritative AS isAuthoritative,COALESCE(v.status,'UNVERIFIED') AS verification,
       ${handoffStatus} AS handoffStatus,${utf16Length(`COALESCE(${handoff},'')`)} AS handoffCharacters,
-      CASE WHEN ${utf16Length(`COALESCE(${handoff},'')`)}<=4000 THEN ${handoff} ELSE NULL END AS handoffJson
+      ${input.metadataOnly === true ? "NULL" : `CASE WHEN ${utf16Length(`COALESCE(${handoff},'')`)}<=4000 THEN ${handoff} ELSE NULL END`} AS handoffJson
     FROM selected JOIN work_results r ON r.result_id=selected.resultId LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
     ORDER BY selected.revision,r.result_id`).all(...parameters,...(after === undefined ? [] : [after.revision,after.resultId]));
   const changedResults = rows.slice(0,16).map(row => {
     const result: GoalEvidenceChange = { revision: row.revision as number,resultId: row.resultId as string,workId: row.workId as string,
       status: row.status as string,verification: row.verification as string,summary: row.summary as string,isLate: row.isLate === 1,isAuthoritative: row.isAuthoritative === 1,
       handoffStatus: ["PROVIDED","INVALID"].includes(row.handoffStatus as string) ? row.handoffStatus as WorkHandoffStatus : "MISSING",handoffCharacters: row.handoffCharacters as number };
-    if (result.handoffStatus === "PROVIDED" && result.handoffCharacters > 4000) return { ...result,handoffOmitted: true as const,handoffRef: result.resultId,handoffReadHint: "Read work_read_evidence(mode=handoff,resultId,cursor) for the complete private handoff; the display preview does not replace it." };
+    if (result.handoffStatus === "PROVIDED" && (input.metadataOnly === true || result.handoffCharacters > 4000)) {
+      return { ...result,handoffOmitted: true as const,handoffRef: result.resultId };
+    }
     if (result.handoffStatus === "PROVIDED") {
       let value: unknown;
       try { value = JSON.parse(row.handoffJson as string) as unknown; } catch { /* Invalid stored metadata remains untrusted. */ }
@@ -236,6 +266,38 @@ export function goalEvidenceIndex(catalog: GoalEvidenceCatalog): string {
 
 export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
   constructor(private readonly database: TransactionalDatabase) {}
+  async readRoadmap(input: GoalRoadmapQuery) { return this.database.transaction(db => readGoalRoadmap(db,input)); }
+  async recordResultRead(input: GoalResultReadReceipt): Promise<void> {
+    this.database.transaction(db => {
+      const receipt = db.prepare(`SELECT rs.revision,COALESCE(q.revision,0) AS requirements,r.body_ref,
+          t.status,g.canceled_at,g.dismissed_at,g.failed_at,
+          (t.input_id=${harnessReviewInputIdSql("g.input_id","rs.revision")} OR
+            (rs.synthetic_input_id=i.input_id AND rs.revision=i.result_revision
+             AND COALESCE(i.requirements_revision,0)=COALESCE(q.revision,0))) AS current_owner
+        FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id=t.input_id
+        JOIN joi_inbox_messages g ON g.input_id=i.goal_input_id
+        LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id=g.input_id
+        LEFT JOIN joi_goal_requirements q ON q.goal_input_id=g.input_id
+        JOIN work_results r ON r.result_id=? AND r.workbench_id=t.workbench_id
+        JOIN work_items w ON w.work_id=r.work_id AND w.input_id=g.input_id AND w.workbench_id=t.workbench_id
+        WHERE t.turn_id=? AND t.workbench_id=? AND g.input_id=?
+          AND (g.workbench_id=t.workbench_id OR g.workbench_id IS NULL)`)
+        .get(input.resultId,input.turnId,input.workbenchId,input.goalInputId);
+      if (receipt === undefined || typeof receipt.body_ref !== "string") {
+        throw new DomainError("goal_evidence_not_found","Evidence was not found in this goal.");
+      }
+      if ((receipt.status !== "RUNNING" && receipt.status !== "WAITING") || receipt.canceled_at !== null || receipt.dismissed_at !== null
+        || receipt.failed_at !== null) {
+        throw new DomainError("goal_evidence_turn_inactive","This turn can no longer read evidence.");
+      }
+      if (receipt.current_owner !== 1) throw new DomainError("goal_evidence_snapshot_stale","The goal's evidence owner changed. Refresh the evidence snapshot.");
+      db.prepare(`INSERT OR IGNORE INTO joi_goal_evidence_reads
+        (turn_id,tool_call_id,goal_input_id,result_revision,requirements_revision,result_id,source_ref,start_offset,end_offset)
+        VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(input.turnId,input.toolCallId,input.goalInputId,receipt.revision ?? 0,receipt.requirements ?? 0,
+          input.resultId,receipt.body_ref,input.start,input.end);
+    });
+  }
   async readIdentity(input: GoalEvidenceScope & { resultId: string }) {
     return this.database.transaction(c => {
       const row = c.prepare(`SELECT r.status,r.is_late,r.is_authoritative FROM work_results r JOIN work_items w ON w.work_id=r.work_id
@@ -298,8 +360,8 @@ export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
   }
   async readConclusion(input: GoalEvidenceScope & { outcomeId: string; cursor?: string }) {
     return this.database.transaction(c => {
-      const query = `${conclusionQuery(c,undefined,outcomeVersion(input.outcomeId))}, requested AS (SELECT body AS text FROM conclusions WHERE outcomeId=?)`;
-      return textPage(readSqlText(c,query,[input.goalInputId,input.workbenchId,input.outcomeId],JSON.stringify([input.goalInputId,input.workbenchId,input.outcomeId]),input.cursor));
+      const { query,extraParameters } = outcomeTextQuery(c,input.outcomeId,false);
+      return textPage(readSqlText(c,query,[input.goalInputId,input.workbenchId,...extraParameters],outcomeTextBinding(c,input,"conclusion"),input.cursor));
     });
   }
 
@@ -321,8 +383,8 @@ export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
 
   async readState(input: GoalEvidenceScope & { outcomeId: string; cursor?: string }) {
     return this.database.transaction(c => {
-      const query = `${conclusionQuery(c,undefined,outcomeVersion(input.outcomeId),true)}, requested AS (SELECT synthesisState AS text FROM conclusions WHERE outcomeId=?)`;
-      const { available,...page } = readSqlText(c,query,[input.goalInputId,input.workbenchId,input.outcomeId],JSON.stringify(["state",input.goalInputId,input.workbenchId,input.outcomeId]),input.cursor);
+      const { query,extraParameters } = outcomeTextQuery(c,input.outcomeId,true);
+      const { available,...page } = readSqlText(c,query,[input.goalInputId,input.workbenchId,...extraParameters],outcomeTextBinding(c,input,"state"),input.cursor);
       return { ...page,outcomeId: input.outcomeId,stateStatus: available ? "PROVIDED" as const : "MISSING" as const };
     });
   }

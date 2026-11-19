@@ -15,6 +15,7 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import type { RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 import type { ActorTickContext } from "../../src/main/application/ports/actor-runtime";
+import type { ResidentTurnResult } from "../../src/main/application/ports/partner-instances.js";
 import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const NOW = "2026-07-29T10:00:00.000Z";
@@ -58,7 +59,7 @@ async function openFixture() {
   return { database, partner, root };
 }
 
-function makeComponent(database: RuntimeDatabase, partnerId: string, dispatchSpy: { calls: unknown[] }) {
+function makeComponent(database: RuntimeDatabase, partnerId: string, dispatchSpy: { calls: unknown[] }, settled: ResidentTurnResult | null = null) {
   const contexts = new SqliteWorkbenchContextRepository(database);
   const delivery = new SqlitePartnerDispatchDelivery({
     agentConversations: new SqliteWorkbenchAgentRepository(database),
@@ -68,6 +69,7 @@ function makeComponent(database: RuntimeDatabase, partnerId: string, dispatchSpy
     database,
     gateway: { recover: async () => { throw new Error("gateway unused"); }, startWithResult: async () => { throw new Error("gateway unused"); } },
     instances: {
+      readSettledResult: async () => settled,
       dispatch: async (input) => {
         dispatchSpy.calls.push(input);
         return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" };
@@ -89,12 +91,13 @@ function makeComponent(database: RuntimeDatabase, partnerId: string, dispatchSpy
 }
 
 describe("agent dispatch crash recovery", () => {
-  it("recovers a claim that expired before the ack (crash between claim and prepare)", async () => {
+  it.each([true, false])("recovers a pre-start claim (startup recovery=%s)", async (bootRecovery) => {
     const { database, partner, root } = await openFixture();
     try {
       database.transaction((connection) => connection.prepare(
         "UPDATE outbox SET status = 'CLAIMED', claim_owner = 'dead_pid', claim_until = ? WHERE outbox_id = 'outbox_1'",
-      ).run(NOW));
+      ).run(bootRecovery ? ctxAt(120_000).now.toISOString() : NOW));
+      if (bootRecovery) await new SqlitePartnerDispatchClaims(database).recoverOnBoot();
       const spy = { calls: [] as unknown[] };
       const component = makeComponent(database, partner.partnerId, spy);
 
@@ -115,11 +118,12 @@ describe("agent dispatch crash recovery", () => {
     }
   });
 
-  it("finalizes an acked run whose ephemeral instance died as UNKNOWN", async () => {
+  it.each(["COMPLETED", "UNKNOWN"] as const)("acknowledges a persisted start at boot and settles it as %s without launching it again", async (status) => {
     const { database, partner, root } = await openFixture();
     try {
       database.transaction((connection) => {
-        connection.prepare("UPDATE outbox SET status = 'DONE' WHERE outbox_id = 'outbox_1'").run();
+        connection.prepare("UPDATE outbox SET status = 'CLAIMED', claim_owner = 'dead_pid', claim_until = ? WHERE outbox_id = 'outbox_1'")
+          .run(ctxAt(120_000).now.toISOString());
         connection.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
         connection.prepare("UPDATE partner_instances SET status = 'DISPOSED', disposal_reason = 'crash', disposed_at = ? WHERE instance_id = 'instance_9'").run(NOW);
         connection.prepare(`INSERT INTO workbench_context_snapshots
@@ -130,15 +134,22 @@ describe("agent dispatch crash recovery", () => {
           SELECT 'partner_run:action_1', 'attempt_1', 'action_1', 'workbench_1', 'work_1', partner_revision_id, 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', ?, ?, 'context_x'
           FROM partner_revisions WHERE partner_revision_id = (SELECT partner_revision_id FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1')`).run(NOW, NOW);
       });
+      await new SqlitePartnerDispatchClaims(database).recoverOnBoot();
       const spy = { calls: [] as unknown[] };
-      const component = makeComponent(database, partner.partnerId, spy);
+      const result: ResidentTurnResult | null = status === "COMPLETED" ? {
+        externalRunId: "local_pi:action_1", status: "COMPLETED", output: { artifacts: [], body: "Persisted result" },
+      } : null;
+      const component = makeComponent(database, partner.partnerId, spy, result);
 
       await component.update(ctxAt(0));
 
       expect(spy.calls).toHaveLength(0);
       expect(database.transaction((connection) => connection.prepare(
+        "SELECT status, claim_owner, claim_until FROM outbox WHERE outbox_id = 'outbox_1'",
+      ).get())).toEqual({ status: "DONE", claim_owner: null, claim_until: null });
+      expect(database.transaction((connection) => connection.prepare(
         "SELECT status FROM partner_runs WHERE run_id = 'partner_run:action_1'",
-      ).get())).toEqual({ status: "UNKNOWN" });
+      ).get())).toEqual({ status });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

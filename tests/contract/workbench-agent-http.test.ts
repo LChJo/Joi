@@ -28,6 +28,7 @@ describe("Workbench Agent HTTP API", () => {
     const openArtifact = vi.fn(() => Promise.resolve({ opened: true as const }));
     const workbenchAgents = {
       conversation: fixture.workbenchAgents.conversation.bind(fixture.workbenchAgents),
+      conversationMessages: fixture.workbenchAgents.conversationMessages.bind(fixture.workbenchAgents),
       dismiss: fixture.workbenchAgents.dismiss.bind(fixture.workbenchAgents),
       list: fixture.workbenchAgents.list.bind(fixture.workbenchAgents),
       openArtifact,
@@ -66,6 +67,16 @@ describe("Workbench Agent HTTP API", () => {
       const older = await (await fetch(`${endpoint}?latest=true&limit=1&cursor=${encodeURIComponent(latest.nextCursor ?? "")}`, { headers })).json() as AgentConversationPageDto;
       expect(older.items[0]?.entryId).toBe(page.items[0]?.entryId);
       expect(older.nextCursor).toBeUndefined();
+      const messages = await fetch(`${endpoint}?view=messages&latest=true&limit=1`, { headers });
+      expect(messages.status).toBe(200);
+      expect(await messages.json()).toEqual({ items: latest.items, nextCursor: latest.nextCursor });
+      const earlierMessages = await fetch(`${endpoint}?view=messages&latest=true&limit=1&cursor=${encodeURIComponent(latest.nextCursor ?? "")}`, { headers });
+      expect(await earlierMessages.json()).toEqual({ items: older.items });
+      expect((await fetch(`${endpoint}?view=messages&latest=true&cursor=invalid`, { headers })).status).toBe(400);
+      expect((await fetch(`${endpoint}?view=messages&latest=true&goalId=unrelated`, { headers })).status).toBe(404);
+      expect((await fetch(`${endpoint}?view=messages`)).status).toBe(401);
+      const foreignEndpoint = endpoint.replace(`/workbenches/${encodeURIComponent(workbench.workbenchId)}/`, "/workbenches/another-workbench/");
+      expect((await fetch(`${foreignEndpoint}?view=messages`, { headers })).status).toBe(404);
       expect((await fetch(`${endpoint}?latest=true&cursor=invalid`, { headers })).status).toBe(400);
       expect((await fetch(`${endpoint}?latest=true&goalId=unrelated`, { headers })).status).toBe(404);
 
@@ -119,6 +130,7 @@ describe("Workbench Agent HTTP API", () => {
 
       const removed = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(ephemeral.instanceId)}`, { headers: writeHeaders, method: "DELETE" });
       expect(removed.status).toBe(204);
+      expect((await fetch(`${endpoint}?view=messages`, { headers })).status).toBe(404);
     } finally {
       await listeners.close();
       await fixture.close();
@@ -144,6 +156,7 @@ describe("Workbench Agent HTTP API", () => {
     });
     const workbenchAgents = {
       conversation: fixture.workbenchAgents.conversation.bind(fixture.workbenchAgents),
+      conversationMessages: fixture.workbenchAgents.conversationMessages.bind(fixture.workbenchAgents),
       dismiss: fixture.workbenchAgents.dismiss.bind(fixture.workbenchAgents),
       list: fixture.workbenchAgents.list.bind(fixture.workbenchAgents),
       openArtifact: vi.fn(() => Promise.resolve({ opened: true as const })),

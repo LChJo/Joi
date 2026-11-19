@@ -5,6 +5,56 @@ import { restorePiSnapshot } from "./joi-pi-session.js";
 import type { PiNativeSessionStore } from "./pi-native-session-store.js";
 import { DomainError } from "../../domain/errors.js";
 import { HANDOFF_BUSINESS_BOUNDARY, HANDOFF_CONTEXT_HEADING, HANDOFF_INTRO, handoffBusinessFacts, importedHandoffContext } from "./conversation-session.js";
+import { WORKBENCH_HISTORY_TOOL } from "./pi-historical-memory-tools.js";
+
+const HANDOFF_CONTEXT_TRIGGER = 12_000;
+const HANDOFF_FACTS_TRIGGER = 8000;
+
+type BusinessTurn = ReturnType<typeof handoffBusinessFacts>[number];
+function renderBusinessFacts(history: BusinessTurn[]): string {
+  const original = JSON.stringify(history);
+  const latest = history.at(-1);
+  if (original.length < HANDOFF_FACTS_TRIGGER || latest === undefined) return original;
+  const older = history.slice(0,-1).map(turn => ({
+    turnId: turn.turnId,status: turn.status,config: { attachmentIds: turn.config.attachmentIds },
+    entries: turn.entries.filter(entry => entry.kind === "ARTIFACT" || entry.kind === "ERROR"),
+    omittedDetails: true,
+  }));
+  return JSON.stringify([...older,latest]);
+}
+
+function renderSourceContext(messages: AgentMessage[]): string {
+  const sections = messages.flatMap(message => {
+    if (message.role === "toolResult" && message.toolName === WORKBENCH_HISTORY_TOOL) return [];
+    const inherited = importedHandoffContext(message);
+    const original = inherited ?? serializeConversation(convertToLlm([message]));
+    return original === "" ? [] : [{ message,inherited,original }];
+  });
+  const original = sections.map(section => section.original).join("\n\n");
+  const latest = sections.at(-1);
+  if (original.length < HANDOFF_CONTEXT_TRIGGER || latest === undefined) return original;
+
+  const older = sections.slice(0,-1);
+  const isSummary = ({ message,inherited }: (typeof sections)[number]) =>
+    inherited !== undefined || message.role === "compactionSummary" || message.role === "branchSummary";
+  const summaries = older.filter(isSummary).map(section => section.original);
+  const prior: string[] = [];
+  let remaining = HANDOFF_CONTEXT_TRIGGER / 2 - summaries.join("\n\n").length;
+  let referenced = 0;
+  for (const section of older.filter(section => !isSummary(section)).reverse()) {
+    const { message,original: text } = section;
+    const compact = message.role === "assistant" ? serializeConversation(convertToLlm([{
+      ...message,content: message.content.map(block => block.type === "toolCall" ? { ...block,arguments: {} } : block),
+    }])) : text;
+    if (compact.length + 2 > remaining) { referenced += 1;continue; }
+    prior.push(compact);
+    remaining -= compact.length + 2;
+  }
+  const reference = referenced === 0 ? [] : [
+    `Earlier source context: ${String(referenced)} complete message records remain in private source history for lookup.`,
+  ];
+  return [...reference,...summaries,...prior.reverse(),latest.original].join("\n\n");
+}
 
 /** Canonical history references and official context serialization require no handoff model call. */
 export class ConversationHandoff implements ConversationHandoffPort {
@@ -44,9 +94,8 @@ export class ConversationHandoff implements ConversationHandoffPort {
     } else {
       messages = manager?.buildSessionContext().messages ?? source.state?.messages ?? [];
     }
-    const serialized = (messages as AgentMessage[]).map(message => importedHandoffContext(message)
-      ?? serializeConversation(convertToLlm([message]))).filter(Boolean).join("\n\n");
-    const facts = JSON.stringify(handoffBusinessFacts(input.history));
+    const serialized = renderSourceContext(messages as AgentMessage[]);
+    const facts = renderBusinessFacts(handoffBusinessFacts(input.history));
     // A fork's business turns exist only on the source, so later segment handoffs must keep those facts in the inherited context.
     const context = fork === undefined ? serialized : [serialized,`Forked turn facts: ${facts}`].filter(Boolean).join("\n\n");
     const text = [HANDOFF_INTRO,

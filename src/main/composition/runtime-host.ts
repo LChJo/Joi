@@ -167,10 +167,12 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     const conversationStack = wireConversations({ clock,ids,database,persistence,partnerStack,modelSourceStack,workbenchStack,
       evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions });
     await conversationStack.recover();
-    userQuestions.start();
     exportJobs = runtimeStack.exportJobs;
     drainRuntime = async () => { await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
+    await persistence.joiInboxRepository.recoverOnBoot();
+    await persistence.dispatchClaims.recoverOnBoot();
+    userQuestions.start();
     await runtimeStack.outboxDispatcher.dispatchOnce();
     await runtimeStack.actorTree.tick(clock.now());
     const remoteAccess = new RemoteAccessHost({
@@ -286,6 +288,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       await conversationStack.emergencyStop();
       joiStack.evolution.emergencyStop();
       partnerStack.partnerMemory.emergencyStop();
+      runtimeStack.stopHistoricalMemory();
       modelSourceStack.recovery.stop();
       void runtimeStack.modelRecoveryDispatcher.close().catch(() => undefined);
       void runtimeStack.memoryRefreshDispatcher.close().catch(() => undefined);

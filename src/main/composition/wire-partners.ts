@@ -13,7 +13,6 @@ import { LocalSkillScanner } from "../infrastructure/skills/local-skill-scanner.
 import { BuiltinPiCodingToolFactory } from "../infrastructure/pi/pi-coding-tool-factory.js";
 import { PiPartnerEngineRuntime } from "../infrastructure/pi/pi-partner-engine-runtime.js";
 import { PiNativeSessionStore } from "../infrastructure/pi/pi-native-session-store.js";
-import { PiPartnerMemorySummarizer } from "../infrastructure/pi/pi-partner-memory-summarizer.js";
 import { ClaudeAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/claude-agent-sdk-partner-engine-runtime.js";
 import { CodexAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 import type { ModelSourceBundle } from "./wire-model-sources.js";
@@ -44,6 +43,7 @@ export function wirePartners(input: {
   });
   const piRuntime = new PiPartnerEngineRuntime({
       nativeSessions,
+      memory: persistence.historicalMemory,
       usage: modelSourceStack.statistics,
       diagnostics,
       contexts: persistence.workbenchContextRepository,
@@ -97,11 +97,6 @@ export function wirePartners(input: {
       clock,
       ids,
       store: persistence.partnerWorkMemoryStore,
-      summarizer: new PiPartnerMemorySummarizer({
-        usage: modelSourceStack.statistics,
-        resolver: modelSourceStack.configuredModelResolver,
-        sources: modelSourceStack.reasoningSources,
-      }),
     }),
     partnerSkillCatalog,
     partners,

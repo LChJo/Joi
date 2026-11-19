@@ -116,15 +116,8 @@ function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?:
 function digest(goalInputId: string): HarnessReviewDigest {
   return {
     workbenchId: "workbench-1",
-    completionSummary: "第一层完成",
-    decisionCount: 1,
-    decisions: [{ kind: "APPROACH", summary: "先查资料" }],
-    destination: "目标",
-    fogNotes: [],
     goalInputId,
-    openPaths: [],
     resultRevision: 1,
-    results: [],
   };
 }
 

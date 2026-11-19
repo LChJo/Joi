@@ -32,7 +32,7 @@
 - `user-question-queue.test.ts`：FIFO、计时、取消、默认、CAS。
 - `sqlite-goal-question-queue.test.ts`：同事务暂停、多个 Work、独立确认、默认来源、幂等恢复。
 - `question-event-recovery.test.ts`：子问题归属、游标、分页、私有无截断恢复上下文。
-- `joi-orchestration-migration.test.ts`：从 104 升级时保留历史卡、关联原恢复回合并释放中断卡占用的活动位。
+- `joi-orchestration-migration.test.ts`：正式 Ask 迁移使用 107–108。旧开发库按原文件名识别 104–105 的 Ask 迁移记录，保留历史卡和恢复关联，并正常应用父分支的历史数据迁移。
 - `pi-user-question-runtime.test.ts` / `pi-user-question-ui.test.ts`：真实 SDK＋合成 provider，原 call 答复、默认来源、单卡取消、canonical ACK。
 - `pi-question-http.test.ts`：真实 HTTP/Auth/SQLite/ConversationService/SDK，人工回答和 Clock 推进 30 分钟的同轮继续。
 - React／Flutter 卡片和远程协议测试覆盖显示、操作、错误与能力协商。

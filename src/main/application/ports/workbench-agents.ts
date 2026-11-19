@@ -1,4 +1,4 @@
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
+import type { AgentConversationMessagesDto, AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
 import type { NormalizedAgentConversationEntry } from "../partners/agent-conversation-presentation.js";
 import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "./workbench-artifacts.js";
@@ -16,6 +16,15 @@ export interface WorkbenchToolTraceRevealInput {
   workbenchId: string;
 }
 
+export interface WorkbenchAgentConversationQuery {
+  agentId: string;
+  workbenchId: string;
+  goalId?: string;
+  cursor?: string;
+  latest?: boolean;
+  limit?: number;
+}
+
 export interface WorkbenchAgentRepository {
   append(agentId: string, entries: NormalizedAgentConversationEntry[]): Promise<void>;
   /**
@@ -24,7 +33,8 @@ export interface WorkbenchAgentRepository {
    * multi-kilobyte body must never ride along with that amplification.
    */
   appendToolTrace(input: WorkbenchToolTraceInput): Promise<void>;
-  conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit: number }): Promise<AgentConversationPageDto>;
+  conversation(input: WorkbenchAgentConversationQuery): Promise<AgentConversationPageDto>;
+  conversationMessages(input: WorkbenchAgentConversationQuery): Promise<AgentConversationMessagesDto>;
   dismiss(input: { agentId: string; workbenchId: string; dismissedAt: string }): Promise<void>;
   listAgents(input: { workbenchId: string; cursor?: string; goalId?: string; limit: number }): Promise<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }>;
   resolveArtifact(input: WorkbenchArtifactResolutionInput): Promise<ResolvedWorkbenchArtifact>;

@@ -1,7 +1,7 @@
 /* Faux provider callbacks implement the asynchronous model boundary. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createModels,fauxProvider,fauxAssistantMessage,fauxText,fauxThinking,fauxToolCall,getCurrentTools,getCurrentSystemPrompt } from "@earendil-works/pi-ai";
+import { createModels,fauxProvider,fauxAssistantMessage,fauxText,fauxThinking,fauxToolCall,getCurrentTools,getCurrentSystemPrompt,type Context } from "@earendil-works/pi-ai";
 import { createJoiPiSession } from "../../src/main/infrastructure/pi/joi-pi-session.js";
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
@@ -15,8 +15,12 @@ import type { ConversationThinkingDto } from "../../src/shared/conversations.js"
 import { ConversationThinking } from "../../src/main/infrastructure/pi/conversation-thinking.js";
 import { WORKSPACE_WRITE_CONTINUATION } from "../../src/main/application/partners/local-write-gate.js";
 
-it.each(["FAILED","ACCEPTED"] as const)("CHAT-18/20 keeps the current repair instruction on WRITE resume with a %s summary",async summaryState => {
-  const faux = fauxProvider({ provider: `current-repair-${summaryState}`,models: [{ id: "m",contextWindow: 32_000,maxTokens: 4096 }] });
+it.each([
+  { summaryState: "FAILED",contextWindow: 96_000,oversized: false },
+  { summaryState: "ACCEPTED",contextWindow: 96_000,oversized: false },
+  { summaryState: "ACCEPTED",contextWindow: 32_000,oversized: true },
+])("CHAT-20/HIST-05 preserves the current repair on WRITE resume ($summaryState summary, $contextWindow tokens)",async ({ summaryState,contextWindow,oversized }) => {
+  const faux = fauxProvider({ provider: `current-repair-${summaryState}`,models: [{ id: "m",contextWindow,maxTokens: 4096 }] });
   const models = createModels();models.setProvider(faux.provider);
   const summary = vi.spyOn(models,"completeSimple");
   if (summaryState === "FAILED") summary.mockRejectedValue(new Error("synthetic_summary_failure"));
@@ -29,24 +33,30 @@ it.each(["FAILED","ACCEPTED"] as const)("CHAT-18/20 keeps the current repair ins
     ...Array.from({ length: 16 },() => fauxAssistantMessage([fauxText("Investigation evidence".padEnd(4000,"中"))]))];
   const original = JSON.stringify(messages);
   let receivedTask = false,receivedAttachments = false,receivedContinuation = false,saved: PartnerSessionState | undefined;
-  faux.setResponses([context => {
+  const respond = vi.fn((context: Context) => {
     const text = JSON.stringify(context.messages);
     receivedTask = text.includes(task);receivedAttachments = text.includes(attachments);receivedContinuation = text.includes(WORKSPACE_WRITE_CONTINUATION);
     return fauxAssistantMessage([fauxText(receivedTask ? "Implemented BUG-4242." : "The read-only investigation is complete.")]);
-  }]);
+  });
+  faux.setResponses([respond]);
   const runtime = new PiPartnerEngineRuntime({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {} }) },prompts: { read: async () => null },
     resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" }) },sources: { selectInitial: async turnId => ({ turnId,modelId: "m",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },tools: { names: [],create: () => [] } });
   const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-17T00:00:00Z",displayName: "Helper",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [],toolPolicyMode: "CUSTOM" });
   try {
-    const result = await runtime.runResidentTurn({ instanceId: "repair-resume",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: messages,
+    const run = runtime.runResidentTurn({ instanceId: "repair-resume",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: messages,
       sessionState: { engine: "pi-core",messages },saveSession: async state => { saved = state; },
       request: { actionId: "repair",workbenchId: "wb",workId: "repair",contextSnapshotId: "snapshot",taskProjection: task,conversationAttachmentContext: attachments,
         conversationId: "chat",subagentsEnabled: false,requiredContext: "Answer the current message directly.",workspaceExecution: { accessCeiling: "WRITE",phase: "WRITE_RUNNING",generation: 2 } } });
+    if (oversized) {
+      await expect(run).rejects.toMatchObject({ partnerRunFailure: { reasonCode: "context_too_large",sideEffectState: "NONE" } });
+      expect(respond).not.toHaveBeenCalled();
+    } else {
+      await expect(run).resolves.toMatchObject({ output: { body: "Implemented BUG-4242." } });
+      expect(receivedContinuation).toBe(false);
+      expect(receivedTask).toBe(true);
+      expect(receivedAttachments).toBe(true);
+    }
     expect(summary).not.toHaveBeenCalled();
-    expect(receivedContinuation).toBe(false);
-    expect(receivedTask).toBe(true);
-    expect(receivedAttachments).toBe(true);
-    expect(result.output.body).toBe("Implemented BUG-4242.");
     expect(JSON.stringify(messages)).toBe(original);
     expect(saved?.messages.length).toBeGreaterThan(messages.length);
   } finally { runtime.evictFromMemory("repair-resume"); }

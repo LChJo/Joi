@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { ConversationPage } from "../../src/renderer/ConversationPage";
 import type { ConversationDto, ConversationTurnStatus, SendConversationInput } from "../../src/shared/conversations";
@@ -16,20 +16,99 @@ function conversation(id: string,status: ConversationTurnStatus = "COMPLETED"): 
 function setup() {
   const api = new DigitalLifeApi("",true);
   vi.spyOn(api,"listWorkbenches").mockResolvedValue({ items: [{ workbenchId: "wb",name: "Project",scopeSummary: "Project",updatedAt: "2026-11-11" },{ workbenchId: "wb2",name: "Design",scopeSummary: "Design",updatedAt: "2026-11-11" }] });
-  vi.spyOn(api,"listPartners").mockResolvedValue({ items: [{ partnerId: "native",displayName: "Native partner",engine: "codex",kind: "local-pi",status: "ACTIVE",skills: [] } as never] });
-  vi.spyOn(api,"listModelSources").mockResolvedValue({ items: [{ sourceId: "network",displayName: "Network",activeModel: { id: "Configured model" },status: "READY" } as never] });
+  const partners = vi.spyOn(api,"listPartners").mockResolvedValue({ items: [{ partnerId: "native",displayName: "Native partner",engine: "codex",kind: "local-pi",status: "ACTIVE",skills: [] } as never] });
+  const networks = vi.spyOn(api,"listModelSources").mockResolvedValue({ items: [{ sourceId: "network",displayName: "Network",activeModel: { id: "Configured model" },status: "READY" } as never] });
   const history = vi.spyOn(api,"listConversations").mockResolvedValue({ items: [conversation("first"),conversation("second")] });
   const get = vi.spyOn(api,"getConversation").mockImplementation(id => Promise.resolve(conversation(id)));
   const send = vi.spyOn(api,"sendConversation").mockImplementation((input: SendConversationInput) => Promise.resolve({ ...conversation(input.conversationId),workbenchId: input.workbenchId }));
   const stop = vi.spyOn(api,"stopConversation").mockResolvedValue({ stopped: true });
   vi.spyOn(api,"conversationInheritance").mockResolvedValue({ memoryCount: 2,evolutionRevisionId: "effective-method" });
   vi.spyOn(api,"conversationGit").mockResolvedValue({ available: false,branch: "",branches: [],ahead: 0,behind: 0,files: [],history: [] });
-  vi.spyOn(api,"request").mockResolvedValue({ items: [{ id: "user/design",displayName: "Design Skill" }] });
+  const request = vi.spyOn(api,"request").mockResolvedValue({ items: [{ id: "user/design",displayName: "Design Skill" }] });
   const upload = vi.spyOn(api,"uploadJoiAttachment").mockResolvedValue({ attachmentId: "attachment",filename: "notes.txt",mimeType: "text/plain",size: 4,createdAt: "2026-11-11" });
   const quick = vi.spyOn(api,"quickConversationWorkbench").mockResolvedValue({ workbenchId: "quick",name: "Folder project",scopeSummary: "Project",updatedAt: "2026-11-11" });
-  return { api,history,get,send,stop,upload,quick };
+  return { api,history,get,send,stop,upload,quick,networks,partners,request };
 }
 async function ready() { await waitFor(() => expect(screen.getByRole("button",{ name: "大模型网络" })).toHaveTextContent("Network")); }
+
+it("CHAT-PERF-01 shows history before configuration and reuses it on return", async () => {
+  const { api,history,partners,request } = setup();
+  const catalog = Promise.withResolvers<Awaited<ReturnType<DigitalLifeApi["listPartners"]>>>();
+  partners.mockReturnValue(catalog.promise);
+  const view = render(<ConversationPage api={api} />);
+  expect(screen.queryByText("新对话会按工作台保存在这里")).toBeNull();
+  expect(await screen.findByRole("button", { name: /^项目说明$/ })).toBeVisible();
+  expect(request).not.toHaveBeenCalled();
+  view.unmount();
+  const refreshed = Promise.withResolvers<Awaited<ReturnType<DigitalLifeApi["listConversations"]>>>();
+  history.mockReturnValueOnce(refreshed.promise);
+  render(<ConversationPage api={api} />);
+  expect(screen.getByRole("button", { name: /^项目说明$/ })).toBeVisible();
+  await act(async () => { refreshed.resolve({ items: [] }); await refreshed.promise; });
+  expect(screen.getByText("新对话会按工作台保存在这里")).toBeVisible();
+});
+
+it("CHAT-PERF-01 retries a cold history failure independently", async () => {
+  const { api,history,partners } = setup();
+  history.mockRejectedValueOnce(new Error("unavailable"));
+  render(<ConversationPage api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+  expect(await screen.findByRole("button", { name: /^项目说明$/ })).toBeVisible();
+  expect(partners).toHaveBeenCalledTimes(1);
+});
+
+it("CHAT-PERF-02 restores the transcript before catalogs and ignores a superseded restoration", async () => {
+  const { api,get,networks } = setup();
+  const view = render(<ConversationPage api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: /^项目说明$/ }));
+  await screen.findByRole("heading", { name: "Formatted answer" });
+  view.unmount();
+  const config = Promise.withResolvers<Awaited<ReturnType<DigitalLifeApi["listModelSources"]>>>();
+  networks.mockReturnValue(config.promise);
+  const restore = Promise.withResolvers<ConversationDto>();
+  get.mockReturnValueOnce(restore.promise);
+  render(<ConversationPage api={api} />);
+  expect(get).toHaveBeenCalledTimes(2);
+  expect(get.mock.calls[1]?.[0]).toBe("first");
+  const signal = get.mock.calls[1]?.[1]?.signal;
+  fireEvent.click(screen.getByRole("button", { name: "新建对话" }));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => { restore.resolve(conversation("first")); await restore.promise; });
+  expect(screen.queryByRole("heading", { name: "Formatted answer" })).toBeNull();
+});
+
+it("CHAT-PERF-02 retries a failed restoration while the model catalog is still loading", async () => {
+  const { api,get,networks } = setup();
+  const view = render(<ConversationPage api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: /^项目说明$/ }));
+  await screen.findByRole("heading", { name: "Formatted answer" });
+  view.unmount();
+  networks.mockReturnValue(Promise.withResolvers<Awaited<ReturnType<DigitalLifeApi["listModelSources"]>>>().promise);
+  get.mockRejectedValueOnce(new Error("unavailable"));
+  render(<ConversationPage api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "重试" }));
+  expect(await screen.findByRole("heading", { name: "Formatted answer" })).toBeVisible();
+});
+
+it("CHAT-PERF-03 retains a renamed history row when an older refresh completes", async () => {
+  const { api,history } = setup();
+  const view = render(<ConversationPage api={api} />);
+  await screen.findByRole("button", { name: /^项目说明$/ });
+  view.unmount();
+  const refresh = Promise.withResolvers<Awaited<ReturnType<DigitalLifeApi["listConversations"]>>>();
+  history.mockReturnValueOnce(refresh.promise);
+  vi.spyOn(api,"renameConversation").mockResolvedValue({ ...conversation("first"),title: "新的项目说明" });
+  render(<ConversationPage api={api} />);
+  fireEvent.click(screen.getByRole("button", { name: "对话操作 项目说明" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "重命名" }));
+  const dialog = within(screen.getByRole("dialog", { name: "重命名对话" }));
+  fireEvent.change(dialog.getByRole("textbox"), { target: { value: "新的项目说明" } });
+  fireEvent.click(dialog.getByRole("button", { name: "保存" }));
+  await screen.findByRole("button", { name: /^新的项目说明$/ });
+  await act(async () => { refresh.resolve({ items: [conversation("first"),conversation("second")] });await refresh.promise; });
+  expect(screen.getByRole("button", { name: /^新的项目说明$/ })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /^项目说明$/ })).toBeNull();
+});
 
 it("CHAT-48 opens the fork with a blank composer and reuses the identity after failure",async () => {
   const { api,send } = setup();
@@ -52,6 +131,7 @@ it("CHAT-48 opens the fork with a blank composer and reuses the identity after f
   expect(screen.getByText("Formatted answer")).toBeInTheDocument();
   fireEvent.click(fork);
   await waitFor(() => expect(screen.queryByText("Formatted answer")).not.toBeInTheDocument());
+  expect(screen.getByRole("button",{ name: "分支对话" })).toBeVisible();
   const calls = request.mock.calls.filter(([path]) => path.endsWith("/fork"));
   expect(calls).toHaveLength(2);
   expect(calls[0]).toEqual(calls[1]);
@@ -123,7 +203,7 @@ it("CHAT-02/03 selects workbench, Skills and attachments independently, creates 
   fireEvent.click(screen.getByRole("button",{ name: "工作台" }));fireEvent.click(screen.getByRole("option",{ name: "Design" }));
   fireEvent.click(screen.getByRole("button",{ name: "工作台" }));fireEvent.click(screen.getByRole("button",{ name: "从工作路径快速新建…" }));
   await waitFor(() => expect(quick).toHaveBeenCalledTimes(1));await waitFor(() => expect(screen.getByRole("button",{ name: "工作台" })).toHaveTextContent("Folder project"));
-  fireEvent.click(screen.getByRole("button",{ name: "Skills" }));const skill = screen.getByRole("checkbox",{ name: "Design Skill" });fireEvent.click(skill);fireEvent.click(skill);fireEvent.click(skill);fireEvent.keyDown(document,{ key: "Escape" });
+  fireEvent.click(screen.getByRole("button",{ name: "Skills" }));const skill = await screen.findByRole("checkbox",{ name: "Design Skill" });fireEvent.click(skill);fireEvent.click(skill);fireEvent.click(skill);fireEvent.keyDown(document,{ key: "Escape" });
   fireEvent.click(screen.getByRole("button",{ name: "附件" }));fireEvent.click(screen.getByRole("button",{ name: "添加文件…" }));
   const input = container.querySelector('input[type="file"]');if (input === null) throw new Error("Missing file input");fireEvent.change(input,{ target: { files: [new File(["note"],"notes.txt")] } });
   await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));await screen.findByRole("button",{ name: "移除 notes.txt" });fireEvent.click(screen.getByRole("button",{ name: "移除 notes.txt" }));

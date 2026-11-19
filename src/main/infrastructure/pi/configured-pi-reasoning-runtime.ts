@@ -11,6 +11,7 @@ import { PiReasoningRuntime } from "./pi-reasoning-runtime.js";
 import type { RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import type { PiNativeSessionStore } from "./pi-native-session-store.js";
+import type { HistoricalMemoryReader } from "../../application/ports/historical-memory.js";
 
 /** One global runtime facade whose individual Workbench sessions use their pinned source revision. */
 export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
@@ -25,6 +26,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
     nativeSessions?: PiNativeSessionStore;
     resolver: PiConfiguredModelResolver;
     skills?: { prepare(): Promise<JoiSkillContext> };
+    memory?: HistoricalMemoryReader;
     sessionStore: ReasoningSessionStore;
     tools: AgentTool[] | ((input: StartReasoningTurnInput) => AgentTool[]);
   }) {}
@@ -44,6 +46,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
       const resolved = await this.dependencies.resolver.resolve(input);
       if (this.#canceledStartup.has(input.sessionId)) return;
       const runtime = new PiReasoningRuntime({
+        ...(this.dependencies.memory === undefined ? {} : { memory: this.dependencies.memory }),
         ...(this.dependencies.nativeSessions === undefined ? {} : { nativeSessions: this.dependencies.nativeSessions }),
         ...(this.dependencies.diagnostics === undefined ? {} : { diagnostics: this.dependencies.diagnostics }),
         ...(this.dependencies.usage === undefined ? {} : { usage: this.dependencies.usage }),

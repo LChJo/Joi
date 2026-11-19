@@ -22,6 +22,8 @@ export interface StartReasoningTurnInput {
   /** Image attachments delivered as multimodal parts alongside the prompt. */
   images?: readonly { data: string; mimeType: string }[];
   inputId: string;
+  /** A business turn owns its execution history, including any in-turn repairs. */
+  executionScope?: "turn";
   modelId: string;
   modelRevisionId: string;
   onEvent?: (event: PrimaryReasoningEvent) => void;
@@ -75,6 +77,7 @@ export interface JoiReasoningSessionSnapshot {
 
 export interface ReasoningSessionStore {
   load(sessionId: string): Promise<JoiReasoningSessionSnapshot | null>;
+  listPriorTurnIds?(scope: { sessionId: string; workbenchId: string; turnId: string }): Promise<string[]>;
   save(snapshot: JoiReasoningSessionSnapshot): Promise<void>;
 }
 

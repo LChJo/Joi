@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { JoiGoalProgressDto, JoiGoalProgressStageDto, JoiGoalTurnProgressDto } from "../../../shared/joi.js";
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
+import { coverageSynthesisSql } from "./sqlite-goal-result-synthesis.js";
 
 type Row = Record<string, string | number | null>;
 const LIVE = new Set(["PENDING", "RUNNING", "WAITING"]);
@@ -21,7 +22,8 @@ export function queryJoiGoalProgress(db: DatabaseSync, goalId: string): JoiGoalP
     CASE WHEN o.result_revision=rs.revision AND rs.revision>0
       AND o.completed_at>=COALESCE(i.reopened_at,i.created_at) THEN 1 ELSE 0 END AS outcome_current,
     CASE WHEN synth.status='CONSUMED' AND synth.failed_at IS NOT NULL AND synth.result_revision=rs.revision
-      AND ${goalRequirementsCurrentSql("i.input_id", "synth.requirements_revision")} THEN 1 ELSE 0 END AS synthesis_stopped
+      AND ${goalRequirementsCurrentSql("i.input_id", "synth.requirements_revision")} THEN 1 ELSE 0 END AS synthesis_stopped,
+    ${coverageSynthesisSql("synth.input_id")} AS synthesis_coverage
     FROM joi_inbox_messages i JOIN joi_harness_maps m ON m.goal_input_id=i.input_id
     LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id=i.input_id
     LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id=i.input_id
@@ -76,7 +78,8 @@ export function queryJoiGoalProgress(db: DatabaseSync, goalId: string): JoiGoalP
   else if (live?.status === "PENDING" || pending !== undefined) state = "QUEUED";
   else if (active > 0) state = "WAITING_PARTNERS";
   else if (blocked) state = goal.map_status === "ACTIVE" && Number(work.recoverable) > 0 ? "RECOVERING" : "FAILED";
-  else if (goal.synthesis_stopped === 1 && !currentOutcome) state = "FAILED";
+  else if (goal.synthesis_stopped === 1 && (!currentOutcome ||
+    (goal.synthesis_coverage === 1 && goal.map_status === "ACTIVE" && goal.outcome_disposition === "COMPLETED"))) state = "FAILED";
   else if (recentTurns[0]?.stage === "PLANNING" && ["FAILED","ABORTED"].includes(recentTurns[0].status)
     && recentTurns[0].startedAt >= String(goal.reopened_at ?? goal.created_at)) state = "FAILED";
   else state = "IDLE";

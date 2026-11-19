@@ -101,6 +101,16 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
     return loaded.snapshot;
   }
 
+  async listPriorTurnIds(scope: { sessionId: string; workbenchId: string; turnId: string }): Promise<string[]> {
+    return this.database.transaction(connection => connection.prepare(`
+      SELECT prior.turn_id FROM joi_turns current
+      JOIN joi_turns prior ON prior.session_id=current.session_id AND prior.workbench_id=current.workbench_id
+      WHERE current.turn_id=? AND current.session_id=? AND current.workbench_id=?
+        AND (prior.created_at,prior.rowid)<(current.created_at,current.rowid)
+      ORDER BY prior.created_at DESC,prior.rowid DESC
+    `).all(scope.turnId,scope.sessionId,scope.workbenchId).map(row => String(row.turn_id)));
+  }
+
   #read(connection: DatabaseSync, sessionId: string): { snapshot: JoiReasoningSessionSnapshot; serialized: SerializedSession } | null {
       const rows = connection.prepare(`SELECT workbench_id, sequence, message_json
         FROM joi_reasoning_projections WHERE session_id = ? ORDER BY sequence`).all(sessionId) as { workbench_id: unknown; message_json: unknown; sequence: unknown }[];

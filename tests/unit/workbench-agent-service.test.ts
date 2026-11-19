@@ -6,6 +6,7 @@ describe("WorkbenchAgentService", () => {
     const repository = {
       append: vi.fn(),
       conversation: vi.fn(() => Promise.resolve({ agent: {}, items: [] })),
+      conversationMessages: vi.fn(() => Promise.resolve({ items: [] })),
       dismiss: vi.fn(() => Promise.resolve()),
       listAgents: vi.fn(() => Promise.resolve({ items: [] })),
     };
@@ -15,12 +16,14 @@ describe("WorkbenchAgentService", () => {
     await service.list({ workbenchId: "workbench-1", goalId: "goal-1" });
     await service.conversation({ agentId: "agent-1", workbenchId: "workbench-1" });
     await service.conversation({ agentId: "agent-1", workbenchId: "workbench-1", cursor: "entry", limit: 30 });
+    await service.conversationMessages({ agentId: "agent-1", workbenchId: "workbench-1", goalId: "goal-1", latest: true });
     await service.dismiss({ agentId: "agent-1", workbenchId: "workbench-1" });
     expect(repository.listAgents).toHaveBeenNthCalledWith(1, { workbenchId: "workbench-1", limit: 50 });
     expect(repository.listAgents).toHaveBeenNthCalledWith(2, { workbenchId: "workbench-1", cursor: "cursor", limit: 12 });
     expect(repository.listAgents).toHaveBeenNthCalledWith(3, { workbenchId: "workbench-1", goalId: "goal-1", limit: 50 });
     expect(repository.conversation).toHaveBeenNthCalledWith(1, { agentId: "agent-1", workbenchId: "workbench-1", limit: 50 });
     expect(repository.conversation).toHaveBeenNthCalledWith(2, { agentId: "agent-1", workbenchId: "workbench-1", cursor: "entry", limit: 30 });
+    expect(repository.conversationMessages).toHaveBeenCalledExactlyOnceWith({ agentId: "agent-1", workbenchId: "workbench-1", goalId: "goal-1", latest: true, limit: 50 });
     expect(repository.dismiss).toHaveBeenCalledWith({ agentId: "agent-1", workbenchId: "workbench-1", dismissedAt: "2026-07-15T12:00:00.000Z" });
   });
 });

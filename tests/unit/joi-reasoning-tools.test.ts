@@ -1027,7 +1027,7 @@ describe("AC-43/48 evidence tools", () => {
     const record = vi.fn<(receipt: MethodEvidenceRead) => void>();
     const error = new DomainError("goal_evidence_not_found", "Unavailable.");
     const failed = makeTools({ recordEvidenceRead: record, resultReadError: error, evidenceReadError: error });
-    await expect(failed.call("work_read_result", { resultId: "missing" })).rejects.toBe(error);
+    await expect(failed.call("work_read_result", { resultId: "missing" })).resolves.toMatchObject({ status: "REJECTED",reasonCode: "goal_evidence_not_found" });
     for (const mode of ["handoff", "conclusion", "state"]) await expect(failed.call("work_read_evidence", {
       mode, resultId: "missing", outcomeId: "missing",
     })).rejects.toBe(error);
@@ -1044,6 +1044,18 @@ describe("AC-43/48 evidence tools", () => {
     await expect(harness.call("work_read_evidence", { mode: "handoff", resultId: "result" })).resolves.toMatchObject({ content: "handoff" });
     expect(record).toHaveBeenCalledTimes(2);
   });
+
+  it.each(["goal_evidence_turn_inactive","goal_evidence_snapshot_stale"])("reports %s without recording a read", async code => {
+    const record = vi.fn();
+    const harness = makeTools({ recordEvidenceRead: record,resultReadError: new DomainError(code,"Internal evidence failure.") });
+    const tool = harness.tools.find(value => value.name === "work_read_result");
+    if (tool === undefined) throw new Error("Missing result reader.");
+    const rejected = await tool.execute("read",{ resultId: "result" });
+    expect(rejected.isError).toBe(true);
+    expect(JSON.stringify(rejected.content)).toContain(code);
+    expect(rejected.terminate === true).toBe(code === "goal_evidence_turn_inactive");
+    expect(record).not.toHaveBeenCalled();
+  });
   it("passes semantic evidence modes, scope, versions and opaque cursors through the production factory",async () => {
     const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
     await harness.call("work_read_evidence",{ mode: "handoff",resultId: "result",cursor: "c1:handoff" });
@@ -1052,7 +1064,7 @@ describe("AC-43/48 evidence tools", () => {
     expect(harness.evidenceCalls).toEqual([
       { goalInputId: "original",workbenchId: "workbench_1",resultId: "result",cursor: "c1:handoff" },
       { goalInputId: "original",workbenchId: "workbench_1",outcomeId: "r6:q2",cursor: "c1:state" },
-      { goalInputId: "original",workbenchId: "workbench_1",resultRevision: 7,requirementsRevision: 2,afterResultRevision: 6,afterUpdatedAt: "2026-10-19",cursor: "d1:changes" },
+      { goalInputId: "original",workbenchId: "workbench_1",metadataOnly: true,resultRevision: 7,requirementsRevision: 2,afterResultRevision: 6,afterUpdatedAt: "2026-10-19",cursor: "d1:changes" },
     ]);
     await expect(harness.call("work_read_evidence",{ mode: "changes",resultRevision: 7,requirementsRevision: 2 })).rejects.toMatchObject({ code: "goal_evidence_revision_invalid" });
   });
@@ -1085,7 +1097,7 @@ describe("AC-43/48 evidence tools", () => {
     const completed = await tool.execute("fixed", { outcome: "RESULT_SYNTHESIZED", synthesisState: fixed });
     expect(completed).not.toHaveProperty("isError", true);
     expect(completed.details).toEqual({ synthesisState: fixed });
-    expect(validate).toHaveBeenNthCalledWith(2, inputId, fixed);
+    expect(validate).toHaveBeenNthCalledWith(2, inputId, fixed, true);
   });
 
   it("bounds repeated invalid synthesis references without asking the user", async () => {

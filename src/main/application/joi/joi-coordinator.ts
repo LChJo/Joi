@@ -282,6 +282,9 @@ export class JoiCoordinator {
     });
     if (input.automationRoutineId !== undefined && contract?.executionPrompt !== undefined) requestText = contract.executionPrompt;
     const requirementsStore = this.dependencies.requirements;
+    const evidenceTurn = isGoalSynthesis || inputId.startsWith("joi_harness_review:goal:");
+    const renderTurnRequirements = (current: NonNullable<typeof contract>) =>
+      renderGoalRequirements(current, undefined, true, evidenceTurn ? 8_000 : undefined);
     let turnStrategyInstructions = "";
     const refreshRequiredContext = requirementsStore === undefined ? undefined : async () => {
       const current = await requirementsStore.load(goalId, workbenchId);
@@ -289,7 +292,7 @@ export class JoiCoordinator {
       const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin,
         { requirementsReady: current.status === "READY", requirementCount: current.requirements.length });
       const addition = strategy !== undefined && strategy.instructions !== turnStrategyInstructions ? `\nRuntime method (subordinate to user requirements and fixed gates):\n${strategy.instructions}` : "";
-      return `${renderGoalRequirements(current)}${addition}`;
+      return `${renderTurnRequirements(current)}${addition}`;
     };
     // A poisoned session is part of why retries reproduce their own failure; bump the
     // generation after consecutive flops so the next attempt starts with clean history.
@@ -424,6 +427,7 @@ export class JoiCoordinator {
     let toolCapabilityRepairAttempted = false;
     let synthesisValidationRepairAttempted = false;
     let synthesisCompletionFailure: string | undefined;
+    const evidenceRead = { inactive: false };
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
@@ -460,10 +464,11 @@ export class JoiCoordinator {
         const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
+            executionScope: "turn",
             ...(repair === undefined ? {} : { repair }),
             ...(contract === undefined
               ? input.synthesisContext === undefined ? {} : { requiredContext: input.synthesisContext.originalRequest }
-              : { requiredContext: renderGoalRequirements(contract) }),
+              : { requiredContext: renderTurnRequirements(contract) }),
             ...(refreshRequiredContext === undefined ? {} : { refreshRequiredContext }),
             workbenchId,
             ...(backgroundContext === undefined ? {} : { backgroundContext }),
@@ -500,6 +505,7 @@ export class JoiCoordinator {
                 });
               }
               if (event.type === "tool_finished") {
+                if (event.toolName === "work_read_result" && event.reasonCode === "goal_evidence_turn_inactive") evidenceRead.inactive = true;
                 if (!replaySafeTool(event.toolName)) {
                   const startedTool = pendingReviewEffects.get(event.toolCallId);
                   pendingReviewEffects.delete(event.toolCallId);
@@ -572,6 +578,7 @@ export class JoiCoordinator {
           });
           if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
+          if (evidenceRead.inactive) throw new DomainError("goal_evidence_turn_inactive", "This turn can no longer read evidence.");
           if (synthesisCompletionFailure === "goal_synthesis_correction_exhausted") {
             throw new DomainError(synthesisCompletionFailure, "Synthesis correction requires a valid evidence state.");
           }
@@ -686,7 +693,7 @@ export class JoiCoordinator {
             continue;
           }
           if (isGoalSynthesis) {
-            await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState);
+            await this.dependencies.store.validateSynthesisState?.(inputId, committedSynthesisState, committedTurnOutcome === "RESULT_SYNTHESIZED");
           }
           break;
         } catch (error) {

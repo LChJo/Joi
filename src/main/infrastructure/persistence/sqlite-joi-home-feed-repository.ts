@@ -20,6 +20,7 @@ import { canRedriveSynthesis, joiTurnRetryDelay } from "../../domain/work/joi-tu
 import type { UserQuestionRecord } from "../../application/ports/user-questions.js";
 import { questionDto } from "../../application/joi/user-question-service.js";
 import { importLegacyGoalQuestions } from "./sqlite-joi-inbox-repository.js";
+import { coverageSynthesisSql } from "./sqlite-goal-result-synthesis.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
@@ -108,14 +109,16 @@ function stoppedRequirements(row: Row): boolean {
 }
 
 /** Only the current, inactive synthesis may surface its durable failure on the goal. */
-function stoppedSynthesis(row: Row): boolean {
+function stoppedSynthesis(row: Row, activeMap = false): boolean {
   return row.synthesis_status === "CONSUMED" && (typeof row.synthesis_failed_at === "string"
     || !canRedriveSynthesis({ failureCount: number(row, "synthesis_turn_failure_count"),
       reasonCode: typeof row.synthesis_turn_failure_reason_code === "string" ? row.synthesis_turn_failure_reason_code : "",
       unsafeEffects: number(row, "synthesis_unsafe_effects") === 1 }))
     && row.synthesis_result_revision === row.result_revision
     && number(row, "synthesis_requirements_current") === 1
-    && text(row, "inbox_status") === "CONSUMED" && number(row, "outcome_current") === 0
+    && text(row, "inbox_status") === "CONSUMED"
+    && (number(row, "outcome_current") === 0 || (activeMap && row.synthesis_coverage === 1 && row.outcome_disposition === "COMPLETED"
+      && number(row, "requirements_pending") === 0))
     && number(row, "work_active") === 0 && number(row, "active_runs") === 0
     && number(row, "live_turn_count") === 0 && number(row, "pending_child_count") === 0;
 }
@@ -158,8 +161,11 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (blockedOutcome) return "FAILED";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0 || number(row, "write_queued_count") > 0) return "ARRANGED";
-  if (stoppedSynthesis(row)) return "FAILED";
+  if (stoppedSynthesis(row, activeMap)) return "FAILED";
   if (stoppedRequirements(row)) return "FAILED";
+  if (activeMap && row.synthesis_coverage === 1 && row.synthesis_status === "PENDING"
+    && row.synthesis_result_revision === row.result_revision && number(row, "synthesis_requirements_current") === 1
+    && number(row, "requirements_pending") === 0 && number(row, "work_active") === 0 && number(row, "live_turn_count") === 0) return "FINALIZING";
   if (number(row, "work_active") === 0 && number(row, "outcome_current") === 0
     && (number(row, "completed_count") + number(row, "failed_count") > 0 || number(row, "result_revision") > 0)) return "FINALIZING";
   // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
@@ -299,7 +305,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
         synth.status AS synthesis_status, synth.failed_at AS synthesis_failed_at,
-        synth.result_revision AS synthesis_result_revision,
+        synth.result_revision AS synthesis_result_revision, ${coverageSynthesisSql("synth.input_id")} AS synthesis_coverage,
         CASE WHEN NOT EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
           AND requirements.revision <> COALESCE(synth.requirements_revision, -1)) THEN 1 ELSE 0 END AS synthesis_requirements_current,
         synth.failure_reason_code AS synthesis_failure_reason_code, synth.failure_count AS synthesis_failure_count,
@@ -414,7 +420,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted || continuationDecision);
         const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
         const historicalFailure = historicalStoppedGoal(row) || stoppedRequirements(row);
-        const synthesisFailure = stoppedSynthesis(row);
+        const synthesisFailure = stoppedSynthesis(row, harnessProjection?.mapStatus === "ACTIVE");
         const failureCode = synthesisFailure ? row.synthesis_failure_reason_code ?? row.synthesis_turn_failure_reason_code : row.failure_reason_code;
         const failureCount = synthesisFailure ? row.synthesis_failure_count ?? row.synthesis_turn_failure_count : row.failure_count;
         const failureReasonCode = normalizeJoiFailureReasonCode(failureCode

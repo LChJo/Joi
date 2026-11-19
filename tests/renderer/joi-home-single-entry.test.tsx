@@ -975,7 +975,7 @@ describe("joi home single entry", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看 1 个异常搭档" }));
 
     expect(await screen.findByText("安全错误详情")).toBeInTheDocument();
-    expect(conversation).toHaveBeenCalledWith(workbench.workbenchId, failed.agentId, { limit: 50, latest: true, goalId: "goal-partial" });
+    expect(conversation).toHaveBeenCalledWith(workbench.workbenchId, failed.agentId, { limit: 50, latest: true, goalId: "goal-partial", view: "messages" });
     expect(screen.getByRole("button", { name: /失败搭档/u })).toHaveAttribute("aria-pressed", "true");
   });
 

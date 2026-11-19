@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { AgentMessageStream } from "../../src/renderer/JoiHome.js";
 import { DigitalLifeApi } from "../../src/renderer/api.js";
@@ -12,6 +13,38 @@ const entry = (sequence: number): AgentConversationEntryDto => ({ entryId: `e${S
 
 describe("AC-60 latest conversation viewport", () => {
   afterEach(() => vi.useRealTimers());
+  it("CHAT-PERF-05 reads completed transcripts without fetching a full card", async () => {
+    const api = new DigitalLifeApi("", true);
+    const completed = { ...agent, status: "COMPLETED" as const };
+    const read = vi.spyOn(api, "agentConversation").mockResolvedValue({ agent: completed, items: [entry(0)] });
+    render(<AgentMessageStream agent={completed} api={api} workbenchId="w" goalId="g" />);
+    expect(await screen.findByText("输出 0")).toBeVisible();
+    expect(read).toHaveBeenCalledExactlyOnceWith("w", "a", { goalId: "g", latest: true, limit: 50, view: "messages" });
+  });
+  it("matches ordinary chat prose and gives dispatched tasks a smaller font", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "agentConversation").mockResolvedValue({
+      agent, items: [{ ...entry(0), role: "USER", text: "合成任务" }, entry(1)],
+    });
+    const stylesheet = document.createElement("style");
+    stylesheet.textContent = readFileSync("src/renderer/conversations.css", "utf8");
+    document.head.append(stylesheet);
+    try {
+      render(<>
+        <div className="conversation-layout"><div className="chat-user">普通对话</div></div>
+        <AgentMessageStream agent={agent} api={api} workbenchId="w" />
+      </>);
+      const task = (await screen.findByText("合成任务")).closest(".chat-user");
+      const prose = screen.getByText("输出 1").closest(".agent-message-stream");
+      const ordinary = screen.getByText("普通对话").closest(".conversation-layout");
+      if (task === null || prose === null || ordinary === null) throw new Error("Missing conversation typography container.");
+      expect(getComputedStyle(ordinary).fontSize).toBe("13px");
+      expect(getComputedStyle(prose).fontSize).toBe(getComputedStyle(ordinary).fontSize);
+      expect(getComputedStyle(task).fontSize).toBe("12px");
+    } finally {
+      stylesheet.remove();
+    }
+  });
   it("renders partner prose and consecutive mixed tools using the ordinary chat layout", async () => {
     const api = new DigitalLifeApi("", true);
     const call = (sequence: number, toolName: string): AgentConversationEntryDto => ({ ...entry(sequence), kind: "TOOL_CALL", role: "TOOL", toolName, toolCallId: `call-${String(sequence)}` });
@@ -44,16 +77,17 @@ describe("AC-60 latest conversation viewport", () => {
     log.scrollIntoView = reveal;
     Object.defineProperties(log, { clientHeight: { value: 200 }, scrollHeight: { get: () => 600 + log.querySelectorAll("article").length * 200 } });
     await act(() => vi.advanceTimersByTimeAsync(1));
-    expect(read).toHaveBeenCalledWith("w", "a", { limit: 50, latest: true });
+    expect(read).toHaveBeenCalledWith("w", "a", { limit: 50, latest: true, view: "messages" });
     expect(log.scrollTop).toBe(1000);
     expect(reveal).toHaveBeenCalledExactlyOnceWith({ block: "end", inline: "nearest" });
     await act(() => vi.advanceTimersByTimeAsync(750));
+    expect(read).toHaveBeenCalledWith("w", "a", { limit: 50, latest: true });
     expect(screen.getByText("输出 4")).toBeInTheDocument();
     expect(log.scrollTop).toBe(1200);
     log.scrollTop = 0;
     fireEvent.scroll(log);
     await act(async () => { await Promise.resolve(); });
-    expect(read).toHaveBeenCalledWith("w", "a", { limit: 50, latest: true, cursor: "older" });
+    expect(read).toHaveBeenCalledWith("w", "a", { limit: 50, latest: true, cursor: "older", view: "messages" });
     expect(log.scrollTop).toBe(400);
     expect(screen.getByText("输出 0")).toBeInTheDocument();
     await act(() => vi.advanceTimersByTimeAsync(750));
