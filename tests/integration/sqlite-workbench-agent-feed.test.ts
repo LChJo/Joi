@@ -291,6 +291,53 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("KN-03 only serves the 100 latest goal Agent cards and their transcripts", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "Recent", personaSummary: "Careful", projectLabel: "Test", scopeSummary: "Goal" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "Partner", kind: "local-pi", skills: [], tools: [] });
+      const instances: Awaited<ReturnType<typeof fixture.instances.ensure>>[] = [];
+      for (let i = 0; i < 102; i++) {
+        fixture.clock.advance(1000);
+        instances.push(await fixture.instances.ensure({ workbenchId: workbench.workbenchId, partnerId: partner.partnerId, sessionPolicy: "EPHEMERAL" }));
+      }
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction(db => {
+        db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES ('goal-window','window-key','Goal','CONSUMED',?,?,?)`).run(workbench.workbenchId,now,now);
+        db.prepare(`INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES ('turn-window','goal-window',?,'session-window','COMPLETED',?,?)`).run(workbench.workbenchId,now,now);
+        db.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id,turn_id,candidate_json,policy_result_json,created_at)
+          VALUES ('plan-window','turn-window','{}','{}',?)`).run(now);
+        db.prepare(`INSERT INTO work_items (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+          VALUES ('work-window',?,'goal-window','Scan','{}','READ','COMPLETED',?,?)`).run(workbench.workbenchId,now,now);
+        const add = db.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id,dispatch_plan_id,work_id,partner_revision_id,registry_revision,action_id,instance_id,status,created_at,updated_at)
+          VALUES (?,'plan-window','work-window',?,1,?,?,'COMPLETED',?,?)`);
+        for (const [index, instance] of instances.entries()) {
+          const activity = new Date(Date.parse(now) + (index === 0 ? 200 : index)).toISOString();
+          add.run(`attempt-window-${String(index)}`,instance.partnerRevisionId,`action-window-${String(index)}`,instance.instanceId,activity,activity);
+        }
+      });
+      const repository = new SqliteWorkbenchAgentRepository(fixture.database);
+      const scope = { workbenchId: workbench.workbenchId,goalId: "goal-window" };
+      const first = await repository.listAgents({ ...scope,limit: 100 });
+      expect(first.items.map(item => item.agentId)).toEqual([instances[0],...instances.slice(3).reverse()].map(instance => instance?.instanceId));
+      expect(first.nextCursor).toBeUndefined();
+      const small = await repository.listAgents({ ...scope,limit: 60 });
+      if (small.nextCursor === undefined || instances[1] === undefined) throw new Error("Missing test cursor or instance");
+      const tail = await repository.listAgents({ ...scope,limit: 60,cursor: small.nextCursor });
+      expect(tail.items.map(item => item.agentId)).toEqual(first.items.slice(60).map(item => item.agentId));
+      expect(tail.nextCursor).toBeUndefined();
+      const old = { ...scope,agentId: instances[1].instanceId,limit: 10 };
+      await expect(repository.conversation(old)).rejects.toMatchObject({ code: "workbench_agent_not_found" });
+      await expect(repository.conversationMessages(old)).rejects.toMatchObject({ code: "workbench_agent_not_found" });
+      const workbenchPage = await repository.listAgents({ workbenchId: scope.workbenchId,limit: 100 });
+      expect(workbenchPage.items).toHaveLength(100);
+      expect(workbenchPage.nextCursor).toBeDefined();
+    } finally { await fixture.close(); }
+  });
+
   it("filters agent cards by goal through their backing dispatch", async () => {
     const fixture = await createRuntimeFixture();
     try {

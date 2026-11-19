@@ -2,12 +2,16 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { AutomationService } from "../../src/main/application/automation/automation-service.js";
+import { composeJoiContinuationBackground } from "../../src/main/application/joi/joi-continuation-prompt.js";
 import { WorkResultService } from "../../src/main/application/work/work-result-service.js";
 import type { StartReasoningTurnInput } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { SqliteAutomationStore } from "../../src/main/infrastructure/persistence/sqlite-automation-store.js";
+import { constants as sqlite } from "node:sqlite";
 import path from "node:path";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture.js";
 
@@ -74,6 +78,28 @@ async function promptFor(fixture: RuntimeFixture, inputId: string, repository = 
 }
 
 describe("Joi continuation context", () => {
+  it("KN-01 starts a scheduled continuation from the established conclusion without reading old result bodies", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { goal, repository, workbench } = await seed(fixture);
+      fixture.database.transaction(db => db.prepare("UPDATE workbench_workspace_bindings SET status = 'READY' WHERE workbench_id = ?").run(workbench.workbenchId));
+      const store = new SqliteAutomationStore(fixture.database);
+      const automation = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
+      const routine = await automation.create({ frequency: { kind: "interval", hours: 1 }, name: "Recheck", prompt: "Scan for changes", target: { goalId: goal.inputId, kind: "GOAL_CONTINUATION" } });
+      fixture.clock.advance(3_600_000);
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" }))
+        .toEqual([expect.objectContaining({ inputId: goal.inputId, routineId: routine.routineId })]);
+      fixture.database.transaction(db => db.setAuthorizer((action, table, column) =>
+        action === sqlite.SQLITE_READ && table === "work_result_bodies" && column === "body" ? sqlite.SQLITE_DENY : sqlite.SQLITE_OK));
+      try {
+        const input = await repository.loadInput(goal.inputId);
+        if (input === null) throw new Error("Missing scheduled input");
+        expect(composeJoiContinuationBackground(input)).toContain(OUTCOME);
+        expect(composeJoiContinuationBackground(input)).not.toContain(ROOT_CAUSE);
+      } finally { fixture.database.transaction(db => db.setAuthorizer(null)); }
+    } finally { await fixture.close(); }
+  });
+
   it("restores the current continuation and its conclusions from a reopened disposable database", async () => {
     const fixture = await createRuntimeFixture();
     try {

@@ -14,13 +14,12 @@ interface HistoricalSource {
 }
 
 const goalSource = `SELECT json_array(o.result_revision,COALESCE(o.requirements_revision,0),o.completed_at) AS version,
-    o.completion_summary AS conclusion,
     o.disposition, substr(m.destination,1,100) AS label, COALESCE(o.requirements_revision,0) AS requirements_revision
   FROM joi_current_goal_outcomes o JOIN joi_harness_maps m ON m.goal_input_id=o.input_id JOIN joi_inbox_messages i ON i.input_id=o.input_id
   WHERE o.input_id=? AND m.workbench_id=? AND m.status='CLEARED' AND m.feedback_recorded_at IS NOT NULL
     AND i.canceled_at IS NULL AND i.dismissed_at IS NULL AND (i.reopened_at IS NULL OR i.reopened_at <= o.completed_at)
     AND o.disposition IN ('COMPLETED','ACCEPTED_WITH_GAPS')`;
-const directSource = `SELECT json_array(c.turn_id,COALESCE(r.revision,0),c.completed_at) AS version, c.completion_summary AS conclusion,
+const directSource = `SELECT json_array(c.turn_id,COALESCE(r.revision,0),c.completed_at) AS version,
     COALESCE(r.revision,0) AS requirements_revision
   FROM joi_turn_completions c JOIN joi_inbox_messages i USING(input_id)
   LEFT JOIN joi_goal_requirements r ON r.goal_input_id=i.input_id
@@ -42,8 +41,15 @@ export function enqueueHistoricalMemory(db: DatabaseSync, input: { workbenchId: 
   if (eligible === undefined) return;
   const version = input.kind === "partner" ? input.subjectId : String(eligible.version);
   const sourceId = `history:${createHash("sha256").update(JSON.stringify([input.workbenchId,input.kind,input.subjectId,version])).digest("hex")}`;
-  db.prepare(`INSERT INTO historical_memory_sources VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING`)
+  const inserted = db.prepare(`INSERT INTO historical_memory_sources VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING`)
     .run(sourceId,input.workbenchId,input.kind,input.subjectId,version,input.now);
+  if (inserted.changes > 0 && input.kind !== "partner") {
+    const source = { source_id: sourceId,workbench_id: input.workbenchId,kind: input.kind,subject_id: input.subjectId,version,created_at: input.now };
+    const facts = captureFacts(db,source,Number(eligible.requirements_revision));
+    const preferences = capturePreferences(db,source,eligible.disposition);
+    db.prepare("INSERT INTO historical_memory_settlements VALUES (?,?,?)")
+      .run(sourceId,JSON.stringify(facts),JSON.stringify(preferences));
+  }
   for (const scope of input.kind === "partner" ? ["partner"] : ["workbench","joi"]) {
     db.prepare(`INSERT INTO outbox (outbox_id,kind,payload_json,status,attempt_count,available_at,created_at)
       VALUES (?,?,?,'PENDING',0,?,?) ON CONFLICT DO NOTHING`)
@@ -60,6 +66,36 @@ function current(db: DatabaseSync, source: HistoricalSource) {
 
 function sourceById(db: DatabaseSync, id: string): HistoricalSource | undefined {
   return db.prepare("SELECT * FROM historical_memory_sources WHERE source_id=?").get(id) as HistoricalSource | undefined;
+}
+
+function conclusionQuery(source: HistoricalSource): string {
+  return source.kind === "direct" ? "SELECT completion_summary AS body FROM joi_turn_completions WHERE input_id=?"
+    : "SELECT completion_summary AS body FROM joi_current_goal_outcomes WHERE input_id=?";
+}
+
+function captureFacts(db: DatabaseSync, source: HistoricalSource, requirementsRevision: number): HistoricalMemoryUpdate["facts"] {
+  const summary = db.prepare(`SELECT CASE WHEN length(body) <= 8000 THEN body
+      ELSE substr(body,1,4000) || char(10) || '[omitted]' || char(10) || substr(body,-3989) END AS conclusion
+    FROM (${conclusionQuery(source)})`).get(source.subject_id);
+  const requirements = db.prepare(`SELECT requirements_json AS summary FROM joi_goal_requirement_snapshots
+    WHERE goal_input_id=? AND revision=?`).get(source.subject_id,requirementsRevision);
+  return { conclusion: String(summary?.conclusion ?? ""),requirements: String(requirements?.summary ?? "") };
+}
+
+function capturePreferences(db: DatabaseSync, source: HistoricalSource, disposition: unknown): HistoricalEntry[] {
+  const original = db.prepare("SELECT body AS text FROM joi_inbox_messages WHERE input_id=? AND workbench_id=?")
+    .get(source.subject_id,source.workbench_id);
+  const preferences = String(original?.text ?? "").split(/\r?\n/u).flatMap((line): HistoricalEntry[] => {
+    const labeled = /^\s*(?:全局偏好|跨工作台偏好|global preference)(?:\[([^\]\n]{1,40})\])?\s*[:：]\s*(.+)\s*$/iu.exec(line);
+    const explicit = /^\s*(?:(?:以后|今后)[，,]?\s*(?:在|对)?所有工作台[，,]?\s*|from now on[, ]+in (?:all|every) workbench(?:es)?[, ]+)\s*(.+)\s*$/iu.exec(line);
+    const preference = labeled?.[2] ?? explicit?.[1];
+    const key = labeled?.[1]?.trim().toLowerCase();
+    return preference === undefined ? [] : [{ section: "preferences",text: preference,source: source.source_id,...(key ? { key } : {}) }];
+  });
+  if (disposition === "ACCEPTED_WITH_GAPS") preferences.push({
+    section: "orchestration",text: "When a user accepts an outcome with gaps, carry the unresolved conditions into any later continuation.",source: source.source_id,
+  });
+  return renderHistoricalContext("joi",preferences).entries;
 }
 
 function readMemory(db: DatabaseSync, scope: HistoricalScope, ownerId: string) {
@@ -91,8 +127,7 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
       if (source?.workbench_id !== workbenchId || source.kind === "partner" || current(db,source) === undefined) return null;
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit <= 0) return null;
       const lookup = part === "input" ? "SELECT body FROM joi_inbox_messages WHERE input_id=?"
-        : source.kind === "direct" ? "SELECT completion_summary AS body FROM joi_turn_completions WHERE input_id=?"
-        : "SELECT completion_summary AS body FROM joi_current_goal_outcomes WHERE input_id=?";
+        : conclusionQuery(source);
       const row = db.prepare(`SELECT substr(body,? + 1,?) AS chunk,length(body) AS total FROM (${lookup})`)
         .get(offset,Math.min(limit,4000),source.subject_id);
       return typeof row?.chunk === "string" && typeof row.total === "number" ? { text: row.chunk,total: row.total } : null;
@@ -112,25 +147,17 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
       if (scope === "partner") return { ...base, facts: { verification: String(row.verification) },
         partner: { revisionId: String(row.partner_revision_id),workId: String(row.work_id),actionId: String(row.action_id),
           ...(typeof row.instance_id === "string" ? { instanceId: row.instance_id } : {}) } };
+      const settlement = db.prepare("SELECT facts_json,preferences_json FROM historical_memory_settlements WHERE source_id=?").get(sourceId);
       if (scope === "joi") {
-        const original = db.prepare(`SELECT body AS text FROM joi_inbox_messages WHERE input_id=? AND workbench_id=?`)
-          .get(source.subject_id,source.workbench_id);
-        const explicitPreferences = String(original?.text ?? "").split(/\r?\n/u).flatMap(line => {
-          const labeled = /^\s*(?:全局偏好|跨工作台偏好|global preference)(?:\[([^\]\n]{1,40})\])?\s*[:：]\s*(.+)\s*$/iu.exec(line);
-          const explicit = /^\s*(?:(?:以后|今后)[，,]?\s*(?:在|对)?所有工作台[，,]?\s*|from now on[, ]+in (?:all|every) workbench(?:es)?[, ]+)\s*(.+)\s*$/iu.exec(line);
-          const preference = labeled?.[2] ?? explicit?.[1];
-          const key = labeled?.[1]?.trim().toLowerCase();
-          return preference === undefined ? [] : [{ section: "preferences" as const,text: preference,source: sourceId,...(key ? { key } : {}) }];
-        });
-        const lesson: HistoricalEntry[] = row.disposition === "ACCEPTED_WITH_GAPS"
-          ? [{ section: "orchestration",text: "When a user accepts an outcome with gaps, carry the unresolved conditions into any later continuation.",source: sourceId }] : [];
-        return { ...base, facts: {}, explicitPreferences: [...explicitPreferences,...lesson] };
+        const explicitPreferences = settlement === undefined ? capturePreferences(db,source,row.disposition)
+          : JSON.parse(String(settlement.preferences_json)) as HistoricalEntry[];
+        return { ...base,facts: {},explicitPreferences };
       }
-      const requirements = db.prepare(`SELECT requirements_json AS summary FROM joi_goal_requirement_snapshots
-        WHERE goal_input_id=? AND revision=?`).get(source.subject_id,Number(row.requirements_revision));
+      const facts = settlement === undefined ? captureFacts(db,source,Number(row.requirements_revision))
+        : JSON.parse(String(settlement.facts_json)) as HistoricalMemoryUpdate["facts"];
       const label = typeof row.label === "string" && row.label.trim() !== "" ? ` · ${row.label}` : "";
       const index = { section: "sources" as const,text: `${source.created_at.slice(0,10)} · Input and conclusion for ${row.disposition === "ACCEPTED_WITH_GAPS" ? "goal accepted with gaps" : "completed goal"}${label}`,source: sourceId };
-      return { ...base, facts: { conclusion: String(row.conclusion),requirements: String(requirements?.summary ?? "") }, index };
+      return { ...base,facts,index };
     });
   }
 

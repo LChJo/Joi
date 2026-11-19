@@ -9,6 +9,7 @@ import { DomainError } from "../../domain/errors.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
+const ROUTINE_RUN_HISTORY_LIMIT = 200;
 
 const text = (row: Row, key: string): string => {
   const value = row[key];
@@ -458,7 +459,7 @@ function mapRecord(connection: DatabaseSync, row: Row): AutomationRecord {
     FROM joi_automation_runs r LEFT JOIN joi_inbox_messages i ON i.input_id = r.input_id
     LEFT JOIN joi_turns t ON t.input_id = r.input_id AND t.turn_id = (SELECT turn_id FROM joi_turns WHERE input_id = r.input_id ORDER BY created_at DESC LIMIT 1)
     LEFT JOIN joi_turn_completions c ON c.input_id = r.input_id
-    WHERE r.routine_id = ? ORDER BY r.occurrence_at DESC LIMIT 100`).all(routine.routineId) as Row[]).map((run) => mapRun(run));
+     WHERE r.routine_id = ? ORDER BY r.occurrence_at DESC LIMIT ?`).all(routine.routineId, ROUTINE_RUN_HISTORY_LIMIT) as Row[]).map((run) => mapRun(run));
   const nextRunAt = optionalText(row, "next_run_at");
   return { ...routine, ...(createIdempotencyKey === undefined ? {} : { createIdempotencyKey }), ...(nextRunAt === undefined ? {} : { nextRunAt }), runs };
 }
@@ -513,6 +514,7 @@ function mapRun(row: Row): AutomationRunRecord {
   else if (inbox === "CLARIFICATION_REQUIRED") { status = "BLOCKED"; result = "BLOCKED"; }
   return {
     ...(completedThisRun && typeof row.completion_at === "string" ? { completedAt: row.completion_at } : {}),
+    ...(typeof row.execution_sequence === "number" ? { executionSequence: row.execution_sequence } : {}),
     ...(typeof row.input_id === "string" ? { inputId: row.input_id } : {}),
     occurrenceAt: text(row, "occurrence_at"),
     ...(typeof row.queued_at === "string" ? { queuedAt: row.queued_at } : {}),

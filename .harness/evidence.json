@@ -172,15 +172,15 @@
     {
       "id": "67786627-f77c-4800-9ac6-386b484e5f5d",
       "kind": "source-code",
-      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions.",
+      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions. The shared goal Agent card limit governs both the server projection and renderer request.",
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "fa3b24e6ef95cdd90a0b3a4636948be575fbdab93f4bb2c4d5bb028f11784337",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "hash": "e4b547800bc7f4334fbbe668dff8aa04198087512e04e7a1927bc22f78bbd334",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 780
+        "endLine": 784
       }
     },
     {
@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "09e1849ec7c4b279cb07365fc611f5cb6beddcec2d2af997591dd8415309ced5",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "5f276c53a6f1e2fc98cb1b00aae5b928538121300fc6b5ceaf9622f699ae183e",
+      "observedAt": "2026-11-19T16:14:53.420Z",
       "range": {
         "startLine": 1,
         "endLine": 758
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages.",
-      "hash": "dc322ee192fece996ba8874927407b84d74f3885c3001847f18a723cff338286",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards.",
+      "hash": "9ea741131d555310419f7f998cc75e706fe00c45fb142161277f12d927a911b9",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 1844
+        "endLine": 1843
       }
     },
     {
@@ -1631,7 +1631,7 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers.",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer.",
       "hash": "f064b35c5e9aa2d38229531c95d2cc301f7c062ddc15a050ac8d4b336a1cd811",
       "observedAt": "2026-11-19T13:53:57.645Z",
       "range": {
@@ -2034,15 +2034,15 @@
     {
       "id": "19c76272-7569-42d8-b53e-756b6d33cf7e",
       "kind": "source-code",
-      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status. A scoped message read checks the visible session and goal membership, then pages normalized entries by sequence using indexed run lookups. The full read preserves agent projection and the same cursor. The list sorts by stable creation time and Agent ID, binds new keyset cursors to their scope, and accepts legacy offset cursors. Goal lists select a scoped page of backing sessions before joining run status and evidence.",
+      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status. A scoped message read checks the visible session and goal membership, then pages normalized entries by sequence using indexed run lookups. The full read preserves agent projection and the same cursor. Workbench lists order by creation time and Agent ID, while goal lists order their bounded window by goal activity and Agent ID. Keyset cursors bind their scope and legacy offset cursors remain readable. Goal lists select a scoped page of backing sessions before joining run status and evidence. Goal list and transcript reads share the 100-agent activity window. Card enrichment runs only after selecting that window.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-workbench-agent-repository.ts"
       },
-      "hash": "62d844c9e2cebe530935bf9df9a20c8f39bd7f84bb29feaa8921eaff300f34b9",
-      "observedAt": "2026-11-19T13:57:11.848Z",
+      "hash": "e957798c92069ee4ca62a581f69c604ec584a7d526b15cbe2f7714fbbf791edc",
+      "observedAt": "2026-11-19T16:14:53.420Z",
       "range": {
         "startLine": 1,
-        "endLine": 433
+        "endLine": 482
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback.",
+      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "3d98662ce1e6b0db96e6baaf5ee0953c1fb426da284d7553c5fbf5fe9177d4a0",
-      "observedAt": "2026-11-19T06:09:21.825Z",
+      "hash": "22c48d3d4764d4c9bbd8d77a0702fd612c004b99ab0feb1c4f04687bf28f272e",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 2215
+        "endLine": 2238
       }
     },
     {
@@ -2720,15 +2720,15 @@
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion. Goal questions preserve FIFO and exact action/run ownership, import legacy gate identities, defer or supersede ordinary questions behind independent choices, and persist active gate projection with enqueue. Saved answers reconcile with explicit source provenance, resolve each Work action and create one aggregate recovery review only after the queue empties. Resume revalidates current queue, goal and gate; cancellation never revives questions. Canceling Work retires its cards, including saved answers awaiting projection. The remaining queue advances or schedules an explicit recovery review with withdrawal provenance. Exclusive writer startup recovery imports pending legacy goal questions before serve. The coverage preflight and transactional completion use the same scoped evidence rules.",
+      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion. Goal questions preserve FIFO and exact action/run ownership, import legacy gate identities, defer or supersede ordinary questions behind independent choices, and persist active gate projection with enqueue. Saved answers reconcile with explicit source provenance, resolve each Work action and create one aggregate recovery review only after the queue empties. Resume revalidates current queue, goal and gate; cancellation never revives questions. Canceling Work retires its cards, including saved answers awaiting projection. The remaining queue advances or schedules an explicit recovery review with withdrawal provenance. Exclusive writer startup recovery imports pending legacy goal questions before serve. The coverage preflight and transactional completion use the same scoped evidence rules. Scheduled continuation startup reads settled summaries without loading older Work bodies. First Turn admission assigns a durable Routine run sequence reused by retries.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "4f3a3b54a1104589991f8b699122987a67bf4d40b23aa9b39537d21d7195732f",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "60c5319c2b3d9a07a18c1854d812761ed22348f4a76093a025fb1c6729f39df8",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 1811
+        "endLine": 1828
       }
     },
     {
@@ -3283,12 +3283,12 @@
       "location": {
         "path": "resources/migrations/README.md"
       },
-      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions.",
-      "hash": "e507274c3d2771833d31b692c4ca230226e4d3565c0ec91ca8333dc801a8ba67",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions. Migrations 110 and 111 add Routine execution numbering and bounded settlement facts.",
+      "hash": "70e4b0678b15cba418f6ca42b49e3cd13416b20251d0202dc9fc8d533768ebad",
+      "observedAt": "2026-11-19T16:14:53.420Z",
       "range": {
         "startLine": 1,
-        "endLine": 108
+        "endLine": 112
       }
     },
     {
@@ -3675,12 +3675,12 @@
       "location": {
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
-      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations.",
-      "hash": "ac85c9a81354c82d2d166618d0c4cb45dadc5c9b458a1b3f28ac1f34cd7c5945",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations. The latest migrations add durable Routine sequences and historical settlement snapshots while preserving pre-existing recovery and memory facts.",
+      "hash": "2e4fd43a167482b8b3f263e03894ca1a923092305ccd891a34f1a25cc05a0012",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 1010
+        "endLine": 1045
       }
     },
     {
@@ -3924,15 +3924,15 @@
     {
       "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
       "kind": "source-code",
-      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order.",
+      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order. New Joi and Workbench settlement sources snapshot bounded facts in the existing origin transaction. Background extraction uses these facts and checks only origin eligibility metadata before accessing the snapshot.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
       },
-      "hash": "74916e2213988b3dc67bfc5b3aec89685587a48c0a7dc285bdc072ede986c4c6",
-      "observedAt": "2026-11-19T02:28:56.937Z",
+      "hash": "708657f72e9bcf0000dde52d394516792d4daa2f093e04e0d38599dc06f1f9b0",
+      "observedAt": "2026-11-19T16:11:58.366Z",
       "range": {
         "startLine": 1,
-        "endLine": 183
+        "endLine": 210
       }
     },
     {
@@ -4246,8 +4246,8 @@
       "location": {
         "path": "src/renderer/useWorkbenchAgentPage.ts"
       },
-      "hash": "ffcab0ac0e0fb42ff9de1998859ac67e0b2cb41921af78183c8825094e11e2bd",
-      "observedAt": "2026-11-19T13:53:57.645Z"
+      "hash": "a7046149608995d4d563c7a1ee0ef6f414b54d369b85ce5125c0a015fb3112d9",
+      "observedAt": "2026-11-19T16:11:58.366Z"
     },
     {
       "id": "84fb4077-4a9e-444a-8c06-146bdeaff8c4",
@@ -4272,22 +4272,52 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, full paging across 1,001 goal Agents and paths with 50,000 newer historical Agents, and list and health P95 gates.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "e05d9d1d1699e5c0fdd495a4b40fe1e7fb69cc3df7e99539d9dbe4319be8d023",
-      "observedAt": "2026-11-19T13:53:57.645Z"
+      "hash": "e26747d2e68a2fe1ba5e25a8003408084a86fa7c8406f9fcde521d830f91efea",
+      "observedAt": "2026-11-19T16:14:53.420Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",
       "kind": "document",
-      "claim": "The desktop uses a single runtime writer and a separate WAL snapshot reader for home, details, results and Agent cards; indexed paging and retry limits protect large goal reads.",
+      "claim": "The desktop uses a single runtime writer and a separate WAL snapshot reader for home, details, results and Agent cards; indexed paging and retry limits protect large goal reads. Goal cursors follow activity within a 100-agent window.",
       "location": {
         "path": "docs/adr/0029-desktop-runtime-workers.md"
       },
-      "hash": "e0a877a0ecbebbb6dccf554df85230adc01adc2717c27b538a07f3ebec0a3d40",
-      "observedAt": "2026-11-19T13:57:11.849Z"
+      "hash": "be6cc74aec86e69d164b456edd755df922838eea7695e79530ec0987756f9000",
+      "observedAt": "2026-11-19T16:14:53.420Z"
+    },
+    {
+      "id": "ba13f9c0-d707-4677-a257-b017e40ecf7a",
+      "kind": "document",
+      "claim": "The staged rollout separates incremental knowledge, recent goal Agent cards and Routine execution retention. The first stage records bounded settlements, numbered admissions and the goal Agent window.",
+      "location": {
+        "path": "docs/joi-incremental-knowledge-retention-spec.md"
+      },
+      "hash": "d21352ae1f0bcf3cf4387137dea34a7b65e542114f095670b3183fba5dd0dcc7",
+      "observedAt": "2026-11-19T16:11:58.366Z"
+    },
+    {
+      "id": "807de0eb-9ac2-4214-8f8f-26dc920f04b1",
+      "kind": "source-code",
+      "claim": "Routine run admission persists a stable sequence and links participating Joi Turns to that run.",
+      "location": {
+        "path": "resources/migrations/110_routine_execution_sequence.sql"
+      },
+      "hash": "23f20d4c912283cd8c335d10b372fc5f302998f718a26f6bc7853f2567ed0cfd",
+      "observedAt": "2026-11-19T16:11:58.366Z"
+    },
+    {
+      "id": "3a9d9782-2a34-4760-b716-abe2ffef9ea8",
+      "kind": "source-code",
+      "claim": "A versioned historical source owns one bounded settlement projection, stored independently of discussion text.",
+      "location": {
+        "path": "resources/migrations/111_historical_memory_settlements.sql"
+      },
+      "hash": "f402dd43e274d8c377683b8311375a5e7eb40a60b271dce74d8f700ea5be1d59",
+      "observedAt": "2026-11-19T16:11:58.366Z"
     }
   ]
 }

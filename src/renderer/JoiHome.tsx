@@ -1370,9 +1370,8 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   const agentPage = useWorkbenchAgentPage(api, {
     workbenchId: goal.workbench.workbenchId, goalId: goal.goalId,
     enabled: !showHistory && goal.workbench.workbenchId !== "", goalActive: !TERMINAL_GOAL_STATUSES.includes(goal.status),
-    onPage: items => setSelectedAgent(current => current === undefined
-      ? items.find(agent => agent.status === initialAgentStatus) ?? items[0]
-      : items.find(agent => agent.agentId === current.agentId) ?? current),
+    onPage: items => setSelectedAgent(current => items.find(agent => agent.agentId === current?.agentId)
+      ?? items.find(agent => agent.status === initialAgentStatus) ?? items[0]),
   });
   const agents = agentPage.items;
   useEffect(() => {

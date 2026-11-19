@@ -2,11 +2,12 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JoiGoalContext } from "../../application/ports/joi-coordinator.js";
 import { loadCompletedGoalEvidence } from "./sqlite-workbench-context-repository.js";
 
-export function loadJoiGoalContext(connection: DatabaseSync, goalInputId: string, workbenchId: string): JoiGoalContext | undefined {
+export function loadJoiGoalContext(connection: DatabaseSync, goalInputId: string, workbenchId: string, resultContext: "with-bodies" | "settled-summary" = "with-bodies"): JoiGoalContext | undefined {
   const goal = connection.prepare("SELECT body FROM joi_inbox_messages WHERE input_id = ? AND workbench_id = ?")
     .get(goalInputId, workbenchId);
   if (typeof goal?.body !== "string") return undefined;
-  const { results, totalResults } = loadCompletedGoalEvidence(connection, { goalInputId, workbenchId, preserveConclusion: true, maxResults: 24 });
+  const { results, totalResults } = resultContext === "settled-summary" ? { results: [] }
+    : loadCompletedGoalEvidence(connection, { goalInputId, workbenchId, preserveConclusion: true, maxResults: 24 });
   const outcome = connection.prepare(`SELECT completion_summary AS summary, disposition FROM joi_goal_outcomes
     WHERE input_id = ? ORDER BY result_revision DESC LIMIT 1`).get(goalInputId) as JoiGoalContext["completion"] | undefined;
   const direct = outcome === undefined ? connection.prepare(`SELECT completion_summary AS summary, outcome_kind AS disposition
@@ -25,7 +26,7 @@ export function loadJoiGoalContext(connection: DatabaseSync, goalInputId: string
     ...(completion === undefined ? {} : { completion }),
     decisions: decisions.reverse(),
     fogNotes: fog.map((row) => String(row.note)),
-    totalResults,
+    ...(totalResults === undefined ? {} : { totalResults }),
     results,
   };
 }

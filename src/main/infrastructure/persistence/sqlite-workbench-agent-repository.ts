@@ -6,6 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
 import type { AgentConversationEntryDto, AgentConversationMessagesDto, AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
+import { GOAL_RECENT_AGENT_LIMIT } from "../../../shared/joi.js";
 import type { WorkbenchAgentConversationQuery, WorkbenchAgentListQuery, WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
@@ -151,6 +152,7 @@ function historyBoundary(cursor: string | undefined): [number, string] | undefin
 function cardSelect(goalScoped: boolean, paged = false): string {
   return `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
+  ${paged ? "s.activity_at," : ""}
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
   pr.updated_at AS run_updated_at,
   (SELECT e.phase FROM dispatch_attempts ea CROSS JOIN local_work_execution e ON ea.dispatch_attempt_id = e.dispatch_attempt_id
@@ -194,42 +196,56 @@ function cardSelect(goalScoped: boolean, paged = false): string {
   LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id`;
 }
 
-const goalMembership = ` AND EXISTS (
-    SELECT 1 FROM dispatch_attempts da JOIN work_items dw ON dw.work_id = da.work_id
-      WHERE s.backing_kind = 'LOCAL_INSTANCE' AND da.instance_id = s.backing_id AND dw.input_id = ?
-    UNION ALL
-    SELECT 1 FROM partner_runs pr JOIN work_items pw ON pw.work_id = pr.work_id
-      WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`;
-
-// Select the goal's session IDs and page boundary before projecting run statuses or result evidence.
-const goalAgentBackings = `SELECT 'LOCAL_INSTANCE', da.instance_id FROM work_items w
-  CROSS JOIN dispatch_attempts da ON da.work_id = w.work_id
-  WHERE w.input_id = ? AND da.instance_id IS NOT NULL
-  UNION SELECT 'A2A_RUN', pr.run_id FROM work_items w
-  CROSS JOIN partner_runs pr ON pr.work_id = w.work_id WHERE w.input_id = ?`;
+function recentGoalAgents(connection: DatabaseSync, workbenchId: string, goalId: string): { agentId: string; activityAt: string }[] {
+  const rows = connection.prepare(`
+    WITH activity(backing_kind, backing_id, updated_at) AS (
+      SELECT 'LOCAL_INSTANCE', a.instance_id, MAX(a.updated_at, COALESCE(r.updated_at, a.updated_at))
+        FROM work_items w CROSS JOIN dispatch_attempts a ON a.work_id = w.work_id
+        LEFT JOIN partner_runs r ON r.dispatch_attempt_id = a.dispatch_attempt_id
+        WHERE w.input_id = :goalId AND w.workbench_id = :workbenchId AND a.instance_id IS NOT NULL
+      UNION ALL
+      SELECT 'A2A_RUN', r.run_id, r.updated_at
+        FROM work_items w CROSS JOIN partner_runs r ON r.work_id = w.work_id
+        WHERE w.input_id = :goalId AND w.workbench_id = :workbenchId
+    )
+    SELECT s.agent_id, MAX(a.updated_at) AS activity_at FROM activity a JOIN workbench_agent_sessions s
+      ON s.backing_kind = a.backing_kind AND s.backing_id = a.backing_id
+    JOIN partner_revisions p ON p.partner_revision_id = s.partner_revision_id
+    WHERE s.workbench_id = :workbenchId AND s.dismissed_at IS NULL
+    GROUP BY s.agent_id ORDER BY activity_at DESC, s.agent_id DESC LIMIT :limit`)
+    .all({ goalId, workbenchId, limit: GOAL_RECENT_AGENT_LIMIT });
+  return rows.map(row => ({ agentId: required(row, "agent_id"), activityAt: required(row, "activity_at") }));
+}
 
 function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, options: AgentPagePosition & { agentId?: string; goalId?: string } = {}): Row[] {
   const { agentId, goalId, before, offset = 0 } = options;
-  const boundary = before === undefined ? "" : " AND (s.created_at, s.agent_id) < (?, ?)";
-  const visible = "s.workbench_id = ? AND s.dismissed_at IS NULL";
-  const order = "ORDER BY s.created_at DESC, s.agent_id DESC";
-  const pagination = [ ...(before ?? []), limit, offset ];
-  const rows = goalId !== undefined && agentId === undefined
-    ? connection.prepare(`WITH backings(kind,id) AS (${goalAgentBackings}), agent_page AS MATERIALIZED (
-        SELECT s.* FROM backings b CROSS JOIN workbench_agent_sessions s ON s.backing_kind=b.kind AND s.backing_id=b.id
-        WHERE ${visible}${boundary} ${order} LIMIT ? OFFSET ?
-      ) ${cardSelect(true, true)} ${order}`).all(goalId, goalId, workbenchId, ...pagination, goalId)
-    : connection.prepare(`${cardSelect(goalId !== undefined)} WHERE ${visible}${agentId === undefined ? "" : " AND s.agent_id = ?"}
-      ${goalId === undefined ? "" : goalMembership}${boundary} ${order} LIMIT ? OFFSET ?`).all(
-      ...(goalId === undefined ? [] : [goalId]), workbenchId, ...(agentId === undefined ? [] : [agentId]),
-      ...(goalId === undefined ? [] : [goalId, goalId]), ...pagination,
-    );
+  const rows = goalId === undefined
+    ? connection.prepare(`${cardSelect(false)}
+      WHERE s.workbench_id = ? AND s.dismissed_at IS NULL
+        ${agentId === undefined ? "" : "AND s.agent_id = ?"}
+        ${before === undefined ? "" : "AND (s.created_at, s.agent_id) < (?, ?)"}
+      ORDER BY s.created_at DESC, s.agent_id DESC LIMIT ? OFFSET ?`)
+      .all(workbenchId, ...(agentId === undefined ? [] : [agentId]), ...(before ?? []), limit, offset)
+    : readGoalCardRows(connection, workbenchId, goalId, limit, offset, agentId, before);
   return rows.map((row) => ({
     ...row,
     last_activity_at: typeof row.last_used_at === "string" ? row.last_used_at
       : typeof row.execution_updated_at === "string" ? row.execution_updated_at
         : typeof row.run_updated_at === "string" ? row.run_updated_at : row.created_at,
   }));
+}
+
+function readGoalCardRows(connection: DatabaseSync, workbenchId: string, goalId: string, limit: number, offset: number, agentId?: string, before?: [string, string]): Row[] {
+  const page = recentGoalAgents(connection, workbenchId, goalId)
+    .filter(agent => (agentId === undefined || agent.agentId === agentId) &&
+      (before === undefined || agent.activityAt < before[0] || (agent.activityAt === before[0] && agent.agentId < before[1])))
+    .slice(offset, offset + limit);
+  if (page.length === 0) return [];
+  return connection.prepare(`WITH agent_page AS MATERIALIZED (
+      SELECT s.*, selected.key AS page_order, json_extract(selected.value, '$.activityAt') AS activity_at
+      FROM json_each(?) selected
+      CROSS JOIN workbench_agent_sessions s ON s.agent_id = json_extract(selected.value, '$.agentId')
+    ) ${cardSelect(true, true)} ORDER BY s.page_order`).all(JSON.stringify(page), goalId);
 }
 
 function conversationWindow({ limit, cursor, latest }: WorkbenchAgentConversationQuery) {
@@ -283,7 +299,10 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
     const items = rows.slice(0, limit).map(mapCard);
     const last = items.at(-1);
     if (rows.length <= limit || last === undefined) return { items };
-    const nextCursor = Buffer.from(JSON.stringify([input.workbenchId, input.goalId ?? null, last.createdAt, last.agentId])).toString("base64url");
+    const activityAt = rows[limit - 1]?.activity_at;
+    const nextCursor = Buffer.from(JSON.stringify([
+      input.workbenchId, input.goalId ?? null, typeof activityAt === "string" ? activityAt : last.createdAt, last.agentId,
+    ])).toString("base64url");
     return { items, nextCursor };
   }
 
@@ -384,13 +403,13 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
 
   async conversationMessages(input: WorkbenchAgentConversationQuery): Promise<AgentConversationMessagesDto> {
     const window = conversationWindow(input);
-    const scope = input.goalId === undefined ? [] : [input.goalId, input.goalId];
     return this.database.transaction((connection) => {
-      const visible = connection.prepare(`SELECT 1 FROM workbench_agent_sessions s
+      const { agentId, goalId, workbenchId } = input;
+      const visible = goalId !== undefined ? recentGoalAgents(connection, workbenchId, goalId).some(agent => agent.agentId === agentId)
+        : connection.prepare(`SELECT 1 FROM workbench_agent_sessions s
         JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
-        WHERE s.workbench_id = ? AND s.agent_id = ? AND s.dismissed_at IS NULL${scope.length === 0 ? "" : goalMembership}`)
-        .get(input.workbenchId, input.agentId, ...scope);
-      if (visible === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
+         WHERE s.workbench_id = ? AND s.agent_id = ? AND s.dismissed_at IS NULL`).get(workbenchId, agentId) !== undefined;
+      if (!visible) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
       return readConversationMessages(connection, input, window);
     });
   }

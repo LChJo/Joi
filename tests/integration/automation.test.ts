@@ -22,6 +22,64 @@ function insertGoal(fixture: Awaited<ReturnType<typeof createRuntimeFixture>>, i
 }
 
 describe("Routine persistence", () => {
+  it("KN-04 projects the 200 newest Routine run records", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "Run history", personaSummary: "summary", projectLabel: "project", scopeSummary: "scope" });
+      const store = new SqliteAutomationStore(fixture.database);
+      const service = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
+      const routine = await service.create({ frequency: { kind: "interval", hours: 1 },name: "Scan history",prompt: "Scan",workbenchId: workbench.workbenchId });
+      fixture.database.transaction(db => {
+        const insert = db.prepare(`INSERT INTO joi_automation_runs
+          (run_id,routine_id,occurrence_at,idempotency_key,triggered_at,queued_at,completed_at,status,result,execution_sequence)
+          VALUES (?,?,?,?,?,?,?,'COMPLETED','COMPLETED',?)`);
+        for (let sequence = 1; sequence <= 201; sequence += 1) {
+          const timestamp = new Date(fixture.clock.now().getTime() + sequence * 1000).toISOString();
+          const id = `history-run-${String(sequence)}`;
+          insert.run(id,routine.routineId,timestamp,id,timestamp,timestamp,timestamp,sequence);
+        }
+      });
+      const loaded = await store.get(routine.routineId);
+      expect(loaded?.runs.map(run => run.executionSequence)).toEqual(Array.from({ length: 200 }, (_, index) => 201 - index));
+    } finally { await fixture.close(); }
+  });
+
+  it("KN-04 sequences admitted executions per Routine and reuses the number on retry", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "Run order", personaSummary: "summary", projectLabel: "project", scopeSummary: "scope" });
+      const store = new SqliteAutomationStore(fixture.database);
+      const inbox = new SqliteJoiInboxRepository(fixture.database,fixture.clock);
+      const service = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
+      const create = (name: string) => service.create({ frequency: { kind: "interval", hours: 1 },name,prompt: "Scan",workbenchId: workbench.workbenchId });
+      const first = await create("First");
+      const second = await create("Second");
+      const now = () => fixture.clock.now().toISOString();
+      const queue = (routineId: string,inputId: string) => store.runNow({ routineId,inputId,idempotencyKey: inputId,now: now() });
+      const start = (inputId: string,turnId: string) => inbox.createTurn({ workbenchId: workbench.workbenchId,inputId,turnId,
+        sessionId: `session-${turnId}`,createdAt: now() });
+      const sequence = async (routineId: string,inputId: string) =>
+        (await store.get(routineId))?.runs.find(run => run.inputId === inputId)?.executionSequence;
+
+      await queue(first.routineId,"first-run");
+      await queue(second.routineId,"second-run");
+      expect(await sequence(first.routineId,"first-run")).toBeUndefined();
+      expect(await sequence(second.routineId,"second-run")).toBeUndefined();
+      await start("first-run","first-attempt");
+      expect(await sequence(first.routineId,"first-run")).toBe(1);
+      await inbox.failTurn("first-run","first-attempt",{ reasonCode: "model_source_unavailable",replaySafe: true });
+      await start("first-run","second-attempt");
+      expect(await sequence(first.routineId,"first-run")).toBe(1);
+      await inbox.completeInput("first-run","second-attempt",{ outcome: "DIRECT_ANSWER",completionSummary: "Scan completed" });
+      fixture.clock.advance(1000);
+      await queue(first.routineId,"later-run");
+      await start("later-run","later-attempt");
+      await start("second-run","other-attempt");
+      expect(await sequence(first.routineId,"later-run")).toBe(2);
+      expect(await sequence(second.routineId,"second-run")).toBe(1);
+    } finally { await fixture.close(); }
+  });
+
   // AC-63: recovery checks must not manufacture new occurrence/run facts.
   it.each(["active", "canceled", "workspace"] as const)("does not write on unchanged %s continuation ticks, but merges new occurrences", async (state) => {
     const fixture = await createRuntimeFixture();

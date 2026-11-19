@@ -220,6 +220,7 @@ function normalizeTarget(value: AutomationTarget | undefined): RoutineTarget {
 function toRunDto(run: AutomationRecord["runs"][number]): AutomationRunDto {
   return {
     ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
+    ...(run.executionSequence === undefined ? {} : { executionSequence: run.executionSequence }),
     ...(run.inputId === undefined ? {} : { inputId: run.inputId }),
     occurrenceAt: run.occurrenceAt,
     ...(run.queuedAt === undefined ? {} : { queuedAt: run.queuedAt }),

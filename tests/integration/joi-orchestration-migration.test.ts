@@ -10,7 +10,7 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
-import { enqueueHistoricalMemory, SqliteHistoricalMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-historical-memory-store.js";
+import { SqliteHistoricalMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-historical-memory-store.js";
 import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -98,6 +98,7 @@ describe("JOI-01 non-destructive migration", () => {
           expect(db.prepare("SELECT filename FROM schema_migrations WHERE version >= 104 ORDER BY version").all().map(row => row.filename)).toEqual([
             "104_historical_memory.sql","105_historical_preference_order.sql","106_goal_evidence_reads.sql",
             "107_user_questions.sql","108_question_recovery_lifecycle.sql","109_large_goal_reads.sql",
+            "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });
@@ -131,8 +132,10 @@ describe("JOI-01 non-destructive migration", () => {
               VALUES (?,?,'wb','session','COMPLETED',?,?)`).run(id,id,at,at);
             db.prepare(`INSERT INTO joi_turn_completions(input_id,turn_id,outcome_kind,completion_summary,completed_at,updated_at)
               VALUES (?,?,'DIRECT_ANSWER',?,?,?)`).run(id,id,text,at,at);
-            enqueueHistoricalMemory(db,{ kind: "direct",subjectId: id,workbenchId: "wb",now: at });
-            return String(db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").get(id)?.source_id);
+            const sourceId = `historical-${id}`;
+            db.prepare(`INSERT INTO historical_memory_sources VALUES (?,'wb','direct',?,?,?)`)
+              .run(sourceId,id,JSON.stringify([id,0,at]),at);
+            return sourceId;
           };
           const oldest = addSource("old","2026-11-01","detailed");
           const latest = addSource("new","2026-11-02","concise");

@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { WorkbenchAgentCardDto } from "../shared/joi.js";
+import { GOAL_RECENT_AGENT_LIMIT, type WorkbenchAgentCardDto } from "../shared/joi.js";
 import type { DigitalLifeApi } from "./api.js";
 
 const ACTIVE_REFRESH_MS = 1_500;
@@ -67,14 +67,16 @@ export function useWorkbenchAgentPage(api: DigitalLifeApi, options: {
       const previous = activeRead.current;
       const read = previous?.api === api && previous.scope === scope && previous.cursor === cursor ? previous : {
         api, scope, cursor, promise: api.listWorkbenchAgents(id, {
-          limit: 100, ...(cursor === undefined ? {} : { cursor }), ...(goalId === undefined ? {} : { goalId }),
+          limit: goalId === undefined ? 100 : GOAL_RECENT_AGENT_LIMIT,
+          ...(cursor === undefined ? {} : { cursor }), ...(goalId === undefined ? {} : { goalId }),
         }),
       };
       activeRead.current = read;
       try {
-        const page = await read.promise;
+        const received = await read.promise;
         if (isStopped()) return;
-        if (!Array.isArray(page.items)) throw new Error("workbench_agent_page_invalid");
+        if (!Array.isArray(received.items)) throw new Error("workbench_agent_page_invalid");
+        const page = goalId === undefined ? received : { items: received.items.slice(0, GOAL_RECENT_AGENT_LIMIT) };
         current = { scope, history, page };
         lastPage.current = current;
         setSnapshot(current);

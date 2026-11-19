@@ -825,7 +825,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       : undefined;
     const goalContext = !isSynthesis && reviewRevision === undefined && typeof row.workbench_id === "string"
       ? this.database.transaction((connection) => loadJoiGoalContext(connection,
-        typeof row.goal_input_id === "string" ? row.goal_input_id : inputId, row.workbench_id as string))
+        goalId, row.workbench_id as string, typeof row.automation_routine_id === "string" ? "settled-summary" : "with-bodies"))
       : undefined;
     const executionPrompt = typeof row.automation_routine_id !== "string" ? undefined : this.database.transaction(db => {
       const source = db.prepare(`SELECT body FROM joi_goal_requirement_sources WHERE goal_input_id = ? AND kind = 'ROUTINE'
@@ -1068,11 +1068,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     turnId: string;
   }): Promise<void> {
     this.database.transaction((connection) => {
+      const automationRunId = admitAutomationRun(connection, input.inputId, input.workbenchId);
       connection.prepare(`INSERT INTO joi_turns
-        (turn_id, input_id, workbench_id, session_id, source_revision_id, model_revision_id, requirements_revision, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?)`).run(
+        (turn_id, input_id, workbench_id, session_id, source_revision_id, model_revision_id, requirements_revision, status, created_at, updated_at, automation_run_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?)`).run(
         input.turnId, input.inputId, input.workbenchId, input.sessionId, input.sourceRevisionId ?? null,
-        input.modelRevisionId ?? null, input.requirementsRevision ?? null, input.createdAt, input.createdAt,
+        input.modelRevisionId ?? null, input.requirementsRevision ?? null, input.createdAt, input.createdAt, automationRunId,
       );
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ?, updated_at = ?,
         session_generation=MAX(session_generation,?) WHERE input_id = ? AND status <> 'CONSUMED'`)
@@ -1536,6 +1537,22 @@ function finishAutomationRun(
     result, result, completedAt, reasonCode ?? null, inputId,
   );
   connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
+}
+
+function admitAutomationRun(connection: DatabaseSync, inputId: string, workbenchId: string): string | null {
+  const run = connection.prepare(`SELECT r.run_id, r.routine_id, r.execution_sequence
+    FROM joi_inbox_messages i JOIN joi_automation_runs r ON r.input_id = i.input_id AND r.routine_id = i.automation_routine_id
+    WHERE i.input_id = ? AND i.workbench_id = ? AND r.queued_at IS NOT NULL AND r.status IN ('PENDING','RUNNING','BLOCKED')
+    ORDER BY r.queued_at DESC, r.run_id DESC LIMIT 1`).get(inputId, workbenchId);
+  if (run === undefined) return null;
+  const runId = String(run.run_id);
+  if (run.execution_sequence === null) {
+    const ordinal = connection.prepare(`UPDATE joi_automations SET last_execution_sequence = last_execution_sequence + 1
+      WHERE routine_id = ? RETURNING last_execution_sequence`).get(String(run.routine_id))?.last_execution_sequence;
+    if (typeof ordinal !== "number") throw new Error("automation_sequence_unavailable");
+    connection.prepare("UPDATE joi_automation_runs SET execution_sequence = ? WHERE run_id = ?").run(ordinal, runId);
+  }
+  return runId;
 }
 
 function defaultGoalAnswerNotice(source: UserQuestionAnswer["source"]): string | undefined {

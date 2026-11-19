@@ -1,3 +1,4 @@
+import { constants as sqlite } from "node:sqlite";
 import { DomainError } from "../../src/main/domain/errors";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository";
@@ -24,6 +25,28 @@ function historyJob(sourceId: string, scope: "joi" | "workbench") {
   return { kind: HISTORICAL_MEMORY_KIND,outboxId: `${sourceId}:${scope}`,payload: { sourceId,scope },
     availableAt: NOW,createdAt: NOW,attemptCount: 1,status: "CLAIMED" as const };
 }
+
+it("KN-01 organizes a committed answer from its sealed facts without reading the original text", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const source = await completeHistorySource(fixture,"sealed-answer","global preference[verbosity]: concise");
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const memory = new HistoricalMemoryService(history,{
+      organize: update => Promise.resolve([{ section: "conclusions",text: update.facts.conclusion ?? "" }]),
+    });
+    fixture.database.transaction(db => db.setAuthorizer((action,table,column) =>
+      action === sqlite.SQLITE_READ && ((table === "joi_inbox_messages" && column === "body")
+        || (table === "joi_turn_completions" && column === "completion_summary")) ? sqlite.SQLITE_DENY : sqlite.SQLITE_OK));
+    try {
+      await memory.handle(historyJob(source.sourceId,"joi"));
+      await memory.handle(historyJob(source.sourceId,"workbench"));
+      expect(history.entries("joi","local")).toContainEqual(expect.objectContaining({ section: "preferences",text: "concise" }));
+      expect(history.entries("workbench",source.workbenchId)).toContainEqual(expect.objectContaining({
+        section: "conclusions",text: "global preference[verbosity]: concise",
+      }));
+    } finally { fixture.database.transaction(db => db.setAuthorizer(null)); }
+  } finally { await fixture.close(); }
+});
 
 it.each([false,true])("HIST-01 compacts old facts once before appending the complete new fact (compaction fails: %s)", async fails => {
   const fixture = await createRuntimeFixture();

@@ -8,6 +8,7 @@ export interface AutomationGoalInspection {
 
 export interface AutomationRunRecord {
   completedAt?: string;
+  executionSequence?: number;
   inputId?: string;
   occurrenceAt: string;
   queuedAt?: string;

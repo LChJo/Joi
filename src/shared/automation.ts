@@ -13,6 +13,7 @@ export type AutomationTarget =
 
 export interface AutomationRunDto {
   completedAt?: string;
+  executionSequence?: number;
   inputId?: string;
   occurrenceAt: string;
   queuedAt?: string;
