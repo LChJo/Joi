@@ -10,6 +10,8 @@ import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
+import { WorkResultService } from "../../src/main/application/work/work-result-service.js";
 import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import type { PartnerRunRequest } from "../../src/main/application/ports/partner-execution.js";
 import { enqueueGoalResultSynthesis } from "../../src/main/infrastructure/persistence/sqlite-goal-result-synthesis.js";
@@ -225,11 +227,18 @@ describe("requirements dispatch and start gates", () => {
       const ctx = await setup(fixture);
       await delivery(fixture, () => undefined).handle(ctx.claim);
       const event = fixture.database.transaction(db => db.prepare("SELECT e.event_id, r.result_id FROM partner_result_events e JOIN work_results r ON r.run_id = e.run_id LIMIT 1").get());
-      const first = await ctx.inbox.enqueuePartnerResult({ workbenchId: ctx.wb.workbenchId, workId: ctx.workId, eventId: String(event?.event_id), status: "COMPLETED", resultId: String(event?.result_id), summary: "Done" });
+      const resultId = String(event?.result_id);
+      const first = await ctx.inbox.enqueuePartnerResult({ workbenchId: ctx.wb.workbenchId, workId: ctx.workId, eventId: String(event?.event_id), status: "COMPLETED", resultId, summary: "Done" });
       expect(first).toContain(":r1:q1");
       await ctx.inbox.createTurn({ inputId: String(first), turnId: "synthesis-1", sessionId: "synth", workbenchId: ctx.wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
       await ctx.requirements.checkpointTurn("goal", "synthesis-1", 1);
-      await ctx.inbox.completeInput(String(first), "synthesis-1", { outcome: "RESULT_SYNTHESIZED", completionSummary: "First answer", committedByTool: true });
+      const results = new WorkResultService(new SqliteWorkResultRepository(fixture.database), new SqliteGoalEvidenceRepository(fixture.database));
+      await results.read({ goalInputId: "goal", workbenchId: ctx.wb.workbenchId, resultId,
+        receipt: { turnId: "synthesis-1", toolCallId: "read-day-result" } });
+      await ctx.inbox.completeInput(String(first), "synthesis-1", {
+        outcome: "RESULT_SYNTHESIZED", completionSummary: "First answer", committedByTool: true,
+        synthesisState: { version: 1, claims: [{ statement: "Work completed under the day constraint", requirementIds: ["day"], resultIds: [resultId] }], unresolved: [], conflicts: [] },
+      });
       expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_current_goal_outcomes").get())?.n).toBe(1);
       const text = "Use a different delivery format.";
       fixture.database.transaction(db => appendGoalRequirementSource(db, "goal", text));
