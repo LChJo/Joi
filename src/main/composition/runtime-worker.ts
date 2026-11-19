@@ -1,4 +1,4 @@
-import { parentPort, type MessagePort, workerData } from "node:worker_threads";
+import { type MessagePort, workerData } from "node:worker_threads";
 import { WorkerRpc } from "../infrastructure/runtime/worker-rpc.js";
 import type { ExportRecord, SqliteResultExports } from "../infrastructure/persistence/sqlite-result-exports.js";
 import { createRuntimeHost } from "./runtime-host.js";
@@ -40,8 +40,5 @@ const peer = new WorkerRpc(input.port, {
   emergencyStop: () => host?.emergencyStop(),
   exportRecord: (id) => exportJobs?.record(id as string) ?? null,
   exportUpdate: (id, status, filenames, error) => exportJobs?.update(id as string, status as ExportRecord["status"], filenames as string[] | undefined, error as string | undefined),
-  close: async () => {
-    await host?.close();
-    setImmediate(() => { peer.close(); parentPort?.close(); });
-  },
+  close: () => host?.close(),
 });

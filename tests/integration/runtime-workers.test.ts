@@ -1,7 +1,9 @@
+import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { setTimeout as delay } from "node:timers/promises";
 import { MessageChannel, Worker } from "node:worker_threads";
 import { WorkerHomeFeedRepository } from "../../src/main/infrastructure/persistence/worker-home-feed-repository";
 import { WorkerRpc } from "../../src/main/infrastructure/runtime/worker-rpc";
@@ -75,6 +77,26 @@ describe("runtime Workers (AC-PERF-01)", () => {
     ]) as [URL, URL];
   });
   afterAll(async () => { await rm(directory, { recursive: true, force: true }); });
+
+  it("acknowledges closing the read database and leaves termination to its owner", async () => {
+    const fixture = await createRuntimeFixture();
+    const { port1, port2 } = new MessageChannel();
+    const rpc = new WorkerRpc(port1);
+    const worker = new Worker(readWorkerUrl, {
+      workerData: { databasePath: path.join(fixture.root, "runtime.sqlite"), port: port2 },
+      transferList: [port2],
+    });
+    try {
+      const exited = once(worker, "exit");
+      await expect(Promise.race([rpc.callWithTimeout("close", 2_000), exited])).resolves.toBeUndefined();
+      await expect(Promise.race([exited, delay(250, "waiting for owner")])).resolves.toBe("waiting for owner");
+      await expect(rpc.callWithTimeout("close", 2_000)).resolves.toBeUndefined();
+    } finally {
+      rpc.close();
+      await worker.terminate();
+      await fixture.close();
+    }
+  });
 
   it("serves a large goal and its history over HTTP during concurrent status writes", async () => {
     const fixture = await createRuntimeFixture();

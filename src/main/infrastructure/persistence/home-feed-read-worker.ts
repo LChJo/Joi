@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { parentPort, type MessagePort, workerData } from "node:worker_threads";
+import { type MessagePort, workerData } from "node:worker_threads";
 import { WorkerRpc } from "../runtime/worker-rpc.js";
 import { SqliteJoiHomeFeedRepository } from "./sqlite-joi-home-feed-repository.js";
 import { SqliteWorkbenchAgentRepository } from "./sqlite-workbench-agent-repository.js";
@@ -22,7 +22,7 @@ const database = {
 const repository = new SqliteJoiHomeFeedRepository(database);
 const agents = new SqliteWorkbenchAgentRepository(database);
 let closed = false;
-const peer = new WorkerRpc(input.port, {
+new WorkerRpc(input.port, {
   load: (now) => repository.load(now as Date),
   listAgents: argument => agents.listAgents(argument as WorkbenchAgentListQuery),
   loadGoalDetail: (argument) => {
@@ -42,7 +42,10 @@ const peer = new WorkerRpc(input.port, {
     return repository.listGoalArtifacts(request.goalId, request.page);
   },
   close: () => {
-    if (!closed) { closed = true; connection.close(); }
-    setImmediate(() => { peer.close(); parentPort?.close(); });
+    // The owner terminates the Worker after receiving the database-close reply.
+    if (!closed) {
+      connection.close();
+      closed = true;
+    }
   },
 });

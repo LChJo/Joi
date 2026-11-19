@@ -4272,22 +4272,22 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "e26747d2e68a2fe1ba5e25a8003408084a86fa7c8406f9fcde521d830f91efea",
-      "observedAt": "2026-11-19T16:14:53.420Z"
+      "hash": "802827a734f13a9498193008a8fe125bcb01dc4fb57a24633a91bee7c73bf4a1",
+      "observedAt": "2026-11-19T17:23:26.516Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",
       "kind": "document",
-      "claim": "The desktop uses a single runtime writer and a separate WAL snapshot reader for home, details, results and Agent cards; indexed paging and retry limits protect large goal reads. Goal cursors follow activity within a 100-agent window.",
+      "claim": "The desktop uses a single runtime writer and a separate WAL snapshot reader for home, details, results and Agent cards; indexed paging and retry limits protect large goal reads. Goal cursors follow activity within a 100-agent window. Worker owners wait for resource close acknowledgment before terminating a thread.",
       "location": {
         "path": "docs/adr/0029-desktop-runtime-workers.md"
       },
-      "hash": "be6cc74aec86e69d164b456edd755df922838eea7695e79530ec0987756f9000",
-      "observedAt": "2026-11-19T16:14:53.420Z"
+      "hash": "a6c72d8dadc551af53f118df50887c046e2afe78807129dc6ea328f244417437",
+      "observedAt": "2026-11-19T17:23:26.519Z"
     },
     {
       "id": "ba13f9c0-d707-4677-a257-b017e40ecf7a",
