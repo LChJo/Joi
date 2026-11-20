@@ -732,15 +732,15 @@
     {
       "id": "793588d4-9226-45ea-bcb5-58e60334355c",
       "kind": "source-code",
-      "claim": "Capability-scoped inspection guidance supplements official tool rules, with read fallback only when official metadata is absent; it does not introduce tool-level lease or scheduling policy.",
+      "claim": "Capability-scoped inspection guidance supplements official tool rules, with read fallback only when official metadata is absent; it does not introduce tool-level lease or scheduling policy. When available, the history tool is the route to indexed Workbench sources. Shell file searches use narrow paths and ignore rules.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
       },
-      "hash": "268b7ecb6c1697ae38658ea3eaa6f08f03d5b535eca10b4574e21bcadc0e0cd6",
-      "observedAt": "2026-11-17T16:33:24.058935Z",
+      "hash": "54788284903a953f2c97099acd12feab890f772a3b201c74351a70c0eb9f6735",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
-        "endLine": 12
+        "endLine": 15
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied. History regressions cover partial compaction, invalid jobs, short-history compaction bounds and source freshness at commit.",
+      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied. History regressions cover partial compaction, invalid jobs, short-history compaction bounds and source freshness at commit. A second WAL connection holds a write transaction while the history index and page see the last committed snapshot. The reader observes invalidation on commit.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "4a169f49e65c520ab988c6a4de518ac9b849c4a8ee694d3e2e9bd8fea69c402b",
-      "observedAt": "2026-11-19T17:38:00.767Z",
+      "hash": "f5ab5e2dd62be6b5e107eddf4be4816349d1b3d48895888cd888b346d1b9c553",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
-        "endLine": 2277
+        "endLine": 2302
       }
     },
     {
@@ -3367,12 +3367,12 @@
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity.",
-      "hash": "58128d6125f583226430182a7b8117a0631926a8f88207d3ffb42ef24c34ca8b",
-      "observedAt": "2026-11-19T02:28:56.936Z",
+      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity. The provider prompt steers Workbench history to its source tool and guides repository searches to bounded paths, patterns and limits.",
+      "hash": "abd309f291f5651795b87b6805fa48bc72e4a193222eb49f28dbec1d7d161b28",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
-        "endLine": 807
+        "endLine": 816
       }
     },
     {
@@ -3882,12 +3882,12 @@
     {
       "id": "4b18689f-6b0f-410b-a946-5b7479e53b33",
       "kind": "document",
-      "claim": "HIST-01?07 define scoped histories, soft compaction triggers, provenance and independently guarded provider requests.",
+      "claim": "HIST-01?07 define scoped histories, soft compaction triggers, provenance and independently guarded provider requests. HIST-07 specifies indexed reads with SQLite snapshots and no write lock or directory traversal.",
       "location": {
         "path": "docs/historical-context-policy-spec.md"
       },
-      "hash": "450a0e299ca4b78cbbd138c145a87fe3ae79964afe7cf346c71988ddacdcc9d8",
-      "observedAt": "2026-11-19T02:28:56.936Z",
+      "hash": "743876facbe993659a92c00a1a11c4066f4ee7361c6113a5b50cfbff6d1128d4",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
         "endLine": 109
@@ -3924,15 +3924,15 @@
     {
       "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
       "kind": "source-code",
-      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order. New Joi and Workbench settlement sources snapshot bounded facts in the existing origin transaction. Background extraction uses these facts and checks only origin eligibility metadata before accessing the snapshot.",
+      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order. New Joi and Workbench settlement sources snapshot bounded facts in the existing origin transaction. Background extraction uses these facts and checks only origin eligibility metadata before accessing the snapshot. Read-only history operations use deferred SQLite snapshots and source-scoped queries without acquiring a writer lock.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
       },
-      "hash": "708657f72e9bcf0000dde52d394516792d4daa2f093e04e0d38599dc06f1f9b0",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "hash": "9f6ee3040c14f95bdca94f7e357db923075da9c4e4cf071f65f77a5cc04eedbb",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
-        "endLine": 210
+        "endLine": 211
       }
     },
     {
@@ -3952,15 +3952,15 @@
     {
       "id": "e870d27a-37da-4a69-b130-82041cd4c549",
       "kind": "source-code",
-      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity.",
+      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity. The provider prompt steers Workbench history to its source tool and guides repository searches to bounded paths, patterns and limits.",
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "hash": "58128d6125f583226430182a7b8117a0631926a8f88207d3ffb42ef24c34ca8b",
-      "observedAt": "2026-11-19T02:28:56.938Z",
+      "hash": "abd309f291f5651795b87b6805fa48bc72e4a193222eb49f28dbec1d7d161b28",
+      "observedAt": "2026-11-20T04:09:09.785Z",
       "range": {
         "startLine": 1,
-        "endLine": 807
+        "endLine": 816
       }
     },
     {

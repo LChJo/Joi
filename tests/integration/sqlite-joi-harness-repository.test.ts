@@ -1,4 +1,5 @@
-import { constants as sqlite } from "node:sqlite";
+import { constants as sqlite, DatabaseSync } from "node:sqlite";
+import path from "node:path";
 import { DomainError } from "../../src/main/domain/errors";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository";
@@ -176,6 +177,30 @@ it("HIST-02/04/07 indexes direct answers only after completion and scopes reads 
     fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id=?").run("2099-01-01T00:00:00.000Z",goalInputId));
     expect(history.readEvidence(workbenchId,sourceId,0,4)).toBeNull();
     expect(history.entries("workbench",workbenchId)).toEqual([]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-07 reads the history index and evidence while another SQLite connection holds a write transaction", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const source = await completeHistorySource(fixture,"history-reader","消息🗂️总结");
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const update = history.loadUpdate(source.sourceId,"workbench");
+    if (update?.index === undefined) throw new Error("Missing evidence index");
+    expect(history.commit(update,[update.index])).toBe(true);
+    fixture.database.transaction(db => db.exec("PRAGMA busy_timeout = 0"));
+
+    const writer = new DatabaseSync(path.join(fixture.root,"runtime.sqlite"));
+    try {
+      writer.exec("BEGIN IMMEDIATE");
+      writer.prepare("UPDATE joi_inbox_messages SET dismissed_at=? WHERE input_id='history-reader'").run(NOW);
+      expect(history.entries("workbench",source.workbenchId)).toEqual([update.index]);
+      expect(history.readEvidence(source.workbenchId,source.sourceId,2,2,"conclusion"))
+        .toEqual({ text: "🗂️",total: 6 });
+      writer.exec("COMMIT");
+      expect(history.readEvidence(source.workbenchId,source.sourceId,0,4)).toBeNull();
+      expect(history.entries("workbench",source.workbenchId)).toEqual([]);
+    } finally { writer.close(); }
   } finally { await fixture.close(); }
 });
 

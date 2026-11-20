@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { HISTORICAL_MEMORY_KIND, JOI_MEMORY_OWNER, type HistoricalMemoryCompaction, type HistoricalMemoryStore, type HistoricalMemoryUpdate } from "../../application/ports/historical-memory.js";
 import { historicalCharacters, renderHistoricalContext, type HistoricalEntry, type HistoricalScope } from "../../domain/work/historical-context.js";
 import { storageEngine } from "./partner-engine-storage.js";
+import type { RuntimeDatabase } from "./runtime-database.js";
 
 interface HistoricalSource {
   source_id: string;
@@ -115,10 +116,10 @@ function readMemory(db: DatabaseSync, scope: HistoricalScope, ownerId: string) {
 }
 
 export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
-  constructor(private readonly database: { transaction<T>(operation: (db: DatabaseSync) => T): T }) {}
+  constructor(private readonly database: Pick<RuntimeDatabase,"transaction">) {}
 
   entries(scope: HistoricalScope, ownerId: string): HistoricalEntry[] {
-    return this.database.transaction(db => readMemory(db,scope,ownerId).entries);
+    return this.database.transaction(db => readMemory(db,scope,ownerId).entries,"deferred");
   }
 
   readEvidence(workbenchId: string, sourceId: string, offset: number, limit: number, part: "input" | "conclusion" = "input"): { text: string; total: number } | null {
@@ -131,7 +132,7 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
       const row = db.prepare(`SELECT substr(body,? + 1,?) AS chunk,length(body) AS total FROM (${lookup})`)
         .get(offset,Math.min(limit,4000),source.subject_id);
       return typeof row?.chunk === "string" && typeof row.total === "number" ? { text: row.chunk,total: row.total } : null;
-    });
+    },"deferred");
   }
 
   loadUpdate(sourceId: string, scope: HistoricalScope): HistoricalMemoryUpdate | null {
@@ -158,7 +159,7 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
       const label = typeof row.label === "string" && row.label.trim() !== "" ? ` · ${row.label}` : "";
       const index = { section: "sources" as const,text: `${source.created_at.slice(0,10)} · Input and conclusion for ${row.disposition === "ACCEPTED_WITH_GAPS" ? "goal accepted with gaps" : "completed goal"}${label}`,source: sourceId };
       return { ...base,facts,index };
-    });
+    },"deferred");
   }
 
   commit(update: HistoricalMemoryUpdate, entries: HistoricalEntry[], compacted: readonly HistoricalMemoryCompaction[] = []): boolean {

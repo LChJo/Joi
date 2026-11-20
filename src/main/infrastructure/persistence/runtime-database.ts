@@ -2876,7 +2876,7 @@ export interface RuntimeDatabase {
   close(): void;
   inspect(): { busyTimeout: number; foreignKeys: boolean; journalMode: string; migrationFailure?: "migration_failed"; mode: "read-only-recovery" | "read-write"; queryOnly: boolean; schemaVersion: number };
   store: RuntimeStore;
-  transaction<T>(operation: (database: DatabaseSync) => T): T;
+  transaction<T>(operation: (database: DatabaseSync) => T, mode?: "deferred"): T;
 }
 
 function pragmaNumber(database: DatabaseSync, statement: string, key: string): number {
@@ -2991,9 +2991,9 @@ export async function openRuntimeDatabase(input: { databasePath: string; migrati
       };
     },
     store,
-    transaction<T>(operation: (connection: DatabaseSync) => T) {
+    transaction<T>(operation: (connection: DatabaseSync) => T, mode?: "deferred") {
       if (migrationFailure) return operation(database);
-      database.exec("BEGIN IMMEDIATE");
+      database.exec(mode === "deferred" ? "BEGIN" : "BEGIN IMMEDIATE");
       try {
         const result = operation(database);
         database.exec("COMMIT");

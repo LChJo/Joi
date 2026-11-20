@@ -67,6 +67,9 @@ it("PI-SESSION-04 retains official tool prompt metadata in SDK registration with
     expect(actualPrompt).toContain(`- read: ${expected.promptSnippet ?? ""}`);
     expect(actualPrompt).toContain("<rules>");
     expect(actualPrompt).toContain(expected.promptGuidelines?.[0]);
+    expect(actualPrompt).toContain("Start with a narrow path, glob and match limit.");
+    expect(actualPrompt).toContain("avoid recursive grep at the repository root");
+    expect(actualPrompt).not.toContain("workbench_read_history");
   } finally { session.dispose(); await rm(root, { recursive: true, force: true }); }
 });
 
@@ -256,14 +259,20 @@ it("HIST-07 reads Workbench raw evidence on request and omits it from the next c
     entries: () => [],readEvidence: (_workbench,source) => source === "history:fixture" ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
   } });
   const sent: string[] = [];
+  let historyPrompt = "";
   faux.setResponses([
-    () => fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture" })],{ stopReason: "toolUse" }),
+    context => {
+      historyPrompt = getCurrentSystemPrompt(context.messages);
+      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture" })],{ stopReason: "toolUse" });
+    },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("Evidence checked"); },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("New response"); },
   ]);
   const input = { instanceId: "chat-memory",revision,restoredMessages: null,knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [] };
   await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat" } });
   await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat",actionId: "next",workId: "next" } });
+  expect(historyPrompt).toContain("Use workbench_read_history to read saved Workbench history");
+  expect(historyPrompt).toContain("Use the source reference in the Workbench evidence index");
   expect(sent[0]).toContain("PRIVATE_EVIDENCE_BODY");
   expect(sent[1]).not.toContain("PRIVATE_EVIDENCE_BODY");
 });
