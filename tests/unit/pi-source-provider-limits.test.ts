@@ -3,6 +3,7 @@
  * own sourceId to stay independent of the others.
  */
 import { rememberObservedContextWindow, rememberObservedMaxOutputTokens } from "../../src/main/infrastructure/pi/pi-model-budget.js";
+import { codexModelLimits } from "../../src/main/infrastructure/pi/codex-source-provider.js";
 import { effectiveModelLimits, type ApiKeySourceProviderInput } from "../../src/main/infrastructure/pi/source-provider-factory.js";
 
 /** A gateway has no vendor preset, so every number here comes from the configured value or the
@@ -44,5 +45,17 @@ describe("effectiveModelLimits", () => {
     rememberObservedContextWindow("limits-configured-smaller", "some-model", 300_000);
     expect(effectiveModelLimits(gateway("limits-configured-smaller", { contextWindow: 200_000 }), undefined).contextWindow)
       .toBe(200_000);
+  });
+});
+
+describe("Codex output limits", () => {
+  it("caps the configured output at the Codex model maximum and honors lower limits", () => {
+    const input = { sourceId: "codex-output-limit", modelId: "gpt-6.1-sol" };
+    const defaultLimit = codexModelLimits(input)?.maxOutputTokens;
+    expect(defaultLimit).toBe(128_000);
+    expect(codexModelLimits({ ...input, maxOutputTokens: 131_072 })?.maxOutputTokens).toBe(defaultLimit);
+    expect(codexModelLimits({ ...input, maxOutputTokens: 4_096 })?.maxOutputTokens).toBe(4_096);
+    rememberObservedMaxOutputTokens(input.sourceId, input.modelId, 2_048);
+    expect(codexModelLimits({ ...input, maxOutputTokens: 4_096 })?.maxOutputTokens).toBe(2_048);
   });
 });

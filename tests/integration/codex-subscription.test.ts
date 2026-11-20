@@ -129,15 +129,21 @@ describe("Codex subscription model network", () => {
       expect(thinkingLevel).toBe("high");
       const result = await models.completeSimple(model, { messages: [{ role: "user", content: "A normal Joi turn", timestamp: Date.now() }] }, {
         ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
+        maxTokens: 64,
       });
       expect(result.content).toContainEqual(expect.objectContaining({ type: "text", text: "OK" }));
       expect(grants).toBe(1);
       expect(refreshes).toBe(1);
       expect(requests).toHaveLength(2);
       for (const request of requests) {
-        expect(request).toMatchObject({ account, authorization: `Bearer ${refreshed}`, body: { model: "gpt-6.1-sol", reasoning: { effort: "high" }, store: false, stream: true } });
+        expect(request).toMatchObject({ account, authorization: `Bearer ${refreshed}`, body: { model: "gpt-6.1-sol", store: false, stream: true } });
+        expect(request.body.input).toEqual(expect.arrayContaining([
+          expect.objectContaining({ type: "configuration_update", reasoning: { effort: "high" } }),
+        ]));
       }
       expect(requests[0]?.body.tools).toBeUndefined();
+      expect(requests[0]?.body.max_output_tokens).toBe(128_000);
+      expect(requests[1]?.body.max_output_tokens).toBe(64);
       expect((await sources.list())[0]?.codexAccount).toBeUndefined();
       expect(await sources.list(true)).toMatchObject([{ codexAccount: { maskedAccount: "••••ount", plan: "Plus" } }]);
       expect(JSON.stringify(await sources.list(true))).not.toContain(account);

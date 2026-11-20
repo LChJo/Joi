@@ -270,12 +270,12 @@
     {
       "id": "70e2a22b-f223-48ee-ad62-781b5835ed5e",
       "kind": "source-code",
-      "claim": "Pinned Pi and Agent Browser native dependency, no Kernel packages, explicit browser setup and native executable ASAR unpacking. The coordinated development command starts compilation watch and Vite; the Electron launcher waits for the served renderer module.",
+      "claim": "Pi SDK 1.6.0, pi-subagents 0.88.0 and pinned Agent Browser native dependency, no Kernel packages, explicit browser setup and native executable ASAR unpacking. The coordinated development command starts compilation watch and Vite; the Electron launcher waits for the served renderer module.",
       "location": {
         "path": "package.json"
       },
-      "hash": "389b80344aa3fe30b2e524296c064c7b0f5cc2026a6a15b70d95b8f9f2091063",
-      "observedAt": "2026-11-19T12:19:45.683Z",
+      "hash": "052322aed6547b7b32f3f8ae4ba44fb9e26be4b47c7862f66332f9ed933c284b",
+      "observedAt": "2026-11-20T12:54:05.746Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -438,12 +438,12 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output. CHAT-21 pins Pi 1.6.0 and requires canonical error results for skipped calls after a mid-batch abort.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "1192abb596bae261a0b9723654ad7976edf2465bf3164741a6d0546e9c232c5b",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "bf6cb18d20afe9d64ba255a10d2bdc346bff594f56d52cbbf55ec4cf443afbf1",
+      "observedAt": "2026-11-20T12:54:05.749Z",
       "range": {
         "startLine": 1,
         "endLine": 53
@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback. AC-24, AC-55 and AC-65 include the Codex subscription transport contract. Defines GPT-6.1 Sol as the initial model and high as the default Codex reasoning effort.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback. AC-24, AC-55 and AC-65 include the Codex subscription transport contract. Defines GPT-6.1 Sol as the initial model and high as the default Codex reasoning effort. Codex sends output limits bounded by the model catalog and observed provider caps.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "fdd9dc83b7eaf5307fded5e847d5e34d2537995148295e2a0dabed1be5a6b71f",
-      "observedAt": "2026-11-20T10:09:20.831Z",
+      "hash": "d964a66f11597bce2a2e8a5f7bb37d31d3bb8814c563571824ae3e5f8ff62830",
+      "observedAt": "2026-11-20T12:54:05.751Z",
       "range": {
         "startLine": 1,
         "endLine": 763
@@ -1110,15 +1110,15 @@
     {
       "id": "64c24ebe-09b2-47ab-9204-f66893cf8d48",
       "kind": "source-code",
-      "claim": "Contract regressions cover selected skill metadata, current requirements and continuation evidence in actual requests, the absence of injected copies in native snapshots, and dispatch, outcome and session boundaries.",
+      "claim": "Contract regressions cover selected skill metadata, current requirements and continuation evidence in actual requests, the absence of injected copies in native snapshots, and dispatch, outcome and session boundaries. The mid-batch abort contract verifies the canonical error result and that the skipped tool is never executed.",
       "location": {
         "path": "tests/contract/pi-runtime-contract.test.ts"
       },
-      "hash": "a67e5e358bf81b45fa1bff8843735d32404f5a1c0f947ee652b37e363e3b6fc6",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "f159e41e471c9310c4e783ae5cd35c2b8453d03beaadfd2a82fbe9d8fa0c175a",
+      "observedAt": "2026-11-20T12:54:05.752Z",
       "range": {
         "startLine": 1,
-        "endLine": 1033
+        "endLine": 1036
       }
     },
     {
@@ -1376,15 +1376,15 @@
     {
       "id": "fee6a674-0e8e-490e-940d-0f2ea5ae7f8e",
       "kind": "source-code",
-      "claim": "Complete npm v3 lock graph retains the optional WASM peer runtime required by npm 11.19.1 clean installs without changing existing resolved versions.",
+      "claim": "Complete npm v3 lock graph pins the Pi SDK family to 1.6.0, resolves patched Undici builds for Pi and OpenAI, and includes the optional WASM peer runtime required by npm 11.19.1 clean installs.",
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "f0a836a5364797f17d5ce6422fbeab5f6da94e4fd5241a2554f1aabab39f0e70",
-      "observedAt": "2026-11-19T12:19:45.683Z",
+      "hash": "7372412b22722288b98f812ac0cc8126d052b0e526f104faa53a58402ff4b410",
+      "observedAt": "2026-11-20T12:54:05.756Z",
       "range": {
         "startLine": 1,
-        "endLine": 14189
+        "endLine": 14193
       }
     },
     {
@@ -4392,12 +4392,12 @@
     {
       "id": "d4588ecd-9046-400c-a2fe-23dea5aa9f38",
       "kind": "source-code",
-      "claim": "Resolves the Pi Codex catalog and the fixed HTTPS streaming Responses transport with source-scoped OAuth. The default Codex model is gpt-6.1-sol.",
+      "claim": "Resolves the Pi Codex catalog and the fixed HTTPS streaming Responses transport with source-scoped OAuth. The default Codex model is gpt-6.1-sol. Model output limits use the lowest of the catalog, configured, and observed provider caps.",
       "location": {
         "path": "src/main/infrastructure/pi/codex-source-provider.ts"
       },
-      "hash": "c79c994c48d08d1a639ab542f6f17fcea0e41191e49386f204b3b855d107cd3e",
-      "observedAt": "2026-11-20T10:09:20.831Z",
+      "hash": "9d42e50f32aca6197e25c166ef08ea8e64e4aa4cfe184e75be88087a820bb517",
+      "observedAt": "2026-11-20T12:54:05.758Z",
       "range": {
         "startLine": 1,
         "endLine": 79
@@ -4448,15 +4448,15 @@
     {
       "id": "26db7038-e64e-4a83-9d69-98412030f9c5",
       "kind": "source-code",
-      "claim": "Synthetic responses exercise the real Pi OAuth and Responses transport, encrypted storage, refresh, tool replay and reauthorization. Checks the GPT-6.1 Sol and high defaults on the wire and preserves the selected model and low effort through reauthorization.",
+      "claim": "Synthetic responses exercise the real Pi OAuth and Responses transport, encrypted storage, refresh, tool replay and reauthorization. Verifies the default model, high thinking in the configuration update, provider-bound output limits, and the selected model and low effort after reauthorization.",
       "location": {
         "path": "tests/integration/codex-subscription.test.ts"
       },
-      "hash": "28886e427f7ceed69668fa5ac2c4769410a49122c8b678403db92558b072c3f8",
-      "observedAt": "2026-11-20T10:09:20.831Z",
+      "hash": "07e0f45a918118bf29fadfcb0949abf236fbcb96710bef9753be788c9a58fdcc",
+      "observedAt": "2026-11-20T12:54:05.758Z",
       "range": {
         "startLine": 1,
-        "endLine": 198
+        "endLine": 204
       }
     },
     {

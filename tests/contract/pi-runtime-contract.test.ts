@@ -65,7 +65,7 @@ class MemoryCredentialStore implements CredentialStore {
 describe("Pi reasoning runtime contract", () => {
   it("CHAT-21 ships the verified Pi and pi-subagents compatibility versions", () => {
     const pkg = createRequire(import.meta.url)("../../package.json") as { dependencies: Record<string,string> };
-    expect([pkg.dependencies["@earendil-works/pi-agent-core"],pkg.dependencies["@earendil-works/pi-ai"],pkg.dependencies["@earendil-works/pi-coding-agent"],pkg.dependencies["pi-subagents"]]).toEqual(["1.5.2","1.5.2","1.5.2","0.88.0"]);
+    expect([pkg.dependencies["@earendil-works/pi-agent-core"],pkg.dependencies["@earendil-works/pi-ai"],pkg.dependencies["@earendil-works/pi-coding-agent"],pkg.dependencies["pi-subagents"]]).toEqual(["1.6.0","1.6.0","1.6.0","0.88.0"]);
   });
   it.each(["harness_record_decision", "work_dispatch"])("proves a schema-rejected %s never passed the execution barrier", async name => {
     const faux = fauxProvider({ provider: `schema-rejection-${name}` });
@@ -218,9 +218,11 @@ describe("Pi reasoning runtime contract", () => {
       expect(JSON.stringify(snapshot).includes("REQUIRED_DAY_RULE")).toBe(false);
     }
   });
-  it("reports a response whose terminating tool left a later call unanswered", async () => {
+  it("records a canonical error result for a tool skipped after a terminating call", async () => {
     const faux = fauxProvider({ provider: "dangling-report" });
     const events: { event: string; fields: unknown }[] = [];
+    const store = new MemorySessionStore();
+    const runLaterTool = vi.fn(async () => ({ content: [{ type: "text" as const, text: "ran" }], details: {} }));
     faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall("turn_complete", { outcome: "DIRECT_ANSWER" }),
@@ -235,17 +237,18 @@ describe("Pi reasoning runtime contract", () => {
         execute: async () => ({ content: [{ type: "text" as const, text: "committed" }], details: {}, terminate: true }) },
       { name: "memory_search", label: "Search", description: "the call behind it",
         parameters: Type.Object({ query: Type.String() }),
-        execute: async () => ({ content: [{ type: "text" as const, text: "ran" }], details: {} }) },
+        execute: runLaterTool },
     ];
     const runtime = new PiReasoningRuntime({
       diagnostics: { emit: (event: string, fields: unknown) => { events.push({ event, fields }); } },
-      model: { ...faux.getModel(), contextWindow: 200000 }, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools,
+      model: { ...faux.getModel(), contextWindow: 200000 }, models, sessionStore: store, thinkingLevel: "off", tools,
     });
     await runtime.startTurn({ inputId: "input", workbenchId: "wb", prompt: "go", sessionId: "dangling", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" });
-    // The second call never ran and emits nothing of its own, so this report is the only place its
-    // absence becomes observable — which is the point of recording it.
-    const report = events.find((entry) => entry.event === "joi.turn.dangling_tool_call");
-    expect(report?.fields).toMatchObject({ danglingCount: 1, observedToolCount: 2 });
+    expect(runLaterTool).not.toHaveBeenCalled();
+    expect(store.snapshots.get("dangling")?.messages).toContainEqual(expect.objectContaining({
+      role: "toolResult", toolName: "memory_search", isError: true,
+    }));
+    expect(events.some(entry => entry.event === "joi.turn.dangling_tool_call")).toBe(false);
   });
 
   it("carries a requirements contract that the write path accepted on a mid-sized window", async () => {

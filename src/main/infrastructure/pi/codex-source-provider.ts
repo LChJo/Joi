@@ -44,7 +44,7 @@ export function resolveCodexModelId(modelId?: string): string {
 function limitsForModel(model: NonNullable<ReturnType<typeof findCodexModel>>, input: Omit<CodexSourceProviderInput, "kind" | "credentialRef">) {
   return {
     contextWindow: Math.min(observedContextWindow(input.sourceId, model.id) ?? Infinity, input.contextWindow ?? model.contextWindow),
-    maxOutputTokens: Math.min(observedMaxOutputTokens(input.sourceId, model.id) ?? Infinity, input.maxOutputTokens ?? model.maxTokens),
+    maxOutputTokens: Math.min(model.maxTokens, input.maxOutputTokens ?? Infinity, observedMaxOutputTokens(input.sourceId, model.id) ?? Infinity),
   };
 }
 
