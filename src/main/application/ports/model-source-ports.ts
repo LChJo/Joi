@@ -7,6 +7,7 @@ import type {
   ModelSourceStatus,
 } from "../../domain/model-sources/model-source.js";
 import type { OutboxInput } from "./runtime-store.js";
+import type { CodexAccountDto, CodexLoginMethod } from "../../../shared/joi.js";
 
 export type PiCredentialType = "api_key" | "oauth";
 
@@ -62,7 +63,25 @@ export interface ModelSourceRepository {
 
 export interface ModelSourceSecretStore {
   delete(providerId: string): Promise<void>;
+  describeOAuth?(providerId: string): Promise<CodexAccountDto | undefined>;
   saveApiKey(providerId: string, apiKey: string | undefined): Promise<number>;
+  saveOAuth?(providerId: string, credential: ModelSourceOAuthCredential): Promise<number>;
+}
+
+export interface ModelSourceOAuthCredential {
+  access: string;
+  refresh: string;
+  expires: number;
+}
+
+export interface CodexAuthorizationPort {
+  authorize(input: {
+    method: CodexLoginMethod;
+    signal: AbortSignal;
+    showBrowser(url: string): void;
+    showDeviceCode(url: string, userCode: string): void;
+    waitForCallback(signal: AbortSignal): Promise<string>;
+  }): Promise<ModelSourceOAuthCredential>;
 }
 
 export interface ModelSourceCatalog {
@@ -102,7 +121,7 @@ export interface ModelLimitReader {
     modelId: string;
     protocol: ModelSourceProtocol;
     sourceId: string;
-  }): EffectiveModelLimits;
+  }): EffectiveModelLimits | undefined;
 }
 
 export interface ModelSourceValidator {

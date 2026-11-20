@@ -13,6 +13,7 @@ import { DomainError } from "./domain/errors.js";
 import { trayMenuTemplate } from "./infrastructure/operations/tray-menu.js";
 import { PRODUCT_NAME, type DesktopBootstrapNonce, type DesktopRuntimeInfo } from "../shared/product.js";
 import { resolveLocale, translate, type UiLocalePreference } from "../shared/i18n/index.js";
+import { CODEX_AUTHORIZATION_WINDOW, isCodexAuthorizationUrl } from "../shared/codex-authorization.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isTest = process.env.JOI_TEST === "1";
@@ -106,6 +107,11 @@ function createMainWindow() {
     width: 1180,
   });
   window.setMenu(null);
+  window.webContents.setWindowOpenHandler(({ frameName, url }) => {
+    if (frameName !== CODEX_AUTHORIZATION_WINDOW) return { action: "allow" };
+    if (isCodexAuthorizationUrl(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
 
   window.once("ready-to-show", () => window.show());
   window.on("close", (event) => {

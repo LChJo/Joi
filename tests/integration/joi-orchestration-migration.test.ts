@@ -98,7 +98,7 @@ describe("JOI-01 non-destructive migration", () => {
           expect(db.prepare("SELECT filename FROM schema_migrations WHERE version >= 104 ORDER BY version").all().map(row => row.filename)).toEqual([
             "104_historical_memory.sql","105_historical_preference_order.sql","106_goal_evidence_reads.sql",
             "107_user_questions.sql","108_question_recovery_lifecycle.sql","109_large_goal_reads.sql",
-            "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql",
+            "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql","112_codex_subscription_model_source.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });

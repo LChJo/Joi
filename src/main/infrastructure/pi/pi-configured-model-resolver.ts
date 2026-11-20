@@ -63,7 +63,7 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
       model,
       sourceName: source.activeSourceRevision.displayName,
       models,
-      thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl),
+      thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl, model.api),
     };
   }
 }

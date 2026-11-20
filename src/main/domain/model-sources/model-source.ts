@@ -1,9 +1,9 @@
 import { DomainError } from "../errors.js";
-import { THINKING_EFFORTS, type ThinkingEffort } from "../../../shared/joi.js";
+import { THINKING_EFFORTS, type ThinkingEffort, type ModelSourceKindDto } from "../../../shared/joi.js";
 
 export const MODEL_SOURCE_STATUSES = ["DRAFT", "VALIDATING", "READY", "DEGRADED", "NEEDS_AUTH", "DISABLED"] as const;
 export type ModelSourceStatus = (typeof MODEL_SOURCE_STATUSES)[number];
-export type ModelSourceKind = "kimi" | "glm" | "qwen" | "doubao" | "minimax" | "deepseek" | "generic-openai";
+export type ModelSourceKind = ModelSourceKindDto;
 export type ModelSourceAccessMode = "api" | "coding-plan" | "token-plan" | "custom";
 export type ModelSourceProtocol = "openai" | "anthropic";
 export type ModelCapability = "release-tested" | "custom-unverified-tools";
@@ -158,6 +158,7 @@ export function reviseModelSource(
   input: {
     compactionThresholdPercent?: number;
     contextWindow?: number;
+    credentialRef?: string;
     credentialVersion: number;
     displayName?: string;
     maxOutputTokens?: number;
@@ -187,6 +188,7 @@ export function reviseModelSource(
     activeSourceRevision: {
       ...source.activeSourceRevision,
       createdAt: input.updatedAt,
+      ...(input.credentialRef === undefined ? {} : { credentialRef: required(input.credentialRef, "model_source_credential_ref_invalid") }),
       credentialVersion: input.credentialVersion,
       ...(input.displayName === undefined ? {} : { displayName: required(input.displayName, "model_source_name_invalid") }),
       sourceRevisionId: required(input.sourceRevisionId, "model_source_revision_id_invalid"),

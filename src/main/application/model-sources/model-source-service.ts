@@ -14,15 +14,15 @@ import type {
   ModelSourceCatalog,
   ModelSourceEndpointPolicy,
   ModelSourceHealthRevision,
+  ModelSourceOAuthCredential,
   ModelSourceRecord,
   ModelSourceRepository,
   ModelSourceSecretStore,
   ModelSourceValidator,
 } from "../ports/model-source-ports.js";
 
-export interface CreateModelSourceRequest {
+interface ModelSourceConfiguration {
   accessMode?: ModelSourceAccessMode;
-  apiKey: string;
   baseUrl?: string;
   compactionThresholdPercent?: number;
   contextWindow?: number;
@@ -32,6 +32,10 @@ export interface CreateModelSourceRequest {
   modelId?: string;
   protocol?: ModelSourceProtocol;
   thinkingEffort?: ThinkingEffort;
+}
+
+export interface CreateModelSourceRequest extends ModelSourceConfiguration {
+  apiKey: string;
 }
 
 export interface UpdateModelSourceRequest {
@@ -55,6 +59,8 @@ function resolveLimit<T>(patch: T | null | undefined, current: T | undefined): T
 }
 
 export class ModelSourceService {
+  #mutations: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly dependencies: {
     catalog: ModelSourceCatalog;
     clock: Clock;
@@ -67,7 +73,56 @@ export class ModelSourceService {
     validator: ModelSourceValidator;
   }) {}
 
-  async create(input: CreateModelSourceRequest): Promise<ModelSourceDto> {
+  create(input: CreateModelSourceRequest): Promise<ModelSourceDto> {
+    return this.#serialize(() => {
+      if (input.kind === "codex") throw new DomainError("codex_oauth_required", "Sign in with ChatGPT to connect Codex.");
+      return this.#create(input, (providerId, local) => {
+        const key = input.apiKey.trim();
+        if (key === "" && !local) throw new DomainError("model_source_key_required", "API key is required.");
+        return this.dependencies.secrets.saveApiKey(providerId, key === "" ? undefined : key);
+      });
+    });
+  }
+
+  async connectCodex(credential: ModelSourceOAuthCredential, signal: AbortSignal, sourceId?: string): Promise<ModelSourceDto> {
+    const source = await this.#serialize(async () => {
+      signal.throwIfAborted();
+      const secrets = this.dependencies.secrets;
+      const saveOAuth = secrets.saveOAuth?.bind(secrets);
+      if (saveOAuth === undefined) throw new Error("codex_credential_store_unavailable");
+      if (sourceId === undefined) return this.#create({ kind: "codex" }, async (id) => {
+        signal.throwIfAborted();
+        const version = await saveOAuth(id, credential);
+        signal.throwIfAborted();
+        return version;
+      });
+      const current = await this.#get(sourceId);
+      signal.throwIfAborted();
+      if (current.source.activeSourceRevision.kind !== "codex") throw new DomainError("codex_oauth_required", "The source is not a Codex subscription.");
+      const revisionId = this.dependencies.ids.next("source_revision");
+      const providerId = `joi-source:${sourceId}:${revisionId}`;
+      let revised: ModelSourceDto;
+      try {
+        const version = await saveOAuth(providerId, credential);
+        signal.throwIfAborted();
+        revised = await this.#update(current, {}, { providerId, revisionId, version });
+      } catch (error) {
+        await secrets.delete(providerId).catch(() => undefined);
+        throw error;
+      }
+      await secrets.delete(current.source.activeSourceRevision.credentialRef);
+      return revised;
+    });
+    return this.validate(source.sourceId, signal);
+  }
+
+  #serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.#mutations.then(operation);
+    this.#mutations = result.catch(() => undefined);
+    return result;
+  }
+
+  async #create(input: ModelSourceConfiguration, saveCredential: (providerId: string, local: boolean) => Promise<number>): Promise<ModelSourceDto> {
     const catalog = this.dependencies.catalog.resolve(input.kind, input.modelId, input.accessMode, input.protocol);
     let baseUrl: string | undefined;
     let local = false;
@@ -82,15 +137,8 @@ export class ModelSourceService {
       displayName = input.displayName.trim();
       if (displayName.length === 0) throw new DomainError("model_source_name_invalid", "Model source name is required.");
     }
-    const normalizedKey = input.apiKey.trim();
-    if (normalizedKey.length === 0 && !local) throw new DomainError("model_source_key_required", "API key is required.");
-
     const sourceId = this.dependencies.ids.next("source");
     const providerId = `joi-source:${sourceId}`;
-    const credentialVersion = await this.dependencies.secrets.saveApiKey(
-      providerId,
-      normalizedKey.length === 0 ? undefined : normalizedKey,
-    );
     const now = this.dependencies.clock.now().toISOString();
     const existing = await this.dependencies.repository.list();
     const source = createModelSource({
@@ -99,7 +147,7 @@ export class ModelSourceService {
       ...(input.contextWindow === undefined ? {} : { contextWindow: input.contextWindow }),
       createdAt: now,
       credentialRef: providerId,
-      credentialVersion,
+      credentialVersion: 1,
       displayName,
       kind: input.kind,
       ...(input.maxOutputTokens === undefined ? {} : { maxOutputTokens: input.maxOutputTokens }),
@@ -120,6 +168,7 @@ export class ModelSourceService {
       source,
     };
     try {
+      source.activeSourceRevision.credentialVersion = await saveCredential(providerId, local);
       await this.dependencies.repository.create(record);
     } catch (error) {
       await this.dependencies.secrets.delete(providerId).catch(() => undefined);
@@ -150,13 +199,28 @@ export class ModelSourceService {
     return toDto(record, this.#effectiveLimits(record));
   }
 
-  async list(): Promise<ModelSourceDto[]> {
-    return (await this.dependencies.repository.list()).map((record) => this.#toDto(record));
+  async list(includeCodexAccount = false): Promise<ModelSourceDto[]> {
+    const records = await this.dependencies.repository.list();
+    if (!includeCodexAccount) return records.map((record) => this.#toDto(record));
+    return Promise.all(records.map(async (record) => {
+      const dto = this.#toDto(record);
+      if (dto.kind === "codex") {
+        const codexAccount = await this.dependencies.secrets.describeOAuth?.(record.source.activeSourceRevision.credentialRef).catch(() => undefined);
+        if (codexAccount !== undefined) dto.codexAccount = codexAccount;
+      }
+      return dto;
+    }));
   }
 
-  async update(sourceId: string, input: UpdateModelSourceRequest): Promise<ModelSourceDto> {
-    const current = await this.#get(sourceId);
+  update(sourceId: string, input: UpdateModelSourceRequest): Promise<ModelSourceDto> {
+    return this.#serialize(async () => this.#update(await this.#get(sourceId), input));
+  }
+
+  async #update(current: ModelSourceRecord, input: UpdateModelSourceRequest, oauth?: { providerId: string; revisionId: string; version: number }): Promise<ModelSourceDto> {
     const kind = current.source.activeSourceRevision.kind;
+    if (kind === "codex" && (input.apiKey !== undefined || input.baseUrl !== undefined)) {
+      throw new DomainError("codex_oauth_required", "Sign in with ChatGPT to connect Codex.");
+    }
     const catalog = this.dependencies.catalog.resolve(
       kind,
       input.modelId ?? current.source.activeModelRevision.modelId,
@@ -175,7 +239,7 @@ export class ModelSourceService {
       displayName = displayName.trim();
       if (displayName.length === 0) throw new DomainError("model_source_name_invalid", "Model source name is required.");
     }
-    let credentialVersion = current.source.activeSourceRevision.credentialVersion;
+    let credentialVersion = oauth?.version ?? current.source.activeSourceRevision.credentialVersion;
     if (input.apiKey !== undefined) {
       const normalizedKey = input.apiKey.trim();
       if (normalizedKey.length === 0 && !local) throw new DomainError("model_source_key_required", "API key is required.");
@@ -199,13 +263,14 @@ export class ModelSourceService {
     const source = reviseModelSource(current.source, {
       ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
       ...(contextWindow === undefined ? {} : { contextWindow }),
+      ...(oauth === undefined ? {} : { credentialRef: oauth.providerId }),
       credentialVersion,
       displayName,
       ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
       modelCapability: catalog.capability,
       modelId: catalog.modelId,
       modelRevisionId: this.dependencies.ids.next("model_revision"),
-      sourceRevisionId: this.dependencies.ids.next("source_revision"),
+      sourceRevisionId: oauth?.revisionId ?? this.dependencies.ids.next("source_revision"),
       ...(thinkingEffort === undefined ? {} : { thinkingEffort }),
       updatedAt,
     });
@@ -234,22 +299,24 @@ export class ModelSourceService {
     return this.#toDto(disabled);
   }
 
-  async delete(sourceId: string): Promise<void> {
-    const current = await this.#get(sourceId);
-    await this.dependencies.repository.delete(sourceId);
-    await this.dependencies.secrets.delete(current.source.activeSourceRevision.credentialRef);
-    const remaining = await this.dependencies.repository.list();
-    if (remaining.length > 0) await this.dependencies.repository.setOrder(remaining.map((record) => record.source.sourceId));
+  delete(sourceId: string): Promise<void> {
+    return this.#serialize(async () => {
+      const current = await this.#get(sourceId);
+      await this.dependencies.repository.delete(sourceId);
+      await this.dependencies.secrets.delete(current.source.activeSourceRevision.credentialRef);
+      const remaining = await this.dependencies.repository.list();
+      if (remaining.length > 0) await this.dependencies.repository.setOrder(remaining.map((record) => record.source.sourceId));
+    });
   }
 
-  async validate(sourceId: string): Promise<ModelSourceDto> {
+  async validate(sourceId: string, signal?: AbortSignal): Promise<ModelSourceDto> {
     const record = await this.#get(sourceId);
     const validating: ModelSourceRecord = {
       ...record,
       source: { ...record.source, status: "VALIDATING", updatedAt: this.dependencies.clock.now().toISOString() },
     };
     if (!await this.#saveHealth(validating, record)) return this.#toDto(await this.#get(sourceId));
-    const result = await this.dependencies.validator.validate(validating);
+    const result = await this.dependencies.validator.validate(validating, ...(signal === undefined ? [] : [signal]));
     const updated: ModelSourceRecord = {
       ...withoutHealthReason(validating),
       ...(result.status === "READY" && result.anthropicAuthMode === "bearer" ? { anthropicAuthMode: result.anthropicAuthMode } : {}),
@@ -262,14 +329,16 @@ export class ModelSourceService {
     return this.#toDto(updated);
   }
 
-  async setOrder(sourceIds: string[]): Promise<ModelSourceDto[]> {
-    const records = await this.dependencies.repository.list();
-    const known = new Set(records.map((record) => record.source.sourceId));
-    if (sourceIds.length !== records.length || new Set(sourceIds).size !== sourceIds.length || sourceIds.some((id) => !known.has(id))) {
-      throw new DomainError("model_source_order_invalid", "Model source order must contain every source exactly once.");
-    }
-    await this.dependencies.repository.setOrder(sourceIds);
-    return this.list();
+  setOrder(sourceIds: string[]): Promise<ModelSourceDto[]> {
+    return this.#serialize(async () => {
+      const records = await this.dependencies.repository.list();
+      const known = new Set(records.map((record) => record.source.sourceId));
+      if (sourceIds.length !== records.length || new Set(sourceIds).size !== sourceIds.length || sourceIds.some((id) => !known.has(id))) {
+        throw new DomainError("model_source_order_invalid", "Model source order must contain every source exactly once.");
+      }
+      await this.dependencies.repository.setOrder(sourceIds);
+      return this.list();
+    });
   }
 
   async hasReadySource(): Promise<boolean> {

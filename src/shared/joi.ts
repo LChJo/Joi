@@ -11,6 +11,7 @@ export const MODEL_SOURCE_KINDS = [
   "doubao",
   "minimax",
   "deepseek",
+  "codex",
   "generic-openai",
 ] as const;
 
@@ -105,6 +106,19 @@ export const MODEL_SOURCE_CHOICES = [
   }[];
 }[];
 export type ModelSourceStatusDto = "DRAFT" | "VALIDATING" | "READY" | "DEGRADED" | "NEEDS_AUTH" | "DISABLED";
+
+export type CodexLoginMethod = "browser" | "device_code";
+export type CodexLoginState =
+  | { status: "starting" | "validating" | "canceled" | "failed" | "expired" }
+  | { status: "browser"; url: string; acceptsCallback: boolean }
+  | { status: "device_code"; url: string; userCode: string }
+  | { status: "completed"; source: ModelSourceDto };
+export type CodexLoginDto = { attemptId: string } & CodexLoginState;
+export interface CodexAccountDto {
+  expiresAt: string;
+  maskedAccount?: string;
+  plan?: string;
+}
 
 export interface WorkbenchDto {
   workbenchId: string;
@@ -231,6 +245,8 @@ export interface PartnerModelTestDto {
 }
 
 export interface ModelSourceDto {
+  /** Available to the desktop model network settings. */
+  codexAccount?: CodexAccountDto;
   anthropicAuthMode?: "bearer";
   accessMode: ModelSourceAccessModeDto;
   activeModel: {

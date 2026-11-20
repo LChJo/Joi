@@ -32,15 +32,15 @@
     {
       "id": "b4e0c245-401d-4f68-9009-f3ead2f2c98a",
       "kind": "source-code",
-      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite.",
+      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite. The named Codex window hands approved HTTPS authorization links to the system browser.",
       "location": {
         "path": "src/main/index.ts"
       },
-      "hash": "0150aa8d2ad9573b9f7fb0bbea0fca9e91ab79571c88e7954fc6f4805ac5b6ae",
-      "observedAt": "2026-11-18T04:14:36.902Z",
+      "hash": "f7336b6d60d7145ae7f3ceec71f5da16e06a0e6e2f7e1fb71ee6bdc223c694d1",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 246
+        "endLine": 252
       }
     },
     {
@@ -64,11 +64,11 @@
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "816b1ff007daaaf5e497b88bb698763916ae7cc1a47d0ae28faecac799a2d6f1",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "hash": "7571eae8821e394b6f2781a6abc85dc6a8b8d9336a076f7fa3626e5fad5f8205",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 611
+        "endLine": 627
       }
     },
     {
@@ -172,15 +172,15 @@
     {
       "id": "67786627-f77c-4800-9ac6-386b484e5f5d",
       "kind": "source-code",
-      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions. The shared goal Agent card limit governs both the server projection and renderer request.",
+      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions. The shared goal Agent card limit governs both the server projection and renderer request. Codex states and optional desktop account facts use token-free shared DTOs.",
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "e4b547800bc7f4334fbbe668dff8aa04198087512e04e7a1927bc22f78bbd334",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "hash": "c45188ec5a990ccf98a55234b7c99eeab406c92624a0579db18e2ab3ba99f843",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 784
+        "endLine": 800
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback.",
+      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback. AC-24, AC-55 and AC-65 include the Codex subscription transport contract. Defines GPT-6.1 Sol as the initial model and high as the default Codex reasoning effort.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "66e33ed922aa48fb4631d6e69024e2eab5eca91e4af2c7abbadf5265520a1160",
-      "observedAt": "2026-11-19T17:38:00.754Z",
+      "hash": "fdd9dc83b7eaf5307fded5e847d5e34d2537995148295e2a0dabed1be5a6b71f",
+      "observedAt": "2026-11-20T10:09:20.831Z",
       "range": {
         "startLine": 1,
-        "endLine": 761
+        "endLine": 763
       }
     },
     {
@@ -904,11 +904,11 @@
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "1a65090e26e7643601f9acea44c2c34a4fe34d20f722078a32b1afcba113c41e",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "hash": "374d9da6c44f021d3aa6353fce24fff983aaf9402614440667374fbbbed0af7f",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 387
+        "endLine": 389
       }
     },
     {
@@ -1436,11 +1436,11 @@
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "ed0391a29564f3fdb0f3a7db3ed8fc61b1b387711cbab4f27dc106d6533b0cd2",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "ccea95a7202e03b4dd27f3f29454e109b37bf2034c1517d93348c1f64720f639",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 220
+        "endLine": 222
       }
     },
     {
@@ -1492,11 +1492,11 @@
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "5c2c24189559375cec45e64993c028d8d491f1409bd884f90064c15c4ba728d9",
-      "observedAt": "2026-11-19T12:19:45.683Z",
+      "hash": "184cbaf28e76333e7a1c1c29f1215552e766a9d20d85f77a774ffa76700cdd14",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 169
+        "endLine": 173
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance.",
-      "hash": "ff7c0de28cf542534bd6049748f9440d5df3cdf78d593b72fe24f1fea8999c0e",
-      "observedAt": "2026-11-19T16:43:38.659Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization.",
+      "hash": "4e549bc1eed7a785949543afa5bb1b541baa426bf23eb5c0a23198c885b8cbb1",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 1851
+        "endLine": 1889
       }
     },
     {
@@ -1632,11 +1632,11 @@
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
       "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance.",
-      "hash": "7bfbba08d0757b09dce86a5ba3fec240e1e11d17aafbe67fa5975be93c8eedd4",
-      "observedAt": "2026-11-19T17:38:00.761Z",
+      "hash": "3adb65d51af8d0a324c1ad7677620432fca72ebec949bac417d91e7b9a93575a",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 2496
+        "endLine": 2507
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "9666c966b7dc7fd3e6a120dc732af1ba74a7cb5b19c77a899aafe6f6a391dfee",
-      "observedAt": "2026-11-19T16:46:33.564Z",
+      "hash": "c2db936e24e1ca476f4bb006503c9b6be84d017fb0e9fd824f97f28fb219e6e6",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 10067
+        "endLine": 10179
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "7b161a325e51baf37732c107fe34ba8614e0443f3beb6e3792ca49e8e0bbe4ed",
-      "observedAt": "2026-11-19T16:46:33.568Z",
+      "hash": "677fd293061d674898d87690a4e1977d48729e297d46e41f20ba556b8d762eaf",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 7103
+        "endLine": 7177
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "9ed5b13fdcc309e029f1a93b6fe6e96cbadfd1030672e618eb0915c1b4820195",
-      "observedAt": "2026-11-19T16:46:33.571Z",
+      "hash": "069fa5534797834ab39ca6b85f5b5f407459a656967c77675ec5389404a2b7db",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 8966
+        "endLine": 9060
       }
     },
     {
@@ -2580,15 +2580,15 @@
     {
       "id": "ce15aadc-3f49-421e-abf4-9c1465c28048",
       "kind": "source-code",
-      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts.",
+      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts. The Codex probe uses the same reasoning effort as runtime model resolution.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-model-source-validator.ts"
       },
-      "hash": "9eace1a6ecc6f7286484b8558ebe65d391d85a9535db7b4a9bd309a9f75889ed",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "33dce271430005ee5826f7964d4d72e266d5501adfe97f1df2c316b81c73d3bb",
+      "observedAt": "2026-11-20T10:09:20.831Z",
       "range": {
         "startLine": 1,
-        "endLine": 182
+        "endLine": 191
       }
     },
     {
@@ -2668,11 +2668,11 @@
       "location": {
         "path": "src/main/domain/model-sources/model-source.ts"
       },
-      "hash": "d923463192b99d5083755c11c5eb34e1714a31436967a4ccb9c8cb089d156d65",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "0b3854ae54032cd3ee3985497d2364feadf23f55686af0a9ea748e9773b3ea4e",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 235
+        "endLine": 237
       }
     },
     {
@@ -3171,9 +3171,9 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-configured-model-resolver.ts"
       },
-      "claim": "Frozen configured model resolution retains editable compaction percentage, effective limits and immutable source label for runtime settings and usage attribution.",
-      "hash": "3681caf3809898e10fdf2831b140053fbb20a0b1ebdb97d0d15ea2a22a2f39ed",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "claim": "Frozen configured model resolution retains editable compaction percentage, effective limits and immutable source label for runtime settings and usage attribution. Runtime model resolution uses the Codex high thinking default when the source has no explicit setting.",
+      "hash": "56ad04e67d42de38068654dfe697865f2a5faf731d24d98da149606d9c03254a",
+      "observedAt": "2026-11-20T10:09:20.831Z",
       "range": {
         "startLine": 1,
         "endLine": 69
@@ -3284,11 +3284,11 @@
         "path": "resources/migrations/README.md"
       },
       "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions. Migrations 110 and 111 add Routine execution numbering and bounded settlement facts.",
-      "hash": "70e4b0678b15cba418f6ca42b49e3cd13416b20251d0202dc9fc8d533768ebad",
-      "observedAt": "2026-11-19T16:14:53.420Z",
+      "hash": "da058f450929b4978dbc140f6dbfef87d21f9f7842575679428bd19767c0ff62",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
-        "endLine": 112
+        "endLine": 114
       }
     },
     {
@@ -3676,8 +3676,8 @@
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
       "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations. The latest migrations add durable Routine sequences and historical settlement snapshots while preserving pre-existing recovery and memory facts.",
-      "hash": "2e4fd43a167482b8b3f263e03894ca1a923092305ccd891a34f1a25cc05a0012",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "hash": "a553648c1de5003bc35a3aa21b549a7e2cf55e2625af1a6f29bf17bd073d746b",
+      "observedAt": "2026-11-20T05:13:26.817Z",
       "range": {
         "startLine": 1,
         "endLine": 1045
@@ -4318,6 +4318,174 @@
       },
       "hash": "f402dd43e274d8c377683b8311375a5e7eb40a60b271dce74d8f700ea5be1d59",
       "observedAt": "2026-11-19T16:11:58.366Z"
+    },
+    {
+      "id": "f87542e1-3d1d-41b0-9efe-6e9dc41fe6d1",
+      "kind": "source-code",
+      "claim": "The settings guide browser or device-code sign-in, fallback callback, polling and cancellation.",
+      "location": {
+        "path": "src/renderer/CodexSubscriptionForm.tsx"
+      },
+      "hash": "e06900a394fe4c91c2eaeec11312407e15cb34fbac4d3a47745ff86a76895910",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 138
+      }
+    },
+    {
+      "id": "da6352e2-2041-4adc-85b0-f72b90cd445c",
+      "kind": "source-code",
+      "claim": "Desktop sessions and CSRF protect Codex writes. Model settings opt into masked account details.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/model-source-routes.ts"
+      },
+      "hash": "de7c98475a3aed66a12d30a977b26ceefb8cd8199f70960537a958faea6fd145",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 183
+      }
+    },
+    {
+      "id": "ad171ae3-4f55-4fa5-bcc9-e0d1aa87cae2",
+      "kind": "source-code",
+      "claim": "Wires Codex OAuth and resolution through model-source services.",
+      "location": {
+        "path": "src/main/composition/wire-model-sources.ts"
+      },
+      "hash": "2d0115a31cb669c7b27f022ee969b20497d76bd5aaadd382aa4bad51c83e79e7",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 59
+      }
+    },
+    {
+      "id": "4e7a7a43-5d98-4c25-8b99-803c3dcfdec5",
+      "kind": "source-code",
+      "claim": "Owns a bounded session-scoped sign-in, checks fallback callback state and delegates authenticated source writes.",
+      "location": {
+        "path": "src/main/application/model-sources/codex-login-service.ts"
+      },
+      "hash": "05cdb9683d299411eeeb2917595d1380996f70680d7db1406f65e4a83e2f3a64",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 153
+      }
+    },
+    {
+      "id": "e339f771-c9ff-4b24-b0ea-f5f1a867e3f9",
+      "kind": "source-code",
+      "claim": "Reuses stable source identity, immutable revisions and no-tool health validation for Codex.",
+      "location": {
+        "path": "src/main/application/model-sources/model-source-service.ts"
+      },
+      "hash": "58455130c2e2af261cab0e8f0a975461566ed1e938468c1396f96b606efa8f9d",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 427
+      }
+    },
+    {
+      "id": "d4588ecd-9046-400c-a2fe-23dea5aa9f38",
+      "kind": "source-code",
+      "claim": "Resolves the Pi Codex catalog and the fixed HTTPS streaming Responses transport with source-scoped OAuth. The default Codex model is gpt-6.1-sol.",
+      "location": {
+        "path": "src/main/infrastructure/pi/codex-source-provider.ts"
+      },
+      "hash": "c79c994c48d08d1a639ab542f6f17fcea0e41191e49386f204b3b855d107cd3e",
+      "observedAt": "2026-11-20T10:09:20.831Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 79
+      }
+    },
+    {
+      "id": "6037f932-90ed-4835-a9e9-bdd317c810f8",
+      "kind": "source-code",
+      "claim": "Adapts Pi browser and device-code OAuth with a loopback callback and cancellation.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-codex-authorization.ts"
+      },
+      "hash": "f71046bac60df9abeef6c21fcaa4a931c9dbe820e73dbd45f7ae85f241a473af",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 30
+      }
+    },
+    {
+      "id": "57b8a7bc-045d-401a-9462-40fe4b25653a",
+      "kind": "source-code",
+      "claim": "Encrypts and serializes OAuth records and projects only masked account, known plan and expiration.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-credential-store-adapter.ts"
+      },
+      "hash": "d2a337804265799fe85911ce6a1160207142513f040375deb5de872702ee8107",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 134
+      }
+    },
+    {
+      "id": "df19eb19-4677-46d3-93cd-3ba2157ffac6",
+      "kind": "source-code",
+      "claim": "Extends revision kind constraints for Codex and retains source and credential references.",
+      "location": {
+        "path": "resources/migrations/112_codex_subscription_model_source.sql"
+      },
+      "hash": "ca68791ef2a13a3283d1a85eff7d91a7e7ee0e8dfe40f6454b698740056ee555",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 27
+      }
+    },
+    {
+      "id": "26db7038-e64e-4a83-9d69-98412030f9c5",
+      "kind": "source-code",
+      "claim": "Synthetic responses exercise the real Pi OAuth and Responses transport, encrypted storage, refresh, tool replay and reauthorization. Checks the GPT-6.1 Sol and high defaults on the wire and preserves the selected model and low effort through reauthorization.",
+      "location": {
+        "path": "tests/integration/codex-subscription.test.ts"
+      },
+      "hash": "28886e427f7ceed69668fa5ac2c4769410a49122c8b678403db92558b072c3f8",
+      "observedAt": "2026-11-20T10:09:20.831Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 198
+      }
+    },
+    {
+      "id": "bed7bccd-4293-4f83-a581-063ff38ed46c",
+      "kind": "source-code",
+      "claim": "Isolated Electron verifies delegation of the authorization link to the system browser.",
+      "location": {
+        "path": "tests/e2e/codex-subscription.spec.ts"
+      },
+      "hash": "20a24c0d5d534295666774a51be5a8b47dd4a4469bba9c9f2170191fe8d17ba9",
+      "observedAt": "2026-11-20T05:13:26.817Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 45
+      }
+    },
+    {
+      "id": "c299d377-598f-4bec-b982-b4b6d2d0ea29",
+      "kind": "source-code",
+      "claim": "Codex defaults to high effort while explicit effort settings take precedence and other transports use their existing provider defaults.",
+      "location": {
+        "path": "src/main/infrastructure/pi/source-provider-factory.ts"
+      },
+      "hash": "d9839253307c6c5534b5303492ecfa024b018c455d974d97ed6dbbe783c4e5e2",
+      "observedAt": "2026-11-20T10:09:35.240Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 309
+      }
     }
   ]
 }

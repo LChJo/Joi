@@ -9,7 +9,7 @@ import {
 
 describe("JOI-01 shared DTO contract", () => {
   it("exposes Workbench, Partner and model source projections without secret or absolute-path fields", () => {
-    expect(MODEL_SOURCE_KINDS).toEqual(["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "generic-openai"]);
+    expect(MODEL_SOURCE_KINDS).toEqual(["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "codex", "generic-openai"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "kimi")?.options.map((option) => option.accessMode))
       .toEqual(["api", "coding-plan"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "kimi")?.options[1]?.protocols.map((option) => option.protocol))

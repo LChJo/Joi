@@ -2,6 +2,7 @@ import type { ModelSourceCatalog } from "../../application/ports/model-source-po
 import { DomainError } from "../../domain/errors.js";
 import type { ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
 import { defaultModelSourceProtocol, getDirectModelSourcePreset } from "./provider-presets.js";
+import { resolveCodexModelId } from "./codex-source-provider.js";
 
 function normalizeDirectModelId(kind: ModelSourceKind, accessMode: Exclude<ModelSourceAccessMode, "custom">, modelId: string | undefined): string | undefined {
   if (kind !== "kimi" || accessMode !== "coding-plan") return modelId;
@@ -18,6 +19,21 @@ export class PiModelSourceCatalog implements ModelSourceCatalog {
     requestedProtocol?: ModelSourceProtocol,
   ) {
     const requested = requestedModelId?.trim();
+    if (kind === "codex") {
+      if (requestedAccessMode !== undefined && requestedAccessMode !== "coding-plan") {
+        throw new DomainError("model_source_access_mode_invalid", "Codex uses subscription access.");
+      }
+      if (requestedProtocol !== undefined && requestedProtocol !== "openai") {
+        throw new DomainError("model_source_protocol_invalid", "Codex uses the Responses protocol.");
+      }
+      return {
+        accessMode: "coding-plan" as const,
+        capability: "custom-unverified-tools" as const,
+        displayName: "OpenAI Codex",
+        modelId: resolveCodexModelId(requested),
+        protocol: "openai" as const,
+      };
+    }
     const accessMode = requestedAccessMode ?? (kind === "generic-openai" ? "custom" : "api");
     if (kind === "generic-openai") {
       if (accessMode !== "custom") throw new DomainError("model_source_access_mode_invalid", "Generic sources must use custom access.");

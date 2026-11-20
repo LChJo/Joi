@@ -707,6 +707,26 @@ export interface MessageParameters {
   "exportState.pair": undefined;
   "exportState.resume": undefined;
   "exportState.none": undefined;
+  "home.codexSubscription": undefined;
+  "home.codexAccountLabel": { "p0": string };
+  "home.codexPlanLabel": { "p0": string };
+  "home.codexExpiresLabel": { "p0": string };
+  "home.codexSubscriptionHint": undefined;
+  "home.codexBrowserSignIn": undefined;
+  "home.codexDeviceSignIn": undefined;
+  "home.codexOpenAuthorization": undefined;
+  "home.codexEnterDeviceCode": undefined;
+  "home.codexCallbackUrl": undefined;
+  "home.codexSubmitCallback": undefined;
+  "home.codexWaitingForAuthorization": undefined;
+  "home.codexSavedNeedsValidation": undefined;
+  "home.codexLoginFailed": undefined;
+  "home.codexLoginExpired": undefined;
+  "home.codexLoginBusy": undefined;
+  "home.codexStatusFailed": undefined;
+  "home.codexCallbackInvalid": undefined;
+  "home.codexSignInAgain": undefined;
+  "home.codexReconnect": undefined;
   "home.completedWorkPreserved": { "count": number };
   "home.retrySynthesisWithExistingWork": undefined;
   "home.resolveModelBalance": undefined;
@@ -2561,6 +2581,26 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "Initial pairing (pair)",
     "exportState.resume": "Resume connection (resume)",
     "exportState.none": "None",
+    "home.codexSubscription": "Codex subscription",
+    "home.codexAccountLabel": "Account {p0}",
+    "home.codexPlanLabel": "{p0} plan",
+    "home.codexExpiresLabel": "Current authorization expires {p0}",
+    "home.codexSubscriptionHint": "Authorize a ChatGPT account with Codex access. Requests count toward your ChatGPT plan limits.",
+    "home.codexBrowserSignIn": "Continue with ChatGPT",
+    "home.codexDeviceSignIn": "Use a device code",
+    "home.codexOpenAuthorization": "Open authorization in browser",
+    "home.codexEnterDeviceCode": "Enter this code on the authorization page",
+    "home.codexCallbackUrl": "Callback URL (paste if the browser could not return)",
+    "home.codexSubmitCallback": "Submit callback URL",
+    "home.codexWaitingForAuthorization": "Waiting for ChatGPT authorization…",
+    "home.codexSavedNeedsValidation": "Codex subscription saved. Check its connection status in Model Connections.",
+    "home.codexLoginFailed": "Codex authorization did not finish. Try again.",
+    "home.codexLoginExpired": "Codex authorization timed out. Sign in again.",
+    "home.codexLoginBusy": "A Codex sign-in is in progress. Finish or cancel it before trying again.",
+    "home.codexStatusFailed": "Could not check the Codex sign-in status.",
+    "home.codexCallbackInvalid": "Paste the complete callback URL from this sign-in.",
+    "home.codexSignInAgain": "The Codex authorization has expired or been revoked. Sign in again.",
+    "home.codexReconnect": "Sign in to Codex again",
     "home.completedWorkPreserved": "{count, plural, one {{count} completed work item is still available.} other {{count} completed work items are still available.}}",
     "home.retrySynthesisWithExistingWork": "Continue this task to summarize the existing results again without rerunning completed work.",
     "home.resolveModelBalance": "Add quota or change the primary model source, then continue this task.",
@@ -4413,6 +4453,26 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "首次配对 pair",
     "exportState.resume": "恢复连接 resume",
     "exportState.none": "无",
+    "home.codexSubscription": "Codex 订阅",
+    "home.codexAccountLabel": "账号 {p0}",
+    "home.codexPlanLabel": "套餐 {p0}",
+    "home.codexExpiresLabel": "本次授权有效至 {p0}",
+    "home.codexSubscriptionHint": "使用有 Codex 权益的 ChatGPT 账号授权。请求计入你的 ChatGPT 订阅额度。",
+    "home.codexBrowserSignIn": "使用 ChatGPT 登录",
+    "home.codexDeviceSignIn": "使用设备码",
+    "home.codexOpenAuthorization": "在浏览器中打开授权页",
+    "home.codexEnterDeviceCode": "在授权页输入此设备码",
+    "home.codexCallbackUrl": "回调网址（仅在浏览器无法返回时粘贴）",
+    "home.codexSubmitCallback": "提交回调网址",
+    "home.codexWaitingForAuthorization": "等待 ChatGPT 授权…",
+    "home.codexSavedNeedsValidation": "已保存 Codex 订阅。请在模型网络中检查连接状态。",
+    "home.codexLoginFailed": "Codex 授权未完成，请重试。",
+    "home.codexLoginExpired": "Codex 授权已超时，请重新登录。",
+    "home.codexLoginBusy": "已有 Codex 授权正在进行。请完成或取消该授权后再试。",
+    "home.codexStatusFailed": "暂时无法获取 Codex 授权状态。",
+    "home.codexCallbackInvalid": "请粘贴本次授权返回的完整回调网址。",
+    "home.codexSignInAgain": "Codex 订阅授权已失效，请重新登录。",
+    "home.codexReconnect": "重新登录 Codex",
     "home.completedWorkPreserved": "已保留 {count} 项已完成的工作。",
     "home.retrySynthesisWithExistingWork": "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。",
     "home.resolveModelBalance": "请补充额度或更换主模型来源，再继续此任务。",
@@ -6870,6 +6930,40 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "恢复连接 resume": "exportState.resume",
   "None": "exportState.none",
   "无": "exportState.none",
+  "Codex subscription": "home.codexSubscription",
+  "Codex 订阅": "home.codexSubscription",
+  "Authorize a ChatGPT account with Codex access. Requests count toward your ChatGPT plan limits.": "home.codexSubscriptionHint",
+  "使用有 Codex 权益的 ChatGPT 账号授权。请求计入你的 ChatGPT 订阅额度。": "home.codexSubscriptionHint",
+  "Continue with ChatGPT": "home.codexBrowserSignIn",
+  "使用 ChatGPT 登录": "home.codexBrowserSignIn",
+  "Use a device code": "home.codexDeviceSignIn",
+  "使用设备码": "home.codexDeviceSignIn",
+  "Open authorization in browser": "home.codexOpenAuthorization",
+  "在浏览器中打开授权页": "home.codexOpenAuthorization",
+  "Enter this code on the authorization page": "home.codexEnterDeviceCode",
+  "在授权页输入此设备码": "home.codexEnterDeviceCode",
+  "Callback URL (paste if the browser could not return)": "home.codexCallbackUrl",
+  "回调网址（仅在浏览器无法返回时粘贴）": "home.codexCallbackUrl",
+  "Submit callback URL": "home.codexSubmitCallback",
+  "提交回调网址": "home.codexSubmitCallback",
+  "Waiting for ChatGPT authorization…": "home.codexWaitingForAuthorization",
+  "等待 ChatGPT 授权…": "home.codexWaitingForAuthorization",
+  "Codex subscription saved. Check its connection status in Model Connections.": "home.codexSavedNeedsValidation",
+  "已保存 Codex 订阅。请在模型网络中检查连接状态。": "home.codexSavedNeedsValidation",
+  "Codex authorization did not finish. Try again.": "home.codexLoginFailed",
+  "Codex 授权未完成，请重试。": "home.codexLoginFailed",
+  "Codex authorization timed out. Sign in again.": "home.codexLoginExpired",
+  "Codex 授权已超时，请重新登录。": "home.codexLoginExpired",
+  "A Codex sign-in is in progress. Finish or cancel it before trying again.": "home.codexLoginBusy",
+  "已有 Codex 授权正在进行。请完成或取消该授权后再试。": "home.codexLoginBusy",
+  "Could not check the Codex sign-in status.": "home.codexStatusFailed",
+  "暂时无法获取 Codex 授权状态。": "home.codexStatusFailed",
+  "Paste the complete callback URL from this sign-in.": "home.codexCallbackInvalid",
+  "请粘贴本次授权返回的完整回调网址。": "home.codexCallbackInvalid",
+  "The Codex authorization has expired or been revoked. Sign in again.": "home.codexSignInAgain",
+  "Codex 订阅授权已失效，请重新登录。": "home.codexSignInAgain",
+  "Sign in to Codex again": "home.codexReconnect",
+  "重新登录 Codex": "home.codexReconnect",
   "Continue this task to summarize the existing results again without rerunning completed work.": "home.retrySynthesisWithExistingWork",
   "继续此任务可用已有成果重新汇总，无需重跑已完成的工作。": "home.retrySynthesisWithExistingWork",
   "Add quota or change the primary model source, then continue this task.": "home.resolveModelBalance",

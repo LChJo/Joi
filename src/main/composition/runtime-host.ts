@@ -168,7 +168,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions });
     await conversationStack.recover();
     exportJobs = runtimeStack.exportJobs;
-    drainRuntime = async () => { await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
+    drainRuntime = async () => { await modelSourceStack.codexLogin.close(); await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
     await persistence.joiInboxRepository.recoverOnBoot();
     await persistence.dispatchClaims.recoverOnBoot();
@@ -275,6 +275,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       directoryPicker,
       skills: partnerStack.partnerSkillCatalog,
       modelSources: modelSourceStack.modelSources,
+      codexLogin: modelSourceStack.codexLogin,
       operations,
       partners: partnerStack.partners,
       scenarioPacks: partnerStack.scenarioPacks,

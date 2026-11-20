@@ -4,7 +4,31 @@ import type { Credential, CredentialInfo, CredentialStore } from "@earendil-work
 /* eslint-disable @typescript-eslint/require-await */
 
 import type { CredentialVault } from "../../application/ports/a2a-ports.js";
-import type { PiCredentialRecordStore } from "../../application/ports/model-source-ports.js";
+import type { ModelSourceOAuthCredential, PiCredentialRecordStore } from "../../application/ports/model-source-ports.js";
+import type { CodexAccountDto } from "../../../shared/joi.js";
+
+const PLAN_NAMES = new Map([
+  ["free", "Free"], ["go", "Go"], ["plus", "Plus"], ["pro", "Pro"], ["team", "Team"],
+  ["business", "Business"], ["enterprise", "Enterprise"], ["edu", "Edu"],
+]);
+
+function describeAccess(access: string): { maskedAccount?: string; plan?: string } {
+  try {
+    const payload = access.split(".")[1];
+    if (payload === undefined) return {};
+    const token = JSON.parse(Buffer.from(payload, "base64url").toString()) as { "https://api.openai.com/auth"?: Record<string, unknown> };
+    const claims = token["https://api.openai.com/auth"];
+    const id = claims?.chatgpt_account_id;
+    const planType = claims?.chatgpt_plan_type;
+    const plan = typeof planType === "string" ? PLAN_NAMES.get(planType.toLowerCase()) : undefined;
+    return {
+      ...(typeof id === "string" && /^[a-z0-9-]{8,80}$/iu.test(id) ? { maskedAccount: `••••${id.slice(-4)}` } : {}),
+      ...(plan === undefined ? {} : { plan }),
+    };
+  } catch {
+    return {};
+  }
+}
 
 function parseCredential(serialized: string): Credential {
   const value: unknown = JSON.parse(serialized);
@@ -71,6 +95,21 @@ export class SafeStoragePiCredentialStore implements CredentialStore {
       ...(apiKey === undefined ? {} : { key: apiKey }),
       type: "api_key",
     }));
+    return this.#version(providerId);
+  }
+
+  async saveOAuth(providerId: string, credential: ModelSourceOAuthCredential): Promise<number> {
+    await this.modify(providerId, async () => ({ ...credential, type: "oauth" }));
+    return this.#version(providerId);
+  }
+
+  async describeOAuth(providerId: string): Promise<CodexAccountDto | undefined> {
+    const credential = await this.read(providerId);
+    if (credential?.type !== "oauth" || !Number.isFinite(new Date(credential.expires).getTime())) return undefined;
+    return { expiresAt: new Date(credential.expires).toISOString(), ...describeAccess(credential.access) };
+  }
+
+  async #version(providerId: string): Promise<number> {
     const record = await this.#records.read(providerId);
     if (record === null) throw new Error("pi_credential_write_failed");
     return record.version;

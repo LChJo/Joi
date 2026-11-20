@@ -19,6 +19,7 @@ import { thinkingEffortLabel } from "./copy";
 import { submitComposerOnEnter } from "./composer-keyboard";
 import { ConversationOutput } from "./ConversationOutput";
 import { GoalQuestionHistory, QuestionQueue } from "./UserQuestionCard";
+import { CodexSubscriptionForm } from "./CodexSubscriptionForm";
 import "./conversations.css";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -30,7 +31,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
   const [notice, setNotice] = useNotice();
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (selected === null || selectedAccessMode === null || selectedProtocol === null) return;
+    if (selected === null || selected === "codex" || selectedAccessMode === null || selectedProtocol === null) return;
     const form = new FormData(event.currentTarget);
     const value = (key: string) => {
       const field = form.get(key);
@@ -96,7 +97,11 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
     <p className="eyebrow">{t("home.niceToMeetYou")}</p>
     <h1 id="joi-network-title">{t("home.joiNeedsAModelConnection")}</h1>
     <p>{t("home.chooseAModelProviderYouAlreadyUseCredentialsAre")}</p>
-    <div className="model-source-choices">{MODEL_SOURCE_CHOICES.map((choice) => <button className={selected === choice.kind ? "selected" : ""} key={choice.kind} onClick={() => chooseProvider(choice.kind)} type="button">{t("home.connect")} {localizeProductText(choice.label)}</button>)}</div>
+    <div className="model-source-choices">
+      {MODEL_SOURCE_CHOICES.map((choice) => <button className={selected === choice.kind ? "selected" : ""} key={choice.kind} onClick={() => chooseProvider(choice.kind)} type="button">{t("home.connect")} {localizeProductText(choice.label)}</button>)}
+      {api.desktop ? <button className={selected === "codex" ? "selected" : ""} onClick={() => chooseProvider("codex")} type="button">{t("home.connect")} {t("home.codexSubscription")}</button> : null}
+    </div>
+    {selected === "codex" ? <CodexSubscriptionForm api={api} onCancel={cancel} onConnected={changed} /> : null}
     {selectedChoice !== undefined && selectedAccessMode === null ? <section className="model-source-access-picker" aria-label={t("home.valueAccessPlan", { p0: localizeProductText(selectedChoice.label) })}>
       <h2>{localizeProductText(selectedChoice.label)}  {t("home.accessPlan")}</h2>
       <div className="model-source-access-choices">{selectedChoice.options.map((option) => <button aria-label={localizeProductText(option.label)} key={option.accessMode} onClick={() => chooseAccessMode(option.accessMode)} type="button"><strong>{localizeProductText(option.label)}</strong><span>{localizeProductText(option.description)}</span></button>)}</div>
@@ -137,7 +142,8 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
   </section>;
 }
 
-function modelSourceReasonText(reasonCode: string | undefined): string {
+function modelSourceReasonText(reasonCode: string | undefined, kind?: ModelSourceKindDto): string {
+  if (kind === "codex" && reasonCode === "auth_failed") return t("home.codexSignInAgain");
   if (reasonCode === "auth_failed") return t("home.theApiKeyDoesNotMatchThisAccessPlan");
   if (reasonCode === "rate_limited") return t("home.theApiIsRateLimitedOrOverloadedTryLater");
   if (reasonCode === "model_unavailable") return t("home.thisModelIdWasNotFoundLeaveBlankFor");
@@ -250,11 +256,12 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [partners, setPartners] = useState<PartnerDto[]>([]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState<string | null>(null);
   const [notice, setNotice] = useNotice();
   const [noticeWarns, setNoticeWarns] = useState(false);
   const tell = useCallback((text: string, warn = false) => { setNotice(text); setNoticeWarns(warn); }, [setNotice]);
   const load = useCallback(async () => {
-    try { setSources((await api.listModelSources()).items); }
+    try { setSources((await api.listModelSources(true)).items); }
     catch { tell(t("home.couldNotLoadModelConnectionSettings")); return; }
     // Partners come along because editing a source resets it to DRAFT, which strands every partner
     // pinned to it; the save has to be able to say how many that is. Advisory only, so a partner
@@ -270,7 +277,11 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     const current = ids[index]; const replacement = ids[target];
     if (current === undefined || replacement === undefined) return;
     ids[index] = replacement; ids[target] = current;
-    setSources((await api.orderModelSources(ids)).items);
+    const { items } = await api.orderModelSources(ids);
+    setSources((previous) => items.map((item) => {
+      const codexAccount = previous.find(({ sourceId }) => sourceId === item.sourceId)?.codexAccount;
+      return codexAccount === undefined ? item : { ...item, codexAccount };
+    }));
   };
   const removeSource = async (sourceId: string) => {
     setNotice(null);
@@ -332,12 +343,39 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     <header><div><h2>{t("home.modelConnections")}</h2><p>{t("home.primaryAndBackupConnectionsAreUsedInThisOrder")}</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? t("home.collapse") : t("home.addConnection")}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
     <div className="model-source-list">{sources.map((source, index) => <article className="model-source-item" key={source.sourceId}>
-      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? t("home.primary") : t("home.backupValue", { p0: String(index) })} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>{t("home.model")}{source.activeModel.id}</small>{source.protocol === "anthropic" && source.anthropicAuthMode === "bearer" ? <small>{t("home.authenticationBearerAuthTokenDetectedAutomatically")}</small> : null}{source.activeModel.thinkingEffort === undefined ? null : <small>{t("home.thinkingEffort767f05")}{thinkingEffortLabel(source.activeModel.thinkingEffort)}</small>}{modelLimitNote(source.activeModel)}{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}{source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <><span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode)}</span>{source.lastValidatedAt === undefined ? null : <small>{t("home.lastValidated")}{new Date(source.lastValidatedAt).toLocaleString(currentLocale())}</small>}{source.lastError === undefined ? null : <details className="model-source-error"><summary>{t("home.viewOriginalError")}</summary><pre>{source.lastError}</pre></details>}</> : null}</div>
-      <div aria-label={t("home.valueActions", { p0: source.displayName })} className="row-actions model-source-actions" role="group"><button aria-label={t("home.editValue", { p0: source.displayName })} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">{t("common.edit")}</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">{t("home.moveUp")}</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">{t("home.moveDown")}</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice(noticeMessage("home.validationFailed")))} type="button">{t("home.validate")}</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">{t("home.disable")}</button><button className="button danger-text" onClick={() => void removeSource(source.sourceId)} type="button">{t("common.delete")}</button></div>
+      <div className="model-source-summary">
+        <div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div>
+        <span className="model-source-meta">{source.primary ? t("home.primary") : t("home.backupValue", { p0: String(index) })} · {source.kind === "codex" ? t("home.codexSubscription") : accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span>
+        <small>{t("home.model")}{source.activeModel.id}</small>
+        {source.codexAccount === undefined ? null : <>
+          {source.codexAccount.maskedAccount === undefined ? null : <small>{t("home.codexAccountLabel", { p0: source.codexAccount.maskedAccount })}</small>}
+          {source.codexAccount.plan === undefined ? null : <small>{t("home.codexPlanLabel", { p0: source.codexAccount.plan })}</small>}
+          <small>{t("home.codexExpiresLabel", { p0: new Date(source.codexAccount.expiresAt).toLocaleString(currentLocale()) })}</small>
+        </>}
+        {source.protocol === "anthropic" && source.anthropicAuthMode === "bearer" ? <small>{t("home.authenticationBearerAuthTokenDetectedAutomatically")}</small> : null}
+        {source.activeModel.thinkingEffort === undefined ? null : <small>{t("home.thinkingEffort767f05")}{thinkingEffortLabel(source.activeModel.thinkingEffort)}</small>}
+        {modelLimitNote(source.activeModel)}
+        {source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}
+        {source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <>
+          <span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode, source.kind)}</span>
+          {source.lastValidatedAt === undefined ? null : <small>{t("home.lastValidated")}{new Date(source.lastValidatedAt).toLocaleString(currentLocale())}</small>}
+          {source.lastError === undefined ? null : <details className="model-source-error"><summary>{t("home.viewOriginalError")}</summary><pre>{source.lastError}</pre></details>}
+        </> : null}
+      </div>
+      <div aria-label={t("home.valueActions", { p0: source.displayName })} className="row-actions model-source-actions" role="group">
+        <button aria-label={t("home.editValue", { p0: source.displayName })} className="button ghost" onClick={() => { setReconnecting(null); setEditing(source.sourceId); }} type="button">{t("common.edit")}</button>
+        {source.kind === "codex" && api.desktop ? <button className="button quiet" onClick={() => { setEditing(null); setReconnecting(source.sourceId); }} type="button">{t("home.codexReconnect")}</button> : null}
+        <button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">{t("home.moveUp")}</button>
+        <button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">{t("home.moveDown")}</button>
+        <button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice(noticeMessage("home.validationFailed")))} type="button">{t("home.validate")}</button>
+        <button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">{t("home.disable")}</button>
+        <button className="button danger-text" onClick={() => void removeSource(source.sourceId)} type="button">{t("common.delete")}</button>
+      </div>
+      {reconnecting === source.sourceId ? <CodexSubscriptionForm api={api} sourceId={source.sourceId} onCancel={() => setReconnecting(null)} onConnected={async () => { setReconnecting(null); await load(); }} /> : null}
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>{t("home.editDisplayName")}<input defaultValue={source.displayName} name="displayName" required /></label><label>{t("home.editBaseUrl")}<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
         <label>{t("home.editModelId")}<input defaultValue={source.activeModel.id} name="modelId" required /></label>
-        <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>
+        {source.kind === "codex" ? null : <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>}
         <details className="model-source-advanced">
           <summary>{t("home.advancedSettings")}</summary>
           <p className="model-source-hint">{t("home.piAutomaticCompaction")}</p>

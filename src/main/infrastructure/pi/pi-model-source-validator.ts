@@ -91,7 +91,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     try {
       if (controller.signal.aborted) throw new Error("validation probe aborted");
       const model = createPiSourceProvider(piSourceProviderInput(record)).getModels()[0];
-      const thinks = defaultThinkingLevel(record.source.activeModelRevision.thinkingEffort, model?.baseUrl) !== "off"
+      const thinks = defaultThinkingLevel(record.source.activeModelRevision.thinkingEffort, model?.baseUrl, model?.api) !== "off"
         || modelRequiresAlwaysOnThinking(model?.baseUrl);
       timer = setTimeout(() => controller.abort(), thinks ? 30_000 : 15_000);
       timer.unref();
@@ -113,7 +113,14 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           return { ...original, error: `[bearer_probe_failed:${failureReason(alternateError).reasonCode}] ${original.error ?? ""}`.trim(), validatedAt };
         }
       }
-      return { ...failureReason(error), validatedAt };
+      const detail = revision.kind === "codex" && error instanceof Error && error.message.startsWith("OAuth refresh failed")
+        ? error.cause ?? error : error;
+      const failure = failureReason(detail);
+      if (revision.kind === "codex" && /invalid_grant|refresh_token_(?:expired|reused|invalidated)/iu.test(errorMessage(detail))) {
+        return { reasonCode: "auth_failed", status: "NEEDS_AUTH", validatedAt };
+      }
+      if (revision.kind === "codex") return { reasonCode: failure.reasonCode, status: failure.status, validatedAt };
+      return { ...failure, validatedAt };
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", abort);
@@ -131,23 +138,26 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       // that validating is meant to surface.
       const provider = createPiSourceProvider(piSourceProviderInput(record));
       // Alternative auth must use the exact credential that received the original rejection.
-      const snapshot = snapshots.get(signal) ?? credentials.read(provider.id);
-      snapshots.set(signal, snapshot);
       const models = createModels({
         authContext: { env: () => Promise.resolve(undefined), fileExists: () => Promise.resolve(false) },
-        credentials: {
-          read: (id) => id === provider.id ? snapshot : Promise.resolve(undefined),
+        credentials: source.activeSourceRevision.kind === "codex" ? credentials : {
+          read: (id) => {
+            if (id !== provider.id) return Promise.resolve(undefined);
+            const snapshot = snapshots.get(signal) ?? credentials.read(id);
+            snapshots.set(signal, snapshot);
+            return snapshot;
+          },
           list: () => credentials.list(),
           modify: (id, fn) => credentials.modify(id, fn),
           delete: (id) => credentials.delete(id),
         },
       });
       models.setProvider(provider);
-      const auth = await models.getAuth(provider.id);
+      const auth = await models.getAuth(provider.id, { signal });
       if (auth === undefined) throw new Error("credential missing");
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
-      const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl);
+      const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl, model.api);
       // DeepSeek defaults to thinking even when Pi's model metadata says false.
       // The fixed no-tool probe requests no reasoning when the configured effort is off.
       const probeModel = model.api === "openai-responses" && new URL(model.baseUrl).hostname === "api.deepseek.com"

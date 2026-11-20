@@ -8,10 +8,24 @@ import {
   readJson,
   sendEmpty,
   sendJson,
+  sessionToken,
   stringField,
 } from "../http-core.js";
 import { modelSourceService } from "../api-dependencies.js";
-import { exact, pattern, type RouteDefinition } from "../route-types.js";
+import { exact, pattern, type RouteContext, type RouteDefinition } from "../route-types.js";
+
+async function desktopCodexLogin(ctx: RouteContext) {
+  const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
+  if (session.kind !== "desktop") throw new HttpError("desktop_required", "Codex sign-in is available from the desktop app.", 403);
+  const service = ctx.dependencies.codexLogin;
+  if (service === undefined) throw new HttpError("codex_login_unavailable", "Codex sign-in is unavailable.", 503);
+  return { service, owner: session.sessionHash };
+}
+
+const loginPath = "/api/v1/model-sources/codex-login";
+function attemptId(match: unknown): string {
+  return decodeURIComponent((match as RegExpExecArray)[1] ?? "");
+}
 
 export const MODEL_SOURCE_READ_ROUTES: RouteDefinition[] = [
   {
@@ -19,12 +33,58 @@ export const MODEL_SOURCE_READ_ROUTES: RouteDefinition[] = [
     id: "GET /api/v1/model-sources",
     match: exact("GET", "/api/v1/model-sources"),
     handle: async (ctx) => {
-      sendJson(ctx.response, 200, { items: await modelSourceService(ctx.dependencies).list() });
+      const includeCodexAccount = ctx.url.searchParams.get("include") === "codex-account"
+        && (await ctx.dependencies.auth.authenticate(sessionToken(ctx.request))).kind === "desktop";
+      sendJson(ctx.response, 200, { items: await modelSourceService(ctx.dependencies).list(includeCodexAccount) });
+    },
+  },
+  {
+    auth: "read",
+    id: "GET /api/v1/model-sources/codex-login/:attemptId",
+    match: pattern("GET", /^\/api\/v1\/model-sources\/codex-login\/([^/]+)$/),
+    handle: async (ctx, match) => {
+      const { service, owner } = await desktopCodexLogin(ctx);
+      sendJson(ctx.response, 200, service.status(owner, attemptId(match)));
     },
   },
 ];
 
 export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
+  {
+    auth: "write",
+    id: "POST /api/v1/model-sources/codex-login",
+    match: exact("POST", loginPath),
+    handle: async (ctx) => {
+      const { service, owner } = await desktopCodexLogin(ctx);
+      const body = await readJson(ctx.request);
+      const method = stringField(body, "method");
+      if (method !== "browser" && method !== "device_code") {
+        throw new HttpError("codex_login_method_invalid", "Select browser or device-code sign-in.", 400);
+      }
+      const sourceId = body.sourceId === undefined ? undefined : stringField(body, "sourceId");
+      sendJson(ctx.response, 202, service.start(owner, method, sourceId));
+    },
+  },
+  {
+    auth: "write",
+    id: "POST /api/v1/model-sources/codex-login/:attemptId/callback",
+    match: pattern("POST", /^\/api\/v1\/model-sources\/codex-login\/([^/]+)\/callback$/),
+    handle: async (ctx, match) => {
+      const { service, owner } = await desktopCodexLogin(ctx);
+      service.submitCallback(owner, attemptId(match), stringField(await readJson(ctx.request), "callbackUrl"));
+      sendEmpty(ctx.response, 204);
+    },
+  },
+  {
+    auth: "write",
+    id: "DELETE /api/v1/model-sources/codex-login/:attemptId",
+    match: pattern("DELETE", /^\/api\/v1\/model-sources\/codex-login\/([^/]+)$/),
+    handle: async (ctx, match) => {
+      const { service, owner } = await desktopCodexLogin(ctx);
+      service.cancel(owner, attemptId(match));
+      sendEmpty(ctx.response, 204);
+    },
+  },
   {
     auth: "write",
     id: "POST /api/v1/model-sources",

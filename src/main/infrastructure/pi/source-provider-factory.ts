@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { createProvider, type ApiKeyAuth, type Model, type ModelThinkingLevel, type Provider } from "@earendil-works/pi-ai";
+import { createProvider, type Api, type ApiKeyAuth, type Model, type ModelThinkingLevel, type Provider } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRecord } from "../../application/ports/model-source-ports.js";
 import {
@@ -15,6 +15,7 @@ import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/mo
 import type { ThinkingEffort } from "../../../shared/joi.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 import { withModelSourceHttpTransport } from "./model-source-http-transport.js";
+import { createCodexSourceProvider, type CodexSourceProviderInput } from "./codex-source-provider.js";
 
 /** A model's own documented geometry, as configured on the settings page. */
 export interface ModelLimitOverrides {
@@ -30,10 +31,15 @@ export function modelLimitOverrides(revision: { contextWindow?: number; maxOutpu
   };
 }
 
-/** The thinking level a route will run at: the user's explicit choice, else joi's endpoint
- *  allowlist (a few hosts only accept requests that carry thinking, so they get "low"). */
-export function defaultThinkingLevel(effort: ThinkingEffort | undefined, baseUrl: string | undefined): ModelThinkingLevel {
-  return effort ?? (modelRequiresAlwaysOnThinking(baseUrl) ? "low" : "off");
+/** An explicit setting takes precedence over the provider default. */
+export function defaultThinkingLevel(
+  effort: ThinkingEffort | undefined,
+  baseUrl: string | undefined,
+  api?: Api,
+): ModelThinkingLevel {
+  if (effort !== undefined) return effort;
+  if (api === "openai-codex-responses") return "high";
+  return modelRequiresAlwaysOnThinking(baseUrl) ? "low" : "off";
 }
 
 /** Assembles the provider input a real turn would use, limits and thinking effort included.
@@ -45,6 +51,15 @@ export function piSourceProviderInput(record: ModelSourceRecord): PiSourceProvid
     ...modelLimitOverrides(source.activeModelRevision),
     ...(source.activeModelRevision.thinkingEffort === undefined ? {} : { thinkingEffort: source.activeModelRevision.thinkingEffort }),
   };
+  if (source.activeSourceRevision.kind === "codex") {
+    return {
+      ...overrides,
+      kind: "codex",
+      credentialRef: source.activeSourceRevision.credentialRef,
+      modelId: source.activeModelRevision.modelId,
+      sourceId: source.sourceId,
+    };
+  }
   return source.activeSourceRevision.kind === "generic-openai"
     ? {
       ...overrides,
@@ -85,7 +100,8 @@ interface GenericSourceProviderInput extends ModelLimitOverrides {
   thinkingEffort?: ThinkingEffort;
 }
 
-export type PiSourceProviderInput = (DirectSourceProviderInput | GenericSourceProviderInput) & { anthropicAuthMode?: "bearer" };
+export type ApiKeySourceProviderInput = (DirectSourceProviderInput | GenericSourceProviderInput) & { anthropicAuthMode?: "bearer" };
+export type PiSourceProviderInput = ApiKeySourceProviderInput | CodexSourceProviderInput;
 
 /** The tiers Kimi's coding-plan K3 endpoint is known to offer. `null` marks one joi believes it
  *  refuses, which for "off" also keeps pi-ai from sending a `thinking: disabled` block the
@@ -128,7 +144,7 @@ const IMAGE_INPUT_SOURCES: ReadonlySet<string> = new Set([
   "kimi:coding-plan",
 ]);
 
-function supportsImageInput(input: PiSourceProviderInput): boolean {
+function supportsImageInput(input: ApiKeySourceProviderInput): boolean {
   return IMAGE_INPUT_SOURCES.has(input.kind === "generic-openai" ? "generic-openai" : `${input.kind}:${input.accessMode}`);
 }
 
@@ -153,7 +169,7 @@ const DIRECT_MAX_OUTPUT_TOKENS = 32_768;
 const GATEWAY_MAX_OUTPUT_TOKENS = 16_384;
 
 /** The window the vendor documents for this exact model, else the kind's default. */
-function presetWindowFor(input: PiSourceProviderInput, preset: ModelPresetEntry | undefined): number {
+function presetWindowFor(input: ApiKeySourceProviderInput, preset: ModelPresetEntry | undefined): number {
   if (preset?.contextWindow !== undefined) return preset.contextWindow;
   if (input.protocol !== "anthropic") return DEFAULT_CONTEXT_WINDOW;
   if (input.modelId === "k3") return 1_048_576;
@@ -161,7 +177,7 @@ function presetWindowFor(input: PiSourceProviderInput, preset: ModelPresetEntry 
 }
 
 /** The completion cap the vendor documents, else the kind's fallback. */
-function presetOutputFor(input: PiSourceProviderInput, preset: ModelPresetEntry | undefined, kimiK3: boolean): number {
+function presetOutputFor(input: ApiKeySourceProviderInput, preset: ModelPresetEntry | undefined, kimiK3: boolean): number {
   if (kimiK3) return 131_072;
   if (preset?.maxOutputTokens !== undefined) return preset.maxOutputTokens;
   return input.kind === "generic-openai" ? GATEWAY_MAX_OUTPUT_TOKENS : DIRECT_MAX_OUTPUT_TOKENS;
@@ -178,7 +194,7 @@ function presetOutputFor(input: PiSourceProviderInput, preset: ModelPresetEntry 
  * request already known to fail.
  */
 export function effectiveModelLimits(
-  input: PiSourceProviderInput,
+  input: ApiKeySourceProviderInput,
   preset: ModelPresetEntry | undefined,
   kimiK3 = false,
 ): { contextWindow: number; maxOutputTokens: number } {
@@ -197,6 +213,7 @@ export function effectiveModelLimits(
 }
 
 export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
+  if (input.kind === "codex") return createCodexSourceProvider(input);
   const providerId = `joi-source:${input.sourceId}`;
   const direct = input.kind === "generic-openai" ? undefined : getDirectModelSourcePreset(input.kind, input.accessMode, input.protocol);
   const baseUrl = input.kind === "generic-openai" ? input.baseUrl : direct?.endpoint;

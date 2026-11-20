@@ -3,6 +3,7 @@ import { StatisticsService } from "../application/statistics/statistics-service.
 
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ModelSourceService } from "../application/model-sources/model-source-service.js";
+import { CodexLoginService } from "../application/model-sources/codex-login-service.js";
 import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
 import { ModelSourceRecovery } from "../application/model-sources/model-source-recovery.js";
 import { ModelSourceNetworkPolicy } from "../infrastructure/pi/model-source-network-policy.js";
@@ -11,6 +12,7 @@ import { PiModelSourceCatalog } from "../infrastructure/pi/pi-model-source-catal
 import { PiModelSourceValidator } from "../infrastructure/pi/pi-model-source-validator.js";
 import { SafeStoragePiCredentialStore } from "../infrastructure/pi/pi-credential-store-adapter.js";
 import { RepositoryPiConfiguredModelResolver } from "../infrastructure/pi/pi-configured-model-resolver.js";
+import { PiCodexAuthorization } from "../infrastructure/pi/pi-codex-authorization.js";
 import type { CredentialVault } from "../application/ports/a2a-ports.js";
 import type { PersistenceBundle } from "./wire-persistence.js";
 
@@ -41,6 +43,7 @@ export function wireModelSources(input: {
     validator,
   });
   return {
+    codexLogin: new CodexLoginService({ authorization: new PiCodexAuthorization(), ids, sources: modelSources }),
     recovery: new ModelSourceRecovery({ clock, repository: persistence.modelSourceRepository, queue: persistence.modelSourceRepository, validator }),
     statistics,
     configuredModelResolver: new RepositoryPiConfiguredModelResolver({

@@ -1,10 +1,11 @@
 /* Immediate API doubles implement asynchronous application contracts. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { UpdateModelSourceRequest } from "../../src/main/application/model-sources/model-source-service.js";
+import { CodexLoginService } from "../../src/main/application/model-sources/codex-login-service.js";
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import type { ModelSourceDto } from "../../src/shared/joi.js";
-import { createRuntimeFixture } from "../support/runtime-fixture.js";
+import { createRuntimeFixture, TestIds } from "../support/runtime-fixture.js";
 
 function cookieFrom(response: Response): string {
   const value = response.headers.get("set-cookie");
@@ -13,6 +14,81 @@ function cookieFrom(response: Response): string {
 }
 
 describe("model source HTTP API", () => {
+  it("binds Codex sign-in to the desktop session and checks callback state", async () => {
+    const fixture = await createRuntimeFixture();
+    const connect = vi.fn().mockResolvedValue({ sourceId: "codex-source", kind: "codex", status: "READY" });
+    const login = new CodexLoginService({
+      ids: new TestIds(), sources: { connectCodex: connect },
+      authorization: {
+        authorize: async (input) => {
+          input.showBrowser("https://auth.openai.com/oauth/authorize?state=expected");
+          await input.waitForCallback(input.signal);
+          return { access: "private-access", refresh: "private-refresh", expires: 100 };
+        },
+      },
+    });
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, codexLogin: login }), loopbackPort: 0 });
+    const base = listeners.loopback.url;
+    const path = `${base}/api/v1/model-sources/codex-login`;
+    const password = "disposable local Codex test";
+    const desktopHeaders = async () => {
+      const { nonce } = await fixture.auth.issueDesktopBootstrap();
+      const response = await fetch(`${base}/api/v1/auth/bootstrap`, {
+        method: "POST", body: JSON.stringify({ nonce }), headers: { "content-type": "application/json", origin: "null" },
+      });
+      const cookie = cookieFrom(response);
+      const grant = await response.json() as { csrfToken: string };
+      return { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": grant.csrfToken };
+    };
+    try {
+      const desktop = await desktopHeaders();
+      await fetch(`${base}/api/v1/auth/setup`, { method: "POST", headers: desktop, body: JSON.stringify({ password }) });
+      const lan = await fetch(`${base}/api/v1/auth/login`, {
+        method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ password }),
+      });
+      const lanCookie = cookieFrom(lan);
+      const lanGrant = await lan.json() as { csrfToken: string };
+      const request = { method: "POST", body: JSON.stringify({ method: "browser" }) };
+      expect((await fetch(path, {
+        ...request, headers: { origin: base, cookie: lanCookie, "content-type": "application/json", "x-csrf-token": lanGrant.csrfToken },
+      })).status).toBe(403);
+      expect((await fetch(path, {
+        ...request, headers: { origin: "null", cookie: desktop.cookie, "content-type": "application/json" },
+      })).status).toBe(403);
+      const started = await fetch(path, { ...request, headers: desktop });
+      expect(started.status).toBe(202);
+      const { attemptId } = await started.json() as { attemptId: string };
+      const attempt = `${path}/${attemptId}`;
+      const otherDesktop = await desktopHeaders();
+      expect((await fetch(attempt, { headers: otherDesktop })).status).toBe(404);
+      expect((await fetch(attempt, { headers: { cookie: lanCookie } })).status).toBe(403);
+      const submit = (state: string) => fetch(`${attempt}/callback`, {
+        method: "POST", headers: desktop, body: JSON.stringify({ callbackUrl: `http://localhost:1455/auth/callback?code=private-callback&state=${state}` }),
+      });
+      expect((await submit("mismatch")).status).toBe(400);
+      expect(connect).not.toHaveBeenCalled();
+      expect((await submit("expected")).status).toBe(204);
+      const status = await fetch(attempt, { headers: desktop });
+      expect(status.headers.get("cache-control")).toBe("no-store");
+      const body = await status.text();
+      expect(JSON.parse(body)).toMatchObject({ status: "completed", source: { kind: "codex" } });
+      expect(body).not.toMatch(/private-|expected/u);
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect((await submit("expected")).status).toBe(400);
+
+      const next = await fetch(path, { ...request, headers: desktop });
+      const { attemptId: nextId } = await next.json() as { attemptId: string };
+      const nextAttempt = `${path}/${nextId}`;
+      expect((await fetch(nextAttempt, { method: "DELETE", headers: desktop })).status).toBe(204);
+      expect(await (await fetch(nextAttempt, { headers: desktop })).json()).toMatchObject({ status: "canceled" });
+      expect(connect).toHaveBeenCalledTimes(1);
+    } finally {
+      await login.close();
+      await listeners.close();
+      await fixture.close();
+    }
+  });
+
   it("keeps writes behind session/CSRF and never returns submitted credentials", async () => {
     const fixture = await createRuntimeFixture();
     const items: ModelSourceDto[] = [];

@@ -23,6 +23,7 @@ import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } 
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
+import type { CodexLoginDto, CodexLoginMethod } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
 import type { UserQuestionScope, UserQuestionDto, AnswerUserQuestionInput } from "../shared/user-questions";
@@ -364,7 +365,21 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
-  listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
+  listModelSources(includeCodexAccount = false) {
+    return this.request<{ items: ModelSourceDto[] }>(this.desktop && includeCodexAccount ? "/api/v1/model-sources?include=codex-account" : "/api/v1/model-sources");
+  }
+  startCodexLogin(method: CodexLoginMethod, sourceId?: string) {
+    return this.request<CodexLoginDto>("/api/v1/model-sources/codex-login", { method: "POST", body: { method, sourceId } });
+  }
+  codexLoginStatus(attemptId: string, signal: AbortSignal) {
+    return this.request<CodexLoginDto>(`/api/v1/model-sources/codex-login/${encodeURIComponent(attemptId)}`, { signal });
+  }
+  completeCodexCallback(attemptId: string, callbackUrl: string) {
+    return this.request<undefined>(`/api/v1/model-sources/codex-login/${encodeURIComponent(attemptId)}/callback`, { method: "POST", body: { callbackUrl } });
+  }
+  cancelCodexLogin(attemptId: string) {
+    return this.request<undefined>(`/api/v1/model-sources/codex-login/${encodeURIComponent(attemptId)}`, { method: "DELETE" });
+  }
   engineCatalog() {
     return this.request<{ items: { available: boolean; id: PartnerEngineDto; reason?: string; tools: string[] }[] }>("/api/v1/engines");
   }

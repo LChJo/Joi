@@ -3668,6 +3668,118 @@
     "description": "No diagnostic failure",
     "placeholders": {}
   },
+  "homeCodexSubscription": "Codex subscription",
+  "@homeCodexSubscription": {
+    "description": "home.codexSubscription",
+    "placeholders": {}
+  },
+  "homeCodexAccountLabel": "Account {p0}",
+  "@homeCodexAccountLabel": {
+    "description": "home.codexAccountLabel",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCodexPlanLabel": "{p0} plan",
+  "@homeCodexPlanLabel": {
+    "description": "home.codexPlanLabel",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCodexExpiresLabel": "Current authorization expires {p0}",
+  "@homeCodexExpiresLabel": {
+    "description": "home.codexExpiresLabel",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "homeCodexSubscriptionHint": "Authorize a ChatGPT account with Codex access. Requests count toward your ChatGPT plan limits.",
+  "@homeCodexSubscriptionHint": {
+    "description": "home.codexSubscriptionHint",
+    "placeholders": {}
+  },
+  "homeCodexBrowserSignIn": "Continue with ChatGPT",
+  "@homeCodexBrowserSignIn": {
+    "description": "home.codexBrowserSignIn",
+    "placeholders": {}
+  },
+  "homeCodexDeviceSignIn": "Use a device code",
+  "@homeCodexDeviceSignIn": {
+    "description": "home.codexDeviceSignIn",
+    "placeholders": {}
+  },
+  "homeCodexOpenAuthorization": "Open authorization in browser",
+  "@homeCodexOpenAuthorization": {
+    "description": "home.codexOpenAuthorization",
+    "placeholders": {}
+  },
+  "homeCodexEnterDeviceCode": "Enter this code on the authorization page",
+  "@homeCodexEnterDeviceCode": {
+    "description": "home.codexEnterDeviceCode",
+    "placeholders": {}
+  },
+  "homeCodexCallbackUrl": "Callback URL (paste if the browser could not return)",
+  "@homeCodexCallbackUrl": {
+    "description": "home.codexCallbackUrl",
+    "placeholders": {}
+  },
+  "homeCodexSubmitCallback": "Submit callback URL",
+  "@homeCodexSubmitCallback": {
+    "description": "home.codexSubmitCallback",
+    "placeholders": {}
+  },
+  "homeCodexWaitingForAuthorization": "Waiting for ChatGPT authorization…",
+  "@homeCodexWaitingForAuthorization": {
+    "description": "home.codexWaitingForAuthorization",
+    "placeholders": {}
+  },
+  "homeCodexSavedNeedsValidation": "Codex subscription saved. Check its connection status in Model Connections.",
+  "@homeCodexSavedNeedsValidation": {
+    "description": "home.codexSavedNeedsValidation",
+    "placeholders": {}
+  },
+  "homeCodexLoginFailed": "Codex authorization did not finish. Try again.",
+  "@homeCodexLoginFailed": {
+    "description": "home.codexLoginFailed",
+    "placeholders": {}
+  },
+  "homeCodexLoginExpired": "Codex authorization timed out. Sign in again.",
+  "@homeCodexLoginExpired": {
+    "description": "home.codexLoginExpired",
+    "placeholders": {}
+  },
+  "homeCodexLoginBusy": "A Codex sign-in is in progress. Finish or cancel it before trying again.",
+  "@homeCodexLoginBusy": {
+    "description": "home.codexLoginBusy",
+    "placeholders": {}
+  },
+  "homeCodexStatusFailed": "Could not check the Codex sign-in status.",
+  "@homeCodexStatusFailed": {
+    "description": "home.codexStatusFailed",
+    "placeholders": {}
+  },
+  "homeCodexCallbackInvalid": "Paste the complete callback URL from this sign-in.",
+  "@homeCodexCallbackInvalid": {
+    "description": "home.codexCallbackInvalid",
+    "placeholders": {}
+  },
+  "homeCodexSignInAgain": "The Codex authorization has expired or been revoked. Sign in again.",
+  "@homeCodexSignInAgain": {
+    "description": "home.codexSignInAgain",
+    "placeholders": {}
+  },
+  "homeCodexReconnect": "Sign in to Codex again",
+  "@homeCodexReconnect": {
+    "description": "home.codexReconnect",
+    "placeholders": {}
+  },
   "homeCompletedWorkPreserved": "{count, plural, one {{count} completed work item is still available.} other {{count} completed work items are still available.}}",
   "@homeCompletedWorkPreserved": {
     "description": "home.completedWorkPreserved",

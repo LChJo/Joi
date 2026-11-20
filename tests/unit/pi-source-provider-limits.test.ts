@@ -3,11 +3,11 @@
  * own sourceId to stay independent of the others.
  */
 import { rememberObservedContextWindow, rememberObservedMaxOutputTokens } from "../../src/main/infrastructure/pi/pi-model-budget.js";
-import { effectiveModelLimits, type PiSourceProviderInput } from "../../src/main/infrastructure/pi/source-provider-factory.js";
+import { effectiveModelLimits, type ApiKeySourceProviderInput } from "../../src/main/infrastructure/pi/source-provider-factory.js";
 
 /** A gateway has no vendor preset, so every number here comes from the configured value or the
  *  documented fallback — which makes it the clearest place to pin the precedence order. */
-function gateway(sourceId: string, overrides: { contextWindow?: number; maxOutputTokens?: number } = {}): PiSourceProviderInput {
+function gateway(sourceId: string, overrides: { contextWindow?: number; maxOutputTokens?: number } = {}): ApiKeySourceProviderInput {
   return {
     ...overrides,
     baseUrl: "https://gateway.example.com/v1",

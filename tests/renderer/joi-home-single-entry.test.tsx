@@ -852,6 +852,17 @@ describe("joi home single entry", () => {
     expect(snapshotSpy).toHaveBeenCalledTimes(3);
   });
 
+  it("offers ChatGPT authorization when adding a Codex subscription on desktop", () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [] });
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(screen.getByRole("button", { name: "添加网络" }));
+    fireEvent.click(screen.getByRole("button", { name: "连接 Codex 订阅" }));
+    expect(screen.getByRole("button", { name: "使用 ChatGPT 登录" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "使用设备码" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+  });
+
   it("reports setup and settings load failures and allows canceling a selected network", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
