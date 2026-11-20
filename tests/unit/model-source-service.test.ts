@@ -5,6 +5,7 @@ import type {
   ModelSourceCatalog,
   ModelSourceEndpointPolicy,
   ModelSourceHealthRevision,
+  ModelSourceOAuthCredential,
   ModelSourceRecord,
   ModelSourceRepository,
   ModelSourceSecretStore,
@@ -40,6 +41,87 @@ class MemoryModelSourceRepository implements ModelSourceRepository {
   }
   async delete(sourceId: string) { this.records.delete(sourceId); }
 }
+
+describe("ModelSourceService Codex credentials", () => {
+  const credential: ModelSourceOAuthCredential = { access: "fixture-access", refresh: "fixture-refresh", expires: 2_000_000_000_000 };
+
+  function fixture() {
+    const repository = new MemoryModelSourceRepository();
+    const deleteCredential = vi.fn<ModelSourceSecretStore["delete"]>().mockResolvedValue(undefined);
+    const describeOAuth = vi.fn<NonNullable<ModelSourceSecretStore["describeOAuth"]>>();
+    const saveApiKey = vi.fn<ModelSourceSecretStore["saveApiKey"]>().mockResolvedValue(1);
+    const saveOAuth = vi.fn<NonNullable<ModelSourceSecretStore["saveOAuth"]>>().mockResolvedValue(1);
+    const secrets: ModelSourceSecretStore = { delete: deleteCredential, describeOAuth, saveApiKey, saveOAuth };
+    const validate = vi.fn<ModelSourceValidator["validate"]>().mockResolvedValue({ status: "READY", validatedAt: "2026-11-20T10:00:00.000Z" });
+    const service = new ModelSourceService({
+      catalog: new PiModelSourceCatalog(),
+      clock: new TestClock(),
+      endpointPolicy: new ModelSourceNetworkPolicy({ resolve: async () => [] }),
+      ids: new TestIds(),
+      repository,
+      secrets,
+      validator: { validate },
+    });
+    return { service, repository, secrets, deleteCredential, describeOAuth, saveApiKey, saveOAuth, validate };
+  }
+
+  it("rejects API-key setup and excludes ordinary model sources from Codex reconnect", async () => {
+    const { service, saveOAuth, saveApiKey } = fixture();
+    await expect(service.create({ kind: "codex", apiKey: "fixture-key" })).rejects.toMatchObject({ code: "codex_oauth_required" });
+    expect(saveApiKey).not.toHaveBeenCalled();
+    const otherSource = await service.create({ kind: "kimi", apiKey: "fixture-key" });
+    const { signal } = new AbortController();
+    await expect(service.connectCodex(credential, signal, otherSource.sourceId)).rejects.toMatchObject({ code: "codex_oauth_required" });
+    expect(saveOAuth).not.toHaveBeenCalled();
+    const codex = await service.connectCodex(credential, signal);
+    await expect(service.update(codex.sourceId, { baseUrl: "https://example.invalid" }))
+      .rejects.toMatchObject({ code: "codex_oauth_required" });
+  });
+
+  it("returns model sources even when the Codex account projection is unavailable", async () => {
+    const { service, describeOAuth, secrets } = fixture();
+    const codex = await service.connectCodex(credential, new AbortController().signal);
+    const other = await service.create({ kind: "kimi", apiKey: "fixture-key" });
+
+    await expect(service.list()).resolves.toEqual([codex, other]);
+    expect(describeOAuth).not.toHaveBeenCalled();
+    describeOAuth.mockRejectedValueOnce(new Error("synthetic credential read error"));
+    await expect(service.list(true)).resolves.toEqual([codex, other]);
+    expect(describeOAuth).toHaveBeenCalledTimes(1);
+    delete secrets.describeOAuth;
+    await expect(service.list(true)).resolves.toEqual([codex, other]);
+  });
+
+  it("cleans up a failed replacement credential while preserving the existing connection", async () => {
+    const { service, repository, deleteCredential, saveOAuth, validate } = fixture();
+    const { signal } = new AbortController();
+    const codex = await service.connectCodex(credential, signal);
+    const failure = new Error("synthetic revision write failure");
+    vi.spyOn(repository, "revise").mockRejectedValueOnce(failure);
+    await expect(service.connectCodex(credential, signal, codex.sourceId)).rejects.toThrow(failure);
+    const originalProvider = saveOAuth.mock.calls[0]?.[0];
+    const replacementProvider = saveOAuth.mock.calls[1]?.[0];
+    expect(replacementProvider).toBeDefined();
+    expect(replacementProvider).not.toBe(originalProvider);
+    expect(deleteCredential).toHaveBeenCalledExactlyOnceWith(replacementProvider);
+    expect(validate).toHaveBeenCalledTimes(1);
+    await expect(service.list()).resolves.toEqual([codex]);
+  });
+
+  it("removes a newly stored credential if sign-in is canceled before the source is created", async () => {
+    const { service, saveOAuth, deleteCredential, validate } = fixture();
+    const controller = new AbortController();
+    saveOAuth.mockImplementationOnce(async () => {
+      controller.abort();
+      return 1;
+    });
+    await expect(service.connectCodex(credential, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(saveOAuth).toHaveBeenCalledTimes(1);
+    expect(deleteCredential).toHaveBeenCalledExactlyOnceWith(saveOAuth.mock.calls[0]?.[0]);
+    expect(validate).not.toHaveBeenCalled();
+    await expect(service.list()).resolves.toEqual([]);
+  });
+});
 
 describe("ModelSourceService", () => {
   it.each(["anthropic", "openai"] as const)("saves and validates an explicit LAN %s source while requiring a credential", async (protocol) => {
