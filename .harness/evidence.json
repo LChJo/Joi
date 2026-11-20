@@ -1530,15 +1530,15 @@
     {
       "id": "85794627-0653-4404-bc02-7c4deb5225cd",
       "kind": "source-code",
-      "claim": "An isolated Electron window consumes an actual controlled HTTP event stream before a paused refresh, retains its draft and stopped prefix, and closes the connection.",
+      "claim": "An isolated Electron window consumes an HTTP event stream during a paused refresh. Pending tool icons, the turn dot and the stop ring keep animating, honor live reduced-motion changes and settle on stop. The draft, partial output and stream cleanup are verified.",
       "location": {
         "path": "tests/e2e/conversation-stream.spec.ts"
       },
-      "hash": "646410510b4f946e5d970b91d8117b558c2669626a0fbc7c1c95040017f4b0f2",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "1e84555ab3296c13f377dedbd9ba845933f072af616a53708a3d240923ce1734",
+      "observedAt": "2026-11-20T04:10:44.898Z",
       "range": {
         "startLine": 1,
-        "endLine": 59
+        "endLine": 96
       }
     },
     {
