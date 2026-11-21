@@ -20,6 +20,8 @@ export interface GoalRoadmapQuery extends GoalEvidenceScope {
 }
 export interface GoalRoadmapPage {
   counts: Record<"paths" | "decisions" | "fog" | "unmapped" | "requirements", number>;
+  currentLayer: number;
+  currentLayerHasOpenPaths: boolean;
   entries: Record<string, unknown>[];
   total: number;
   version: { mapRevision: number | null; resultRevision: number; requirementsRevision: number };

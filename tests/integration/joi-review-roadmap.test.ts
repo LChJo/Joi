@@ -45,12 +45,17 @@ it("REV-02 follows roadmap paths, unmapped Work and Run evidence without crossin
         .run(scope.workbenchId,now,now);
       for (let index = 1; index <= 10; index += 1) {
         db.prepare(`INSERT INTO joi_harness_paths (path_id,goal_input_id,title,layer,status,work_id,created_at,updated_at)
-          VALUES (?,'goal','Same title',1,'CLOSED',?,?,?)`).run(`path-${String(index)}`,`work-${String(index)}`,now,now);
+          VALUES (?,'goal','Same title',?,'CLOSED',?,?,?)`).run(`path-${String(index)}`,index === 10 ? 96 : 1,`work-${String(index)}`,now,now);
       }
     });
     const evidence = new WorkResultService(fixture.repository,new SqliteGoalEvidenceRepository(fixture.database));
     const first = await evidence.readRoadmap({ ...scope,section: "paths" });
-    expect(first).toMatchObject({ total: 10,counts: { paths: 10,unmapped: 1 } });
+    expect(first).toMatchObject({ currentLayer: 96,total: 10,counts: { paths: 10,unmapped: 1 } });
+    expect(first.entries).toHaveLength(8);
+    expect(first.entries[0]).toMatchObject({ pathId: "path-10", layer: 96 });
+    expect(await evidence.readRoadmap({ ...scope,section: "paths",layer: 96 })).toMatchObject({
+      currentLayer: 96,total: 1,entries: [{ pathId: "path-10",layer: 96 }],
+    });
     expect(first.entries.find(row => row.pathId === "path-1")).toMatchObject({ workId: "work-1" });
     const cursor = first.nextCursor;
     if (cursor === undefined) throw new Error("Missing roadmap cursor");
@@ -62,8 +67,33 @@ it("REV-02 follows roadmap paths, unmapped Work and Run evidence without crossin
       .toEqual([expect.objectContaining({ runId: "run-1",resultId: "result-1",verification: "PASSED",isCurrentAttempt: 1 })]);
     await expect(evidence.readRoadmap({ ...scope,workbenchId: "unrelated",section: "runs",workId: "work-1" }))
       .rejects.toMatchObject({ code: "goal_evidence_not_found" });
-    fixture.database.transaction(db => db.prepare("UPDATE joi_harness_maps SET revision=2 WHERE goal_input_id='goal'").run());
+    fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET layer=97 WHERE path_id='path-1'").run());
     await expect(evidence.readRoadmap({ ...scope,section: "paths",cursor }))
       .rejects.toMatchObject({ code: "goal_evidence_snapshot_stale" });
+  } finally { await fixture.close(); }
+});
+
+it("reports whether the latest layer is settled even when its open path is beyond the first tool page", async () => {
+  const fixture = await createGoalEvidenceFixture([{}]);
+  try {
+    const now = fixture.clock.now().toISOString();
+    fixture.database.transaction(db => {
+      db.prepare(`INSERT INTO joi_harness_maps (goal_input_id,workbench_id,created_at,updated_at)
+        VALUES ('goal',?,?,?)`).run(fixture.workbenchId, now, now);
+      const path = db.prepare(`INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+        VALUES (?,'goal',96,'Synthetic path',?,?,?)`);
+      for (let index = 0; index < 8; index += 1) path.run(`closed-${String(index)}`, "CLOSED", now, now);
+      path.run("open-last", "OPEN", now, now);
+    });
+    const evidence = new SqliteGoalEvidenceRepository(fixture.database);
+    const scope = { goalInputId: "goal", workbenchId: fixture.workbenchId };
+    const first = await evidence.readRoadmap(scope);
+    expect(first).toMatchObject({ currentLayer: 96, currentLayerHasOpenPaths: true, total: 9 });
+    expect(first.entries.every(path => path.status === "CLOSED")).toBe(true);
+    const cursor = first.nextCursor;
+    if (cursor === undefined) throw new Error("Missing roadmap cursor");
+    fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET status='CLOSED' WHERE path_id='open-last'").run());
+    await expect(evidence.readRoadmap({ ...scope, cursor })).rejects.toMatchObject({ code: "goal_evidence_snapshot_stale" });
+    await expect(evidence.readRoadmap(scope)).resolves.toMatchObject({ currentLayer: 96, currentLayerHasOpenPaths: false });
   } finally { await fixture.close(); }
 });

@@ -33,6 +33,51 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
 
 describe("JOI-01 non-destructive migration", () => {
+  it("upgrades populated goal maps without changing stored paths or remaining continuation allowance", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-depth-upgrade-"));
+    const previousMigrations = path.join(root, "migrations");
+    const databasePath = path.join(root, "runtime.sqlite");
+    try {
+      await copyMigrationsThrough(previousMigrations, 112);
+      const previous = await openRuntimeDatabase({ databasePath, migrationsDirectory: previousMigrations });
+      try {
+        previous.transaction(db => db.exec(`INSERT INTO workbenches
+          (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+          VALUES ('wb','Fixture','p','','','','m','ACTIVE','now','now');
+          INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES ('goal','goal','Fixture','CONSUMED','wb','now','now'), ('legacy','legacy','Fixture','CONSUMED','wb','now','now');
+          INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES ('goal-turn','goal','wb','goal-session','COMPLETED','now','now');
+          INSERT INTO joi_harness_maps (goal_input_id,workbench_id,revision,continuation_allowance,created_at,updated_at)
+          VALUES ('goal','wb',7,2,'now','now'), ('legacy','wb',3,32,'now','now');
+          INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+          VALUES ('legacy-path','legacy',32,'Fixture','CLOSED','now','now');
+          WITH RECURSIVE layers(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM layers WHERE n<102)
+          INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,created_at,updated_at)
+          SELECT 'path-'||n,'goal',n,'Fixture','now','now' FROM layers WHERE n<>2;
+          INSERT INTO work_items (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at)
+          VALUES ('duplicate-work','wb','goal','Fixture','{}','READ','COMPLETED','now','now');
+          UPDATE joi_harness_paths SET work_id='duplicate-work' WHERE path_id='path-102';
+          INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,work_id,created_at,updated_at)
+          VALUES ('old-work-link','goal',2,'Fixture','duplicate-work','now','now');`));
+      } finally { previous.close(); }
+
+      const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      try {
+        upgraded.transaction(db => {
+          expect(db.prepare(`SELECT goal_input_id,revision, desktop_retired_through_layer, continuation_allowance, continuation_used
+            FROM joi_harness_maps ORDER BY goal_input_id`).all()).toEqual([
+              { goal_input_id: "goal", revision: 7, desktop_retired_through_layer: 1, continuation_allowance: 2, continuation_used: 101 },
+              { goal_input_id: "legacy", revision: 3, desktop_retired_through_layer: 0, continuation_allowance: 32, continuation_used: 31 },
+            ]);
+          expect(db.prepare("SELECT COUNT(*) AS n FROM joi_harness_paths").get()).toEqual({ n: 103 });
+          expect(db.prepare("SELECT layer,status FROM joi_harness_paths WHERE path_id='legacy-path'").get()).toEqual({ layer: 32, status: "CLOSED" });
+          expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+        });
+      } finally { upgraded.close(); }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
   it("keeps existing map identity and business revision when adding paged read versions", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-read-upgrade-"));
     const previousMigrations = path.join(root, "migrations");
@@ -99,6 +144,7 @@ describe("JOI-01 non-destructive migration", () => {
             "104_historical_memory.sql","105_historical_preference_order.sql","106_goal_evidence_reads.sql",
             "107_user_questions.sql","108_question_recovery_lifecycle.sql","109_large_goal_reads.sql",
             "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql","112_codex_subscription_model_source.sql",
+            "113_goal_route_depth.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });

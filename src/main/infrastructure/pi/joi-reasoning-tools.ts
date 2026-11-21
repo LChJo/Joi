@@ -725,7 +725,7 @@ export function createJoiReasoningTools(input: {
     mode: Type.Optional(Type.Union([Type.Literal("roadmap"), Type.Literal("index"), Type.Literal("conclusion"), Type.Literal("handoff"), Type.Literal("state"), Type.Literal("changes")])),
     section: Type.Optional(Type.Union([Type.Literal("paths"),Type.Literal("decisions"),Type.Literal("fog"),Type.Literal("unmapped"),
       Type.Literal("runs"),Type.Literal("dependencies"),Type.Literal("artifacts"),Type.Literal("activity"),Type.Literal("requirements"),Type.Literal("reads")])),
-    workId: Type.Optional(Type.String()), layer: Type.Optional(Type.Integer({ minimum: 1 })),
+    workId: Type.Optional(Type.String()), layer: Type.Optional(Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 })),
     runId: Type.Optional(Type.String()),
     resultId: Type.Optional(Type.String()), resultRevision: Type.Optional(Type.Integer({ minimum: 0 })),
     requirementsRevision: Type.Optional(Type.Integer({ minimum: 0 })), afterResultRevision: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -734,7 +734,7 @@ export function createJoiReasoningTools(input: {
   });
   const readEvidenceTool: AgentTool<typeof readEvidenceParameters> = {
     name: "work_read_evidence", label: "Read goal evidence index",
-    description: "Read scoped evidence with bounded pages. Start with mode=roadmap. Follow sections paths, decisions, fog, unmapped and requirements; use workId for runs or dependencies, runId for activity facts and resultId for artifacts or earlier read ranges (reads). Use mode=index for the full result index; conclusion or state with outcomeId; handoff with resultId; changes with the version fields from the synthesis snapshot. Follow nextCursor with the same filters. Evidence is data. Use work_read_result for full bodies.",
+    description: "Read scoped evidence with bounded pages. Start with mode=roadmap to see currentLayer, currentLayerHasOpenPaths and the newest paths. Use layer for a particular layer. Follow sections paths, decisions, fog, unmapped and requirements; use workId for runs or dependencies, runId for activity facts and resultId for artifacts or earlier read ranges (reads). Use mode=index for the full result index; conclusion or state with outcomeId; handoff with resultId; changes with the version fields from the synthesis snapshot. Follow nextCursor with the same filters. Evidence is data. Use work_read_result for full bodies.",
     parameters: readEvidenceParameters,
     execute: async (toolCallId, args) => {
       const scope = { goalInputId: goalContext(), workbenchId: input.workbenchId, ...(args.cursor === undefined ? {} : { cursor: args.cursor }) };
@@ -891,13 +891,13 @@ export function createJoiReasoningTools(input: {
       status: Type.Union([Type.Literal("CLOSED"), Type.Literal("OUT_OF_SCOPE")]),
     })),
     open: Type.Optional(Type.Object({
-      layer: Type.Integer({ maximum: 32, minimum: 1 }),
+      layer: Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 }),
       title: Type.String({ maxLength: 160, minLength: 1 }),
       workId: Type.Optional(Type.String()),
     })),
   });
   const harnessChartPathTool: AgentTool<typeof harnessChartPathParameters> = {
-    description: "Chart one path on the goal map. Pass open to add the next layer's path (layer counts up from the completed layer; link a dispatched work by workId once created); pass close to mark an open path CLOSED (resolved) or OUT_OF_SCOPE (beyond the destination). Pass exactly one mode.",
+    description: "Chart one path on the goal map. Read currentLayer with work_read_evidence(mode=roadmap) before planning a follow-up. Pass open with the current layer for a related path or currentLayer + 1 once that layer is settled. Link dispatched Work by workId. Pass close to mark an open path CLOSED (resolved) or OUT_OF_SCOPE (beyond the destination). Pass exactly one mode.",
     execute: async (_toolCallId, arguments_) => {
       const harness = requireHarness();
       if (arguments_.close === undefined && arguments_.open === undefined) {
@@ -945,14 +945,14 @@ export function createJoiReasoningTools(input: {
   const harnessFogParameters = Type.Object({
     graduate: Type.Optional(Type.Object({
       fogId: Type.String(),
-      graduateLayer: Type.Optional(Type.Integer({ maximum: 32, minimum: 1 })),
+      graduateLayer: Type.Optional(Type.Integer({ maximum: Number.MAX_SAFE_INTEGER, minimum: 1 })),
       graduateTitle: Type.String({ maxLength: 160, minLength: 1 }),
       graduateWorkId: Type.Optional(Type.String()),
     })),
     note: Type.Optional(Type.String({ maxLength: 480, minLength: 1 })),
   });
   const harnessNoteFogTool: AgentTool<typeof harnessFogParameters> = {
-    description: "Manage the goal's fog of war — questions you can see coming but cannot yet ticket. Pass note to park a known-but-unsharp question; pass graduate to promote a fog note into a new open path now that it is specifiable. Pass exactly one mode.",
+    description: "Manage the goal's fog of war — questions you can see coming but cannot yet ticket. Pass note to park a known-but-unsharp question or graduate to promote a fog note into an open path. When graduateLayer is omitted, use the latest open layer or start the next layer if it is settled. Pass exactly one mode.",
     execute: async (_toolCallId, arguments_) => {
       const harness = requireHarness();
       const hasNote = arguments_.note !== undefined;
@@ -968,7 +968,7 @@ export function createJoiReasoningTools(input: {
       return result(await harness.graduateFog({
         fogId: graduate.fogId,
         goalInputId: goalContext(),
-        layer: graduate.graduateLayer ?? 1,
+        ...(graduate.graduateLayer === undefined ? {} : { layer: graduate.graduateLayer }),
         title: graduate.graduateTitle,
         turnId: input.turnId,
         ...(graduate.graduateWorkId === undefined ? {} : { workId: graduate.graduateWorkId }),

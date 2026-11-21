@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 113 preserves the retired layer boundary for the desktop goal map, carries forward the consumed continuation allowance, and binds Work to the originating planning turn. Existing paths and their references are retained. See [goal route depth](../../docs/design/goal-route-depth-spec.md).
+
 Migration 110 numbers admitted Routine runs and associates their initiating Joi Turns. Migration 111 stores bounded historical-memory inputs with their settlement source. See [incremental knowledge and retention](../../docs/joi-incremental-knowledge-retention-spec.md).
 
 Migration 109 adds the local instance dispatch lookup index and a goal map detail revision for path and linked Work status changes. The renderer uses that revision to refresh loaded map pages after a committed change.

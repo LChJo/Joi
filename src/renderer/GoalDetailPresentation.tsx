@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRightIcon, CaretDownIcon, CheckCircleIcon, CircleIcon, CopyIcon, FlagIcon, ProhibitIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { JoiGoalMapDetailDto, JoiGoalMapPathDto } from "../shared/joi.js";
 import { t, useI18n } from "./i18n";
@@ -112,7 +112,19 @@ export function GoalMap({ harness, hasMore = false, busy = false, failed = false
   const toggle = useRef<HTMLButtonElement>(null);
   const selected = harness.paths.find((path) => path.pathId === selectedPathId);
   const decision = harness.decisions.find((item) => item.decisionId === selected?.resolvedDecisionId);
-  const layers = [...new Set(harness.paths.map((path) => path.layer))].sort((a, b) => b - a);
+  const loadedCount = harness[tab].length;
+  const totalCount = tab === "paths" ? harness.pathCount : tab === "decisions" ? harness.decisionCount : harness.fogCount;
+  const hasUnloadedDecision = tab === "paths" && selected?.resolvedDecisionId !== undefined
+    && decision === undefined && harness.decisions.length < harness.decisionCount;
+  const layers = useMemo(() => {
+    const grouped = new Map<number, JoiGoalMapPathDto[]>();
+    for (const path of harness.paths) {
+      const paths = grouped.get(path.layer);
+      if (paths === undefined) grouped.set(path.layer, [path]);
+      else paths.push(path);
+    }
+    return [...grouped].sort(([left], [right]) => right - left);
+  }, [harness.paths]);
   useLayoutEffect(() => { if (scrollArea.current !== null) scrollArea.current.scrollTop = scrollPositions.current[tab]; }, [tab, visited]);
   function selectPath(id: string) {
     const path = harness.paths.find((item) => item.pathId === id);
@@ -148,16 +160,18 @@ export function GoalMap({ harness, hasMore = false, busy = false, failed = false
     <div ref={scrollArea} className="joi-route-detail-scroll" tabIndex={0} role="region" aria-label={t("home.routeDetails")}
       onScroll={(event) => { scrollPositions.current[tab] = event.currentTarget.scrollTop; }}>
     <p className="joi-route-detail-destination">{harness.destination ?? t("home.unnamedDestinationJoiWillNameItDuringReview")}</p>
-    <p className="joi-route-loaded">{t("home.routeLoaded", { loaded: String(tab === "paths" ? harness.paths.length : tab === "decisions" ? harness.decisions.length : harness.fog.length), total: String(tab === "paths" ? harness.pathCount : tab === "decisions" ? harness.decisionCount : harness.fogCount) })}</p>
+    <p className="joi-route-loaded">{t("home.routeLoaded", { loaded: String(loadedCount), total: String(totalCount) })}</p>
     <div hidden={tab !== "paths"}>
     {layers.length === 0 ? <p className="plain-empty">{harness.pathCount === 0 ? t("home.routeMapEmpty") : t("home.routeRelatedNotLoaded")}</p> : <div className="joi-route-layers">
-      {layers.map((layer) => <details className="joi-route-layer" key={layer} open={layerOverrides[layer] ?? layer === harness.currentLayer}
-        onToggle={(event) => {
-          const open = event.currentTarget.open;
-          setLayerOverrides((previous) => previous[layer] === open ? previous : { ...previous, [layer]: open });
-        }}>
-        <summary><span aria-hidden="true" className="joi-route-layer-number">{layer}</span><strong>{t("home.routeLayer", { layer: String(layer) })}</strong>{layer === harness.currentLayer ? <small>{t("home.routeLatestLayer")}</small> : null}</summary>
-        <div className="joi-route-nodes">{harness.paths.filter((path) => path.layer === layer).map((path) => <button
+      {layers.map(([layer, paths]) => {
+        const open = layerOverrides[layer] ?? layer === harness.currentLayer;
+        return <details className="joi-route-layer" key={layer} open={open}>
+        <summary onClick={(event) => {
+          event.preventDefault();
+          setLayerOverrides((previous) => ({ ...previous, [layer]: !open }));
+        }}><span aria-hidden="true" className="joi-route-layer-number">{layer}</span><strong>{t("home.routeLayer", { layer: String(layer) })}</strong>{layer === harness.currentLayer ? <small>{t("home.routeLatestLayer")}</small> : null}</summary>
+        {open ? <>
+        <div className="joi-route-nodes">{paths.map((path) => <button
           className={`joi-route-node ${path.status.toLowerCase()} ${path.workStatus === "FAILED" ? "work-failed" : ""}`} key={path.pathId} data-path-id={path.pathId}
           aria-pressed={path.pathId === selectedPathId} aria-controls={selected === undefined ? undefined : pathId} onClick={() => {
             setSelectedPathId((value) => value === path.pathId ? null : path.pathId);
@@ -172,7 +186,9 @@ export function GoalMap({ harness, hasMore = false, busy = false, failed = false
           {decision === undefined ? selected.resolvedDecisionId === undefined ? null : <p>{t("home.routeRelatedNotLoaded")}</p> : <div><strong>{decision.summary}</strong>{decision.detail === "" ? null : <p>{decision.detail}</p>}</div>}
           {harness.fog.filter((fog) => fog.graduatedPathId === selected.pathId).map((fog) => <p key={fog.fogId}>{t("home.routePromotedFromFog", { note: fog.note })}</p>)}
         </section>}
-      </details>)}
+        </> : null}
+        </details>;
+      })}
     </div>}
     </div>
       <div className="joi-route-note-list" hidden={tab !== "decisions"}>
@@ -186,7 +202,7 @@ export function GoalMap({ harness, hasMore = false, busy = false, failed = false
     </div>
     <div className="joi-route-detail-footer">
       {failed ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={busy} onClick={onRetry} type="button">{t("common.retry")}</button></p> : null}
-      {hasMore ? <button className="button ghost joi-route-load-more" disabled={busy} onClick={onLoadMore} type="button">{t("home.routeLoadMore")}</button> : null}
+      {hasMore && (loadedCount < totalCount || hasUnloadedDecision) ? <button className="button ghost joi-route-load-more" disabled={busy} onClick={onLoadMore} type="button">{t("home.routeLoadMore")}</button> : null}
     </div>
     </> : null}</div>
   </article>;

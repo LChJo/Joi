@@ -1705,14 +1705,9 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
           AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
                             AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(inputId, action.result_revision, typeof action.requirements_revision === "number" ? action.requirements_revision : -1);
       if (currentOutcome === undefined) return null;
-          if (patch.actionChoice === "CONTINUE") {
-        // Grant relative to the deepest layer actually on the map. Work recovery appends
-        // replacement layers without spending allowance, so a blind +2 can land exactly on
-        // the MAX(layer)-1 exhaustion threshold and leave the goal unable to auto-continue.
+      if (patch.actionChoice === "CONTINUE") {
         const authorized = connection.prepare(`UPDATE joi_harness_maps
-          SET continuation_allowance = MAX(continuation_allowance,
-                (SELECT MAX(0, COALESCE(MAX(p.layer), 1) - 1) FROM joi_harness_paths p
-                  WHERE p.goal_input_id = joi_harness_maps.goal_input_id)) + 2,
+          SET continuation_allowance = MAX(continuation_allowance, continuation_used) + 2,
               revision = revision + 1, updated_at = ?
           WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
         if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");

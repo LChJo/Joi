@@ -182,8 +182,8 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       if (binding === undefined) throw new Error("work_plan_goal_binding_invalid");
       for (const brief of plan.briefs) assertGoalEvidenceReferences(connection, { goalInputId: plan.inputId, workbenchId, resultIds: brief.evidenceResultIds ?? [] });
       const insertWork = connection.prepare(`INSERT INTO work_items
-        (work_id, workbench_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at, planned_by_turn_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       const briefs = new Map(plan.briefs.map((brief) => [brief.workId, brief]));
       for (const item of plan.items) {
         const brief = briefs.get(item.workId);
@@ -205,7 +205,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
           ...(brief.executionNeeds === undefined ? {} : { executionNeeds: readExecutionNeeds(brief.executionNeeds) }),
           ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision, requirementIds: brief.requirementIds ?? [], allRequirements: brief.allRequirements ?? false }),
         }), item.accessMode === "NONE" ? "READ" : item.accessMode, null,
-        item.status, item.createdAt, item.updatedAt,
+        item.status, item.createdAt, item.updatedAt, plan.turnId,
       );
       }
       const insertAccess = connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES (?, ?)");

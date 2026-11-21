@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "b63d1c89176e2e30796d5b148cfe70cdb89926e4e082967336835aaf37316166",
-      "observedAt": "2026-11-21T12:19:48.637Z",
+      "hash": "99960ebcb798b3891f191d599bb6a24a7f365ec49c42e2da7aa56966b7c47134",
+      "observedAt": "2026-11-21T15:17:05.655Z",
       "range": {
         "startLine": 1,
-        "endLine": 777
+        "endLine": 779
       }
     },
     {
@@ -2020,12 +2020,12 @@
     {
       "id": "5c497ce2-7941-4294-b79d-d9cb08f9adf1",
       "kind": "source-code",
-      "claim": "Full and paged goal Work queries expose executionPhase and waitReason without private checkpoints. Individual cancellation withdraws pending questions/actions for canceled Work and advances the goal gate in the same transaction.",
+      "claim": "Full and paged goal Work queries expose executionPhase and waitReason without private checkpoints. Individual cancellation withdraws pending questions/actions for canceled Work and advances the goal gate in the same transaction. The plan transaction binds new Work to its original planning Turn.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-work-plan-repository.ts"
       },
-      "hash": "470e7a711c870b31e6f5324db0d7ce64a700eb653c7556d0d868743a834ea2cd",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "b09fe4846631905fa06ac5856035c9b9a5a53ff0fe140f7e0f8adc9d828d6f1f",
+      "observedAt": "2026-11-21T15:17:05.657Z",
       "range": {
         "startLine": 1,
         "endLine": 643
@@ -2076,12 +2076,12 @@
     {
       "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
       "kind": "source-code",
-      "claim": "Primary Joi navigates the goal-scoped roadmap and receipt-backed evidence. Result reads separate unavailable, inactive and stale ownership. Coverage refresh uses only evidence, requirement and completion tools. Primary user_ask passes structured options/defaults and a stable turn/tool-call binding to the existing goal clarification port; goal_resume still requires the versioned recovery gate. Synthesis validation returns bounded coverage issues to the model without publishing private claims or changing the retry budget.",
+      "claim": "Primary Joi navigates the goal-scoped roadmap and receipt-backed evidence. Result reads separate unavailable, inactive and stale ownership. Coverage refresh uses only evidence, requirement and completion tools. Primary user_ask passes structured options/defaults and a stable turn/tool-call binding to the existing goal clarification port; goal_resume still requires the versioned recovery gate. Synthesis validation returns bounded coverage issues to the model without publishing private claims or changing the retry budget. Roadmap context exposes the current layer and its open status. Path creation and fog graduation accept positive safe-integer layers.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "1b1d42fc4bfbd232646a2d243144e26a2d6fb0b29aa22130dafb49e90828c15a",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "c1972be5d92a1323b7fc0a72e8433d7718db0d569643fc26dd9618516989a453",
+      "observedAt": "2026-11-21T15:17:05.658Z",
       "range": {
         "startLine": 1,
         "endLine": 1149
@@ -2118,15 +2118,15 @@
     {
       "id": "54924ed6-1441-4f5d-a175-47b16eae6fbc",
       "kind": "source-code",
-      "claim": "Synthetic tool regressions retain usable partner candidates and pass both valid and invalid dependency edges intact to the application. Plan errors permit one ordering-preserving correction and never request a partner selection. Tool regressions cover private structured coverage feedback and trusted exhaustion classification.",
+      "claim": "Synthetic tool regressions retain usable partner candidates and pass both valid and invalid dependency edges intact to the application. Plan errors permit one ordering-preserving correction and never request a partner selection. Tool regressions cover private structured coverage feedback and trusted exhaustion classification. Path tooling accepts deep layers and leaves the default fog destination layer to persistence.",
       "location": {
         "path": "tests/unit/joi-reasoning-tools.test.ts"
       },
-      "hash": "dd9ad460d88b5cdc60c1eba663f11f09b794dbd89fc0c8fefb70f276e9797073",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "6d5f54536e08fa29abcf6c6292ed7162bc0964ba98ccad545d4804bc05182e13",
+      "observedAt": "2026-11-21T15:17:05.658Z",
       "range": {
         "startLine": 1,
-        "endLine": 1151
+        "endLine": 1154
       }
     },
     {
@@ -2384,15 +2384,15 @@
     {
       "id": "3fe19ae5-307a-42df-a06c-51a4f22df5f0",
       "kind": "source-code",
-      "claim": "Explicit roadmap tools or the presence of Work create a map. Review and feedback wait for current facts; idle cleanup clears only trivial maps.",
+      "claim": "Explicit roadmap tools or the presence of Work create a map. Review and feedback wait for current facts; idle cleanup clears only trivial maps. Work from a planning Turn shares its previously assigned layer. A new automatic continuation review consumes one durable allowance unit.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "bef36deccdf4ab5844c85b34c72ba3e29d0a295e26ee9a54f2853b42a500fd8b",
-      "observedAt": "2026-11-21T09:59:50.128Z",
+      "hash": "be7dab7a7851b1141722fa77533c706c72ca25c3d1074f24a0013b6425ba8fc6",
+      "observedAt": "2026-11-21T15:17:05.659Z",
       "range": {
         "startLine": 1,
-        "endLine": 1357
+        "endLine": 1402
       }
     },
     {
@@ -2412,29 +2412,29 @@
     {
       "id": "321ffa43-c02f-4ddb-aa43-6bd5a3b0546a",
       "kind": "source-code",
-      "claim": "Detail pagination and totals use canonical Work-path visibility before LIMIT/OFFSET while preserving safe Work and decision projections. The summary mode reads safe progress and versions only. Map pages omit progress and carry a separate path ordering revision.",
+      "claim": "Detail pagination and totals use canonical Work-path visibility before LIMIT/OFFSET while preserving safe Work and decision projections. The summary mode reads safe progress and versions only. Map pages omit progress and carry a separate path ordering revision. The desktop map projects at most the newest 100 populated layers. Its retired layer boundary never decreases. Joi can still navigate the stored history. Path totals, pages and fog links honor that boundary.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-goal-detail.ts"
       },
-      "hash": "08812515ffe17ad7219189ccc81f452fb9b05ca3928a57d0f214ba06c1781a39",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "hash": "75aa72fe4b720b087caa19713f11b1711aece00e5ad288bfdad5305e73898121",
+      "observedAt": "2026-11-21T15:17:05.660Z",
       "range": {
         "startLine": 1,
-        "endLine": 54
+        "endLine": 63
       }
     },
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover Work-backed map adoption, explicit map creation, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction.",
+      "claim": "Disposable SQLite tests cover Work-backed map adoption, explicit map creation, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction. Synthetic old maps verify advancing from layer 32 on review or follow-up, stable Work grouping across scans, automatic review replay and explicit grants.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "843930e2b8312bdcbe5981d2c4536dffc2da0cf8cf33e0837beda896c7bfc8ed",
-      "observedAt": "2026-11-21T09:59:50.128Z",
+      "hash": "ca65504e52e97dca21bf210cf2e69b0ff94836dda486dc5a4ee3207e6f35676b",
+      "observedAt": "2026-11-21T15:17:05.660Z",
       "range": {
         "startLine": 1,
-        "endLine": 2320
+        "endLine": 2401
       }
     },
     {
@@ -2720,15 +2720,15 @@
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "A first-source direct reply atomically persists its completion without settling a Work contract or queuing historical memory. The current resumed Turn can publish directly to its original zero-Work goal. First Workbench assignment saves its versioned receipt and queues the original input. Existing and interrupted goals retain recovery gates.",
+      "claim": "A first-source direct reply atomically persists its completion without settling a Work contract or queuing historical memory. The current resumed Turn can publish directly to its original zero-Work goal. First Workbench assignment saves its versioned receipt and queues the original input. Existing and interrupted goals retain recovery gates. An explicit continuation decision grants two units above the persisted usage or allowance.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "4f28b1f85018dca1c84ceb738846ed29744f9055ded8cdc4c56329901530f858",
-      "observedAt": "2026-11-21T10:29:06.001Z",
+      "hash": "d982adf13f91514e5118d5f8aee8cc32e2a264440d64b79296ac170cba1f30c1",
+      "observedAt": "2026-11-21T15:17:05.661Z",
       "range": {
         "startLine": 1,
-        "endLine": 1877
+        "endLine": 1872
       }
     },
     {
@@ -2874,29 +2874,29 @@
     {
       "id": "7c9cf77f-e85f-499b-b696-3ea0feb3e744",
       "kind": "source-code",
-      "claim": "Goal title full-text previews share a fixed title-bottom anchor for hover, focus and click. Pointer movement does not reposition the preview; viewport clamping, text selection, dismissal and trigger-position context menus remain available.",
+      "claim": "Goal title full-text previews share a fixed title-bottom anchor for hover, focus and click. Pointer movement does not reposition the preview; viewport clamping, text selection, dismissal and trigger-position context menus remain available. Route layers mount cards only while expanded. The latest layer auto-opens and paging follows the current section.",
       "location": {
         "path": "src/renderer/GoalDetailPresentation.tsx"
       },
-      "hash": "cc2049b599e7a37893aaa0d3f6a8308aadab7d4faa7d7272fdaa058a26cdaaf7",
-      "observedAt": "2026-11-17T07:10:53.821Z",
+      "hash": "70e91bd78c24cef10e44975c257d75d54e360f62fcef99a223bd61da2c613628",
+      "observedAt": "2026-11-21T15:17:05.661Z",
       "range": {
         "startLine": 1,
-        "endLine": 193
+        "endLine": 209
       }
     },
     {
       "id": "515cd0c5-32bb-48ab-a20c-7980095c1387",
       "kind": "source-code",
-      "claim": "Synthetic component regressions assert a stable title anchor across pointer movement, focus, click and reopening, together with menu clamping, scrolling, resizing and selection behavior.",
+      "claim": "Synthetic component regressions assert a stable title anchor across pointer movement, focus, click and reopening, together with menu clamping, scrolling, resizing and selection behavior. Component regressions cover a 96-layer map, lazy path cards, retained manual expansions, and the end of visible path paging.",
       "location": {
         "path": "tests/renderer/goal-detail-ux.test.tsx"
       },
-      "hash": "2332c721669ba63c502c7c04d0319462369fb51eaeccedd1b6062b172f790581",
-      "observedAt": "2026-11-17T07:10:53.821Z",
+      "hash": "55a6e95b0aacece9de06acaed3f479f7f11e86e8475bd44aed0639cc8ef69cfe",
+      "observedAt": "2026-11-21T15:17:05.661Z",
       "range": {
         "startLine": 1,
-        "endLine": 189
+        "endLine": 231
       }
     },
     {
@@ -3283,12 +3283,12 @@
       "location": {
         "path": "resources/migrations/README.md"
       },
-      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions. Migrations 110 and 111 add Routine execution numbering and bounded settlement facts.",
-      "hash": "da058f450929b4978dbc140f6dbfef87d21f9f7842575679428bd19767c0ff62",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions. Migrations 110 and 111 add Routine execution numbering and bounded settlement facts. Migration 113 adds the monotone retired layer boundary, carried-forward allowance usage and original planning Turn identity.",
+      "hash": "1976cf268a1493ca81f2a0971787046da931cb525566d27a786ae5c9931fc3c2",
+      "observedAt": "2026-11-21T15:17:05.662Z",
       "range": {
         "startLine": 1,
-        "endLine": 114
+        "endLine": 116
       }
     },
     {
@@ -3675,12 +3675,12 @@
       "location": {
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
-      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations. The latest migrations add durable Routine sequences and historical settlement snapshots while preserving pre-existing recovery and memory facts.",
-      "hash": "a553648c1de5003bc35a3aa21b549a7e2cf55e2625af1a6f29bf17bd073d746b",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations. The latest migrations add durable Routine sequences and historical settlement snapshots while preserving pre-existing recovery and memory facts. Migration coverage preserves old path IDs, canonical layer membership, and the legacy continuation balance.",
+      "hash": "e3ee1e0215d833c632bc5b8deddfedc52df6a4b38e5c67da02623d622e6cfde3",
+      "observedAt": "2026-11-21T15:18:30.030Z",
       "range": {
         "startLine": 1,
-        "endLine": 1045
+        "endLine": 1091
       }
     },
     {
@@ -3994,15 +3994,15 @@
     {
       "id": "9b0e0c6e-1862-4553-bd04-2426a446641d",
       "kind": "source-code",
-      "claim": "Scoped page navigation relates paths to Work, Runs and evidence references without loading raw reports.",
+      "claim": "Scoped page navigation relates paths to Work, Runs and evidence references without loading raw reports. The planner sees all persisted layers via at most eight entries per page, current layer status and revision-bound cursors.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-goal-review-roadmap.ts"
       },
-      "hash": "182d93033b9e0fd00dd1a39673764da41145dde70f23b31330aae827cfd90130",
-      "observedAt": "2026-11-19T06:09:21.825Z",
+      "hash": "95457202181754719573c2ced49612f88d846db980f4c62e2e8b26c297ebe27f",
+      "observedAt": "2026-11-21T15:17:05.662Z",
       "range": {
         "startLine": 1,
-        "endLine": 155
+        "endLine": 164
       }
     },
     {
@@ -4272,12 +4272,12 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across the latest 100 populated layers out of 128 layers and 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "a63291deaa1f760516b31cb6be4462c1ae6c819742c8911189e3d75221518238",
-      "observedAt": "2026-11-21T11:58:14.287Z"
+      "hash": "2c1cd42d4ab942b5acfd97cd211de2749027472eab3a62225a9ece2a30fbcd30",
+      "observedAt": "2026-11-21T15:17:05.663Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",
@@ -4640,6 +4640,36 @@
         "startLine": 1,
         "endLine": 160
       }
+    },
+    {
+      "id": "f9838ecf-031c-4f40-a4de-78fa5c921ebe",
+      "kind": "document",
+      "claim": "Approved goal continuation and route depth behavior, display retirement, and acceptance tests.",
+      "location": {
+        "path": "docs/design/goal-route-depth-spec.md"
+      },
+      "hash": "ea60d9d730ed368fe755bbd83faaa34b5aab6477c57c4b8085b1fe1d765ae0e2",
+      "observedAt": "2026-11-21T15:17:05.663Z"
+    },
+    {
+      "id": "99175273-f768-48d4-8024-3279cf213682",
+      "kind": "source-code",
+      "claim": "Persists the monotone display window, continuation review usage and original Work Turn. Older SQLite path rows remain available to the planner.",
+      "location": {
+        "path": "resources/migrations/113_goal_route_depth.sql"
+      },
+      "hash": "32881680ae1871547a93937ef03b50a6089192bdf944b35a4a67144565bb3740",
+      "observedAt": "2026-11-21T15:17:05.663Z"
+    },
+    {
+      "id": "0f27fc0d-5c94-490c-9cd2-7b7871105d1c",
+      "kind": "source-code",
+      "claim": "Exercises a 1,050-layer SQLite map, page totals, the retired fog link, durable retirement after reorder, and continued evidence access.",
+      "location": {
+        "path": "tests/integration/joi-goal-detail.test.ts"
+      },
+      "hash": "6940c5e23748b7c07116af80dc74c4f95366e2b7e5a4a9c4e7fbe1837021f0cd",
+      "observedAt": "2026-11-21T15:17:05.663Z"
     }
   ]
 }

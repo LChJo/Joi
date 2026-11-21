@@ -1,9 +1,57 @@
+import { SqliteGoalEvidenceRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
+import { createGoalEvidenceFixture } from "../support/goal-evidence-fixture.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 const NOW = "2026-10-19T00:00:00.000Z";
 
 describe("goal detail projection (AC-37/44/48)", () => {
+  it("pages only the newest 100 populated layers and permanently retires older layers from the desktop map", async () => {
+    const fixture = await createGoalEvidenceFixture([{}]);
+    try {
+      fixture.database.transaction(db => {
+        db.prepare(`INSERT INTO joi_harness_maps (goal_input_id,workbench_id,status,created_at,updated_at)
+          VALUES ('goal',?,'ACTIVE',?,?)`).run(fixture.workbenchId, NOW, NOW);
+        db.prepare(`WITH RECURSIVE layers(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM layers WHERE n<1050)
+          INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+          SELECT 'path-'||n,'goal',n,'Synthetic path','CLOSED',?,? FROM layers`).run(NOW, NOW);
+        db.prepare(`INSERT INTO joi_harness_fog (fog_id,goal_input_id,note,status,graduated_path_id,created_at,updated_at)
+          VALUES ('fog','goal','Synthetic fog','GRADUATED','path-951',?,?)`).run(NOW, NOW);
+      });
+      const desktop = new SqliteJoiHomeFeedRepository(fixture.database);
+      const first = await desktop.loadGoalDetail("goal", {});
+      const second = await desktop.loadGoalDetail("goal", { view: "map", offset: 50 });
+      expect(first?.harness).toMatchObject({ currentLayer: 1050, pathCount: 100, fog: [{ graduatedPathId: "path-951" }] });
+      expect(first?.nextOffset).toBe(50);
+      expect(second?.nextOffset).toBeUndefined();
+      expect([...(first?.harness?.paths ?? []), ...(second?.harness?.paths ?? [])].map(path => path.layer))
+        .toEqual(Array.from({ length: 100 }, (_, index) => 1050 - index));
+
+      fixture.database.transaction(db => db.prepare(`INSERT INTO joi_harness_paths
+        (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+        VALUES ('latest','goal',1051,'New layer','OPEN',?,?)`).run(NOW, NOW));
+      const summary = await desktop.loadGoalDetail("goal", { view: "summary" });
+      expect(summary?.harness).toMatchObject({ currentLayer: 1051, pathCount: 100 });
+      expect(summary?.harness?.pathOrderRevision).not.toBe(first?.harness?.pathOrderRevision);
+      const latest = await desktop.loadGoalDetail("goal", {});
+      expect(latest?.harness?.fog).toEqual([{ fogId: "fog", note: "Synthetic fog", status: "GRADUATED" }]);
+      expect((await desktop.loadGoalDetail("goal", { offset: 99 }))?.harness?.paths.map(path => path.layer)).toEqual([952]);
+
+      // Moving a path to a populated layer must not bring an older layer back.
+      fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET layer=1050 WHERE path_id='latest'").run());
+      const reopened = await new SqliteJoiHomeFeedRepository(fixture.database).loadGoalDetail("goal", { offset: 99 });
+      expect(reopened?.harness?.paths.map(path => path.layer)).toEqual([952]);
+      fixture.database.transaction(db => db.prepare("UPDATE joi_harness_paths SET layer=2000 WHERE path_id='latest'").run());
+      const sparse = await desktop.loadGoalDetail("goal", { limit: 100 });
+      expect(sparse?.harness?.paths.map(path => path.layer)).toEqual([2000, ...Array.from({ length: 99 }, (_, index) => 1050 - index)]);
+      expect(sparse?.nextOffset).toBeUndefined();
+
+      const evidence = new SqliteGoalEvidenceRepository(fixture.database);
+      await expect(evidence.readRoadmap({ goalInputId: "goal", workbenchId: fixture.workbenchId, layer: 951 }))
+        .resolves.toMatchObject({ counts: { paths: 1051 }, entries: [{ pathId: "path-951", layer: 951 }] });
+    } finally { await fixture.close(); }
+  });
+
   it("returns a complete safe title and all distinct paths across bounded pages with real work states", async () => {
     const fixture = await createRuntimeFixture();
     try {

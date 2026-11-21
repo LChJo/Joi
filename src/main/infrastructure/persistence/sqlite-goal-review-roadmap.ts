@@ -2,6 +2,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { GoalRoadmapPage, GoalRoadmapQuery } from "../../application/ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import { workResultArtifactId } from "../../domain/work/workspace-artifact-reference.js";
+import { visibleHarnessPathSql } from "./sqlite-joi-harness-paths.js";
 
 const PAGE_SIZE = 8;
 const unmapped = `NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.goal_input_id=w.input_id AND p.work_id=w.work_id)`;
@@ -22,6 +23,8 @@ function readOffset(cursor: string | undefined, scope: string, snapshot: string)
 export function readGoalRoadmap(db: DatabaseSync, input: GoalRoadmapQuery): GoalRoadmapPage {
   const { goalInputId,workbenchId,section = "paths",layer,workId,runId,resultId } = input;
   const goal = db.prepare(`SELECT m.revision AS mapRevision,substr(m.destination,1,320) AS destination,
+      m.path_order_revision AS pathOrderRevision,
+      COALESCE((SELECT MAX(layer) FROM joi_harness_paths WHERE goal_input_id=m.goal_input_id),0) AS currentLayer,
       COALESCE(rs.revision,0) AS resultRevision,COALESCE(q.revision,0) AS requirementsRevision,
       COALESCE((SELECT MAX(source_revision) FROM joi_goal_requirement_sources s WHERE s.goal_input_id=g.input_id),0) AS sourceRevision,
       m.review_recovery_epoch AS reviewEpoch,rs.synthetic_input_id AS owner,
@@ -37,6 +40,11 @@ export function readGoalRoadmap(db: DatabaseSync, input: GoalRoadmapQuery): Goal
       AND (g.workbench_id=wb.workbench_id OR (g.workbench_id IS NULL AND EXISTS
         (SELECT 1 FROM work_items w WHERE w.input_id=g.input_id AND w.workbench_id=wb.workbench_id)))`).get(workbenchId,goalInputId);
   if (goal === undefined) throw new DomainError("goal_evidence_not_found","Evidence was not found in this goal.");
+
+  const currentLayer = Number(goal.currentLayer);
+  const currentLayerHasOpenPaths = currentLayer > 0 && db.prepare(`SELECT 1 FROM joi_harness_paths p
+    WHERE p.goal_input_id=? AND p.layer=? AND p.status='OPEN' AND ${visibleHarnessPathSql("p")} LIMIT 1`)
+    .get(goalInputId,currentLayer) !== undefined;
 
   const counts = {
     paths: db.prepare("SELECT COUNT(*) AS n FROM joi_harness_paths WHERE goal_input_id=?").get(goalInputId)?.n as number,
@@ -136,15 +144,16 @@ export function readGoalRoadmap(db: DatabaseSync, input: GoalRoadmapQuery): Goal
       break;
   }
   const countSql = section === "reads" ? `SELECT COUNT(*) AS n FROM (SELECT ${select} ${from})` : `SELECT COUNT(*) AS n ${from}`;
-  const total = db.prepare(countSql).get(...params)?.n as number;
+  const total = (section === "paths" && layer === undefined) || section === "decisions" || section === "fog" || section === "unmapped"
+    ? counts[section] : db.prepare(countSql).get(...params)?.n as number;
   const scope = JSON.stringify([goalInputId,workbenchId,section,layer ?? null,workId ?? null,runId ?? null,resultId ?? null]);
-  const snapshot = JSON.stringify([version,goal.sourceRevision,goal.reviewEpoch,goal.owner,goal.completionKey,goal.workspaceRef,goal.workspaceStatus,counts,total]);
+  const snapshot = JSON.stringify([version,goal.pathOrderRevision,currentLayerHasOpenPaths,goal.sourceRevision,goal.reviewEpoch,goal.owner,goal.completionKey,goal.workspaceRef,goal.workspaceStatus,counts,total]);
   const offset = readOffset(input.cursor,scope,snapshot);
   const rows = db.prepare(`SELECT ${select} ${from} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params,PAGE_SIZE,offset);
   const entries = section === "artifacts" ? rows.map(({ resultId: id,artifactIndex,...row }) =>
     ({ ...row,artifactRef: workResultArtifactId(id as string,artifactIndex as number) })) : rows;
   const nextOffset = offset + entries.length;
-  return { counts,entries,total,version,
+  return { counts,currentLayer,currentLayerHasOpenPaths,entries,total,version,
     ...(typeof goal.destination === "string" ? { destination: goal.destination } : {}),
     ...(typeof goal.outcomeResult === "number" ? { outcomeId: `r${String(goal.outcomeResult)}:q${String(goal.outcomeRequirements ?? 0)}:current` } : {}),
     ...(typeof goal.disposition === "string" ? { disposition: goal.disposition } : {}),

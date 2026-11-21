@@ -367,7 +367,7 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
-  it("grants continuation allowance above recovery-appended layers, not a blind +2", async () => {
+  it("grants two reviews above the migrated usage even when legacy usage exceeded the allowance", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "joi", scopeSummary: "研究" });
@@ -382,9 +382,8 @@ describe("sqlite joi inbox clarify", () => {
           .run(accepted.inputId, workbench.workbenchId, now, now);
         connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required', clarification_prompt = '证据仍有缺口。' WHERE input_id = ?").run(accepted.inputId);
         connection.prepare(`INSERT INTO joi_harness_maps
-          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
-          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
-        // Work recovery appended layers past the allowance: depth 5 against allowance 2.
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, continuation_used, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, 4, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
         const insertPath = connection.prepare(`INSERT INTO joi_harness_paths
           (path_id, goal_input_id, layer, title, status, created_at, updated_at)
           VALUES (?, ?, ?, '补充证据', 'CLOSED', ?, ?)`);
@@ -401,7 +400,6 @@ describe("sqlite joi inbox clarify", () => {
       });
 
       await expect(inbox.clarify({ actionChoice: "CONTINUE", inputId: accepted.inputId })).resolves.toMatchObject({ status: "CONSUMED" });
-      // A blind +2 would land on 4 == MAX(layer)-1 and stall; the grant must clear the depth.
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT continuation_allowance FROM joi_harness_maps WHERE goal_input_id = ?").get(accepted.inputId)))
         .toEqual({ continuation_allowance: 6 });
@@ -427,8 +425,8 @@ describe("sqlite joi inbox clarify", () => {
           .run(accepted.inputId, workbench.workbenchId, now, now);
         connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(accepted.inputId);
         connection.prepare(`INSERT INTO joi_harness_maps
-          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
-          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, continuation_used, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
         const insertPath = connection.prepare(`INSERT INTO joi_harness_paths
           (path_id, goal_input_id, layer, title, status, created_at, updated_at)
           VALUES (?, ?, ?, '补充证据', 'CLOSED', ?, ?)`);

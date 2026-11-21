@@ -898,6 +898,8 @@ describe("joi reasoning tools", () => {
   it("writes harness map artifacts against the goal context", async () => {
     const recorder: HarnessRecorder = { calls: [] };
     const harness = makeTools({ goalInputId: "goal-1", harness: recorder, inputId: "joi_harness_review:goal:goal-1:r1" });
+    await expect(harness.validate("harness_chart_path", { open: { layer: 33, title: "Deep path" } })).resolves.toBeDefined();
+    await expect(harness.validate("harness_note_fog", { graduate: { fogId: "fog_1", graduateLayer: 34, graduateTitle: "Deep fog" } })).resolves.toBeDefined();
     await harness.call("harness_name_destination", { destination: "完成股票分析" });
     await harness.call("harness_chart_path", { open: { layer: 2, title: "深入财报" } });
     await harness.call("harness_chart_path", { close: { pathId: "path_9", status: "CLOSED" } });
@@ -910,7 +912,8 @@ describe("joi reasoning tools", () => {
     for (const entry of recorder.calls) {
       expect(entry.args.goalInputId).toBe("goal-1");
     }
-    expect(recorder.calls[5]?.args).toMatchObject({ layer: 1, title: "确认数据源" });
+    expect(recorder.calls[5]?.args).toMatchObject({ title: "确认数据源" });
+    expect(recorder.calls[5]?.args).not.toHaveProperty("layer");
   });
 
   it("falls back to the current input as the goal context for direct goal turns", async () => {

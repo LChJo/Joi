@@ -15,9 +15,10 @@ export function queryJoiGoalDetail(db: DatabaseSync, goalId: string, page: Retur
       AND input_id NOT LIKE 'joi_result_input:%' AND input_id NOT LIKE 'joi_harness_review:%'`).get(goalId) as Row | undefined;
   if (goal === undefined) return null;
   const result: JoiGoalDetailDto = { goalId, fullTitle: display(goal.body) || "未命名目标" };
-  const map = db.prepare(`SELECT m.destination, m.status, m.revision, m.detail_revision, m.path_order_revision,
-    (SELECT COALESCE(MAX(layer),0) FROM joi_harness_paths WHERE goal_input_id=m.goal_input_id) AS current_layer,
-    (SELECT COUNT(*) FROM joi_harness_paths p WHERE p.goal_input_id=m.goal_input_id AND ${visibleHarnessPathSql("p")}) AS path_count,
+  const map = db.prepare(`SELECT m.destination, m.status, m.revision, m.detail_revision, m.path_order_revision, m.desktop_retired_through_layer,
+    (SELECT COALESCE(MAX(layer),0) FROM joi_harness_paths WHERE goal_input_id=m.goal_input_id AND layer>m.desktop_retired_through_layer) AS current_layer,
+    (SELECT COUNT(*) FROM joi_harness_paths p WHERE p.goal_input_id=m.goal_input_id
+      AND p.layer>m.desktop_retired_through_layer AND ${visibleHarnessPathSql("p")}) AS path_count,
     (SELECT COUNT(*) FROM joi_harness_decisions WHERE goal_input_id=m.goal_input_id) AS decision_count,
     (SELECT COUNT(*) FROM joi_harness_fog WHERE goal_input_id=m.goal_input_id) AS fog_count
     FROM joi_harness_maps m WHERE m.goal_input_id=? AND m.workbench_id=?`).get(goalId, goal.workbench_id ?? null) as Row | undefined;
@@ -32,17 +33,20 @@ export function queryJoiGoalDetail(db: DatabaseSync, goalId: string, page: Retur
   };
   result.harness = harness;
   if (page.view === "summary") return result;
+  const retiredThrough = Number(map.desktop_retired_through_layer);
   const paths = db.prepare(`SELECT p.path_id,p.layer,p.title,p.status,w.work_id,w.status AS work_status,d.decision_id
     FROM joi_harness_paths p JOIN joi_harness_maps m ON m.goal_input_id=p.goal_input_id
     LEFT JOIN work_items w ON w.work_id=p.work_id AND w.input_id=p.goal_input_id AND w.workbench_id=m.workbench_id
     LEFT JOIN joi_harness_decisions d ON d.decision_id=p.resolved_decision_id AND d.goal_input_id=p.goal_input_id
-    WHERE p.goal_input_id=? AND ${visibleHarnessPathSql("p")} ORDER BY p.layer DESC,p.created_at DESC,p.path_id DESC LIMIT ? OFFSET ?`)
-    .all(goalId, page.limit, page.offset) as Row[];
+    WHERE p.goal_input_id=? AND p.layer>? AND ${visibleHarnessPathSql("p")}
+    ORDER BY p.layer DESC,p.created_at DESC,p.path_id DESC LIMIT ? OFFSET ?`)
+    .all(goalId, retiredThrough, page.limit, page.offset) as Row[];
   const decisions = db.prepare(`SELECT decision_id,kind,summary,detail,created_at FROM joi_harness_decisions
     WHERE goal_input_id=? ORDER BY created_at DESC,decision_id DESC LIMIT ? OFFSET ?`).all(goalId, page.limit, page.offset) as Row[];
   const fog = db.prepare(`SELECT f.fog_id,f.note,f.status,p.path_id FROM joi_harness_fog f
     LEFT JOIN joi_harness_paths p ON p.path_id=f.graduated_path_id AND p.goal_input_id=f.goal_input_id
-    WHERE f.goal_input_id=? ORDER BY f.created_at DESC,f.fog_id DESC LIMIT ? OFFSET ?`).all(goalId, page.limit, page.offset) as Row[];
+      AND p.layer>? AND ${visibleHarnessPathSql("p")}
+    WHERE f.goal_input_id=? ORDER BY f.created_at DESC,f.fog_id DESC LIMIT ? OFFSET ?`).all(retiredThrough, goalId, page.limit, page.offset) as Row[];
   harness.paths = paths.map((row) => ({
       pathId: String(row.path_id), layer: Number(row.layer), title: display(row.title), status: row.status as JoiGoalMapPathDto["status"],
       ...(row.work_id === null ? {} : { workId: String(row.work_id), workStatus: row.work_status as NonNullable<JoiGoalMapPathDto["workStatus"]> }),

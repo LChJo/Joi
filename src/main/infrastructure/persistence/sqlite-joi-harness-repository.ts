@@ -47,7 +47,6 @@ const DECISION_SUMMARY_LIMIT = 240;
 const DECISION_DETAIL_LIMIT = 4_000;
 const FOG_NOTE_LIMIT = 480;
 const LAYER_MIN = 1;
-const LAYER_MAX = 32;
 const TASK_SUMMARY_KEEP_CHARS = 2_000;
 
 const TRIVIAL_GOAL_IDLE_SQL = `NOT EXISTS (
@@ -259,8 +258,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              o.disposition = 'CONTINUE'
              AND g.status = 'CONSUMED'
              AND g.clarification_reason_code IS NULL
-             AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
-                                   WHERE p.goal_input_id = m.goal_input_id), 1) - 1) < m.continuation_allowance
+             AND m.continuation_used < m.continuation_allowance
            ))
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM work_items w
@@ -284,8 +282,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
          AND ${SYNTHESIS_IDLE_SQL}
-         AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
-                              WHERE p.goal_input_id = m.goal_input_id), 1) - 1) >= m.continuation_allowance
+         AND m.continuation_used >= m.continuation_allowance
          AND g.status = 'CONSUMED'
          AND g.clarification_reason_code IS NULL
          AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
@@ -570,31 +567,70 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
 
   async synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }> {
     return this.database.transaction((connection) => {
-      const missing = connection.prepare(`
-        SELECT w.work_id, w.input_id AS goal_input_id, w.title, w.status, w.created_at,
-               1 + (SELECT COUNT(*) FROM joi_inbox_messages r
-                     WHERE r.goal_input_id = w.input_id
-                       AND r.input_id LIKE 'joi_harness_review:goal:%'
-                       AND r.created_at <= w.created_at) AS layer
-          FROM work_items w
-          JOIN joi_harness_maps m ON m.goal_input_id = w.input_id AND m.status = 'ACTIVE'
-         WHERE NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id)
-         ORDER BY w.created_at, w.work_id LIMIT 100`).all() as Row[];
+      const missing = connection.prepare(`WITH missing AS MATERIALIZED (
+        SELECT w.work_id, w.input_id AS goal_input_id, w.title, w.status, w.created_at, w.planned_by_turn_id
+        FROM work_items w JOIN joi_harness_maps m ON m.goal_input_id=w.input_id AND m.status='ACTIVE'
+        WHERE NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id=w.work_id)
+        ORDER BY w.created_at, w.work_id LIMIT 100
+      ) SELECT w.*, CASE WHEN turn.turn_id IS NOT NULL THEN CASE
+          WHEN turn.input_id<>w.goal_input_id OR goal.reopened_at<=w.created_at THEN turn.created_at END
+        ELSE NULLIF(MAX(
+          COALESCE(CASE WHEN goal.reopened_at<=w.created_at THEN goal.reopened_at END,''),
+          COALESCE((SELECT MAX(r.created_at) FROM joi_inbox_messages r
+            WHERE r.goal_input_id=w.goal_input_id AND r.created_at<=w.created_at AND (
+              r.input_id GLOB 'joi_harness_review:goal:*' OR r.input_id GLOB 'joi_goal_resume:goal:*'
+              OR r.input_id GLOB 'joi_recovery:*')), '')
+        ),'') END AS round_at
+        FROM missing w JOIN joi_inbox_messages goal ON goal.input_id=w.goal_input_id
+        LEFT JOIN joi_turns turn ON turn.turn_id=w.planned_by_turn_id
+        ORDER BY w.created_at,w.work_id`).all() as Row[];
+      const existingRound = connection.prepare(`SELECT MAX(p.layer) AS layer FROM work_items w
+        JOIN joi_harness_paths p ON p.work_id=w.work_id AND p.goal_input_id=w.input_id
+        WHERE w.input_id=? AND w.planned_by_turn_id=?`);
+      const existingLegacyRound = connection.prepare(`SELECT MAX(p.layer) AS layer FROM joi_harness_paths p
+        WHERE p.goal_input_id=? AND p.work_id IS NOT NULL AND p.created_at>=? AND p.created_at<=?`);
+      const latestAtWork = connection.prepare(`WITH latest AS (
+        SELECT layer,created_at FROM joi_harness_paths WHERE goal_input_id=$goal AND created_at<=$workAt
+        ORDER BY layer DESC,created_at DESC LIMIT 1
+      ) SELECT layer,created_at,EXISTS (SELECT 1 FROM joi_harness_paths p
+        WHERE p.goal_input_id=$goal AND p.layer=latest.layer AND p.status='OPEN' AND p.created_at<=$workAt
+          AND ${visibleHarnessPathSql("p")}
+      ) AS has_open_path FROM latest`);
       const insert = connection.prepare(`INSERT OR IGNORE INTO joi_harness_paths
         (path_id, goal_input_id, layer, title, status, work_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+      const assignedLayers = new Map<string, number>();
       let created = 0;
       for (const row of missing) {
         const workId = textValue(row, "work_id");
         const workStatus = textValue(row, "status");
+        const goalId = textValue(row, "goal_input_id");
+        const workAt = textValue(row, "created_at");
+        const roundAt = typeof row.round_at === "string" ? row.round_at : undefined;
+        const turnId = typeof row.planned_by_turn_id === "string" ? row.planned_by_turn_id : undefined;
+        const cohort = JSON.stringify([goalId, turnId ?? null, turnId === undefined ? roundAt ?? workAt : null]);
+        let layer = assignedLayers.get(cohort);
+        if (layer === undefined) {
+          const existing = turnId === undefined
+            ? existingLegacyRound.get(goalId, roundAt ?? workAt, workAt)
+            : existingRound.get(goalId, turnId);
+          if (typeof existing?.layer === "number") layer = existing.layer;
+          else {
+            const latest = latestAtWork.get({ goal: goalId, workAt });
+            layer = typeof latest?.layer === "number" ? latest.layer : LAYER_MIN;
+            if (roundAt !== undefined && typeof latest?.created_at === "string" && latest.created_at < roundAt
+              && latest.has_open_path === 0 && layer < Number.MAX_SAFE_INTEGER) layer += 1;
+          }
+          assignedLayers.set(cohort, layer);
+        }
         created += Number(insert.run(
           `harness_path:work:${workId}`,
-          textValue(row, "goal_input_id"),
-          Math.min(LAYER_MAX, numberValue(row, "layer")),
+          goalId,
+          layer,
           textValue(row, "title").slice(0, PATH_TITLE_LIMIT),
           ["COMPLETED", "FAILED", "CANCELED"].includes(workStatus) ? "CLOSED" : "OPEN",
           workId,
-          textValue(row, "created_at"),
+          workAt,
           input.now,
         ).changes);
       }
@@ -634,8 +670,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              o.disposition = 'CONTINUE'
              AND g.status = 'CONSUMED'
              AND g.clarification_reason_code IS NULL
-             AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
-                                   WHERE p.goal_input_id = m.goal_input_id), 1) - 1) < m.continuation_allowance
+             AND m.continuation_used < m.continuation_allowance
             ))`).get(digest.goalInputId, digest.resultRevision, digest.recoveryEpoch ?? null) as Row | undefined;
       if (gate === undefined) return null;
       const resultRevision = numberValue(gate, "result_revision");
@@ -655,7 +690,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       }
       const requirementRevision = loadGoalRequirements(connection, digest.goalInputId)?.revision;
       const inputId = reviewInputId(digest.goalInputId, resultRevision, requirementRevision, digest.recoveryEpoch);
-      connection.prepare(`
+      const inserted = connection.prepare(`
         INSERT OR IGNORE INTO joi_inbox_messages
           (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
         VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)`).run(
@@ -669,9 +704,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       );
       connection.prepare(`
         UPDATE joi_harness_maps
-           SET reviewed_revision = ?, reviewed_requirements_revision = ?, revision = revision + 1, updated_at = ?
+           SET reviewed_revision = ?, reviewed_requirements_revision = ?, continuation_used = continuation_used + ?,
+               revision = revision + 1, updated_at = ?
           WHERE goal_input_id = ? AND (reviewed_revision < ? OR ?)`).run(
-        resultRevision, requirementRevision ?? null, now, digest.goalInputId, resultRevision, digest.recoveryEpoch === undefined ? 0 : 1,
+        resultRevision, requirementRevision ?? null, gate.disposition === "CONTINUE" && inserted.changes === 1 ? 1 : 0,
+        now, digest.goalInputId, resultRevision, digest.recoveryEpoch === undefined ? 0 : 1,
       );
       return inputId;
     });
@@ -689,8 +726,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND rs.synthesized_revision = rs.revision AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
          AND ${SYNTHESIS_IDLE_SQL}
-         AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
-                              WHERE p.goal_input_id = m.goal_input_id), 1) - 1) >= m.continuation_allowance
+         AND m.continuation_used >= m.continuation_allowance
          AND g.status = 'CONSUMED'
          AND g.clarification_reason_code IS NULL
          AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
@@ -702,9 +738,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       );
       if (eligible === undefined) return false;
       const prompt = "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。";
-      // Sequence the action per (goal, revision): a prior request for this revision may already
-      // be APPLIED/RESOLVED while the goal is still exhausted and idle (e.g. recovery-appended
-      // layers consumed the grant). Re-raise instead of letting the idempotency row silence it.
+      // A prior request for the same revision can be resolved before a later review consumes the grant.
       const prior = connection.prepare(`SELECT COUNT(*) AS n FROM joi_user_action_requests
         WHERE input_id = ? AND result_revision = ? AND kind = 'GOAL_CONTINUATION'`).get(
         input.seed.goalInputId, input.seed.resultRevision) as { n: number | bigint };
@@ -1164,7 +1198,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       }
       const open = input.open;
       if (open === undefined) throw new DomainError("harness_path_invalid", "Path action is missing.");
-      if (!Number.isInteger(open.layer) || open.layer < LAYER_MIN || open.layer > LAYER_MAX) {
+      if (!Number.isSafeInteger(open.layer) || open.layer < LAYER_MIN) {
         throw new DomainError("harness_path_invalid", "Path layer is out of bounds.");
       }
       const title = requireText(open.title, PATH_TITLE_LIMIT, "harness_path_invalid");
@@ -1250,18 +1284,19 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
   async graduateFog(input: {
     fogId: string;
     goalInputId: string;
-    layer: number;
+    layer?: number;
     title: string;
     turnId: string;
     workId?: string;
   }): Promise<{ fogId: string; pathId: string }> {
-    if (!Number.isInteger(input.layer) || input.layer < LAYER_MIN || input.layer > LAYER_MAX) {
-      throw new DomainError("harness_fog_invalid", "Graduated path layer is out of bounds.");
-    }
     const title = requireText(input.title, PATH_TITLE_LIMIT, "harness_fog_invalid");
     return this.database.transaction((connection) => {
       const now = new Date().toISOString();
       this.#requireActiveMap(connection, input.goalInputId, now);
+      const layer = input.layer ?? this.#layerForNewPath(connection, input.goalInputId);
+      if (!Number.isSafeInteger(layer) || layer < LAYER_MIN) {
+        throw new DomainError("harness_fog_invalid", "Graduated path layer is out of bounds.");
+      }
       const workId = this.#validatedWorkId(connection, input.goalInputId, input.workId);
       const existing = connection.prepare(`
         SELECT 1 FROM joi_harness_fog WHERE fog_id = ? AND goal_input_id = ? AND status = 'ACTIVE'`)
@@ -1272,7 +1307,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         INSERT INTO joi_harness_paths
           (path_id, goal_input_id, layer, title, status, work_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'OPEN', ?, ?, ?)`).run(
-        pathId, input.goalInputId, input.layer, title, workId, now, now,
+        pathId, input.goalInputId, layer, title, workId, now, now,
       );
       connection.prepare(`
         UPDATE joi_harness_fog SET status = 'GRADUATED', graduated_path_id = ?, updated_at = ?
@@ -1345,6 +1380,16 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     connection.prepare(`
       UPDATE joi_harness_maps SET revision = revision + 1, updated_at = ? WHERE goal_input_id = ?`)
       .run(now, goalInputId);
+  }
+
+  #layerForNewPath(connection: DatabaseSync, goalInputId: string): number {
+    const row = connection.prepare(`
+      WITH latest AS (SELECT COALESCE(MAX(layer), 0) AS layer FROM joi_harness_paths WHERE goal_input_id = ?)
+      SELECT latest.layer, EXISTS (
+        SELECT 1 FROM joi_harness_paths p WHERE p.goal_input_id = ? AND p.layer = latest.layer AND p.status = 'OPEN'
+          AND ${visibleHarnessPathSql("p")}
+      ) AS has_open_path FROM latest`).get(goalInputId, goalInputId) as Row;
+    return numberValue(row, "layer") + (row.has_open_path === 1 ? 0 : 1);
   }
 
   #validatedWorkId(connection: DatabaseSync, goalInputId: string, workId: string | undefined): string | null {

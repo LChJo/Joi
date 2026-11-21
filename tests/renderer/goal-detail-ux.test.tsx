@@ -79,6 +79,48 @@ it("starts a long map as a compact overview with authoritative counts and opens 
   expect(screen.getByRole("button", { name: /路径 0/u })).toBeInTheDocument();
 });
 
+it("mounts cards only for expanded layers in a deep route map", async () => {
+  const harness = { ...longMap(), currentLayer: 96, pathCount: 865 };
+  harness.paths = harness.paths.map(path => ({ ...path, layer: path.layer + 64 }));
+  const { container } = render(<GoalMap harness={harness} hasMore />);
+
+  expect(screen.getByText("当前第 96 层")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "展开路线图" }));
+  expect(container.querySelectorAll("[data-path-id]")).toHaveLength(6);
+  expect(screen.getByRole("button", { name: /加载更多路径/u })).toBeInTheDocument();
+  const older = screen.getByText("第 95 层");
+  fireEvent.click(older.closest("summary") ?? older);
+  await waitFor(() => expect(container.querySelectorAll("[data-path-id]")).toHaveLength(12));
+  fireEvent.click(older.closest("summary") ?? older);
+  await waitFor(() => expect(container.querySelectorAll("[data-path-id]")).toHaveLength(6));
+});
+
+it("opens each new latest layer while keeping the user's explicit history expansions", async () => {
+  const harness = longMap();
+  const view = render(<GoalMap harness={harness} />);
+  fireEvent.click(screen.getByRole("button", { name: "展开路线图" }));
+  const older = screen.getByText("第 31 层");
+  fireEvent.click(older.closest("summary") ?? older);
+  await waitFor(() => expect(screen.getByRole("button", { name: /路径 6$/u })).toBeVisible());
+
+  view.rerender(<GoalMap harness={{ ...harness, currentLayer: 33, paths: [
+    { pathId: "next", layer: 33, title: "续聊路径", status: "OPEN" }, ...harness.paths,
+  ] }} />);
+  expect(screen.getByRole("button", { name: /续聊路径/u })).toBeVisible();
+  expect(screen.getByRole("button", { name: /路径 6$/u })).toBeVisible();
+  expect(screen.queryByText("路径 0")).not.toBeInTheDocument();
+});
+
+it("ends path paging when all visible paths are loaded even if decisions still have pages", () => {
+  const harness = { ...longMap(), pathCount: 50 };
+  render(<GoalMap harness={harness} hasMore />);
+  fireEvent.click(screen.getByRole("button", { name: "展开路线图" }));
+  expect(screen.getByText("已加载 50 / 共 50 项")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /加载更多路径/u })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /^决策/u }));
+  expect(screen.getByRole("button", { name: /加载更多路径/u })).toBeInTheDocument();
+});
+
 it("retains path selection, notes and layer state across folding and polling", () => {
   const harness = longMap();
   const view = render(<GoalMap harness={harness} />);

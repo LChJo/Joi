@@ -43,6 +43,8 @@ describe("SQLite work plan outbox", () => {
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_recovery_attempts WHERE source_work_id='legacy-read'").get()?.n)).toBe(1);
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_items WHERE input_id='recovery-goal'").get()?.n)).toBe(2);
       const replacement = results[0].waves[0]?.[0];
+      expect(database.transaction(db => db.prepare("SELECT planned_by_turn_id FROM work_items WHERE work_id=?").get(replacement ?? "")))
+        .toEqual({ planned_by_turn_id: "recovery-turn" });
       const brief = await new SqliteWorkPlanRepository(database).readBrief("recovery-goal",wb.workbenchId,replacement ?? "");
       expect(brief).toMatchObject({ accessMode: "WRITE", executionNeeds: ["FILE_WRITE"] });
       const originalAttempt = database.transaction(db => db.prepare("SELECT * FROM dispatch_attempts WHERE work_id=?").get(replacement ?? ""));

@@ -183,6 +183,10 @@ describe("sqlite joi inbox retry", () => {
           (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
           VALUES ('old-completed-work', ?, ?, '第一阶段', '{}', 'READ', 'COMPLETED', ?, ?)`)
           .run(workbench.workbenchId, goal.inputId, old, old);
+        connection.prepare(`INSERT INTO joi_harness_maps (goal_input_id,workbench_id,created_at,updated_at)
+          VALUES (?,?,?,?)`).run(goal.inputId, workbench.workbenchId, old, old);
+        connection.prepare(`INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,work_id,created_at,updated_at)
+          VALUES ('old-path',?,32,'第一阶段','CLOSED','old-completed-work',?,?)`).run(goal.inputId, old, old);
         connection.prepare(`INSERT INTO joi_goal_result_sets
           (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 1, 1, ?)`).run(goal.inputId, old);
         connection.prepare(`INSERT INTO joi_goal_outcomes
@@ -216,6 +220,9 @@ describe("sqlite joi inbox retry", () => {
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT completed_at FROM joi_goal_outcomes WHERE input_id = ?").get(goal.inputId)))
         .toEqual({ completed_at: old });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT path_id,layer FROM joi_harness_paths WHERE goal_input_id=?").all(goal.inputId)))
+        .toEqual([{ path_id: "old-path", layer: 32 }]);
     } finally {
       await fixture.close();
     }

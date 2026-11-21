@@ -967,7 +967,7 @@ describe("SqliteJoiHarnessRepository", () => {
       })).rejects.toMatchObject({ code: "harness_path_invalid" });
       await expect(repository.chartPath({
         goalInputId: "goal-path",
-        open: { layer: 33, title: "层数越界" },
+        open: { layer: Number.MAX_SAFE_INTEGER + 1, title: "层数越界" },
         turnId: "turn-goal-path",
       })).rejects.toMatchObject({ code: "harness_path_invalid" });
       const closed = await repository.chartPath({
@@ -1028,6 +1028,29 @@ describe("SqliteJoiHarnessRepository", () => {
       })).rejects.toMatchObject({ code: "harness_fog_invalid" });
       const projection = await repository.loadGoalProjections();
       expect(projection[0]).toMatchObject({ currentLayer: 2, fogCount: 0, openPathCount: 1 });
+    });
+
+    it("continues a reopened goal beyond layer 32 and keeps the earlier paths", async () => {
+      const goalInputId = "goal-deep-followup";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      const turnId = `turn-${goalInputId}`;
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      const old = await repository.chartPath({ goalInputId, turnId, open: { layer: 32, title: "Previous layer" } });
+      await repository.chartPath({ goalInputId, turnId, close: { pathId: old.pathId, status: "CLOSED" } });
+      forceMapCleared(fixture, goalInputId);
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      await expect(inbox.retry(goalInputId, { text: "Verify the newest evidence" })).resolves.toMatchObject({ status: "PENDING" });
+      const next = await repository.chartPath({ goalInputId, turnId, open: { layer: 33, title: "Follow-up path" } });
+      const { fogId } = await repository.noteFog({ goalInputId, turnId, note: "One unknown" });
+      const graduated = await repository.graduateFog({ fogId, goalInputId, turnId, title: "Investigate alongside the open path" });
+      await repository.chartPath({ goalInputId, turnId, close: { pathId: next.pathId, status: "CLOSED" } });
+      await repository.chartPath({ goalInputId, turnId, close: { pathId: graduated.pathId, status: "CLOSED" } });
+      const laterFog = await repository.noteFog({ goalInputId, turnId, note: "Later unknown" });
+      await repository.graduateFog({ fogId: laterFog.fogId, goalInputId, turnId, title: "Investigate after settlement" });
+      const detail = await new SqliteJoiHomeFeedRepository(fixture.database).loadGoalDetail(goalInputId, { offset: 0, limit: 10 });
+      expect(detail?.harness).toMatchObject({ currentLayer: 34, pathCount: 4 });
+      expect(detail?.harness?.paths.map(path => path.layer)).toEqual([34, 33, 33, 32]);
+      expect(detail?.harness?.paths.at(-1)).toMatchObject({ pathId: old.pathId, status: "CLOSED" });
     });
 
     it("refuses map writes once the map is cleared", async () => {
@@ -1151,6 +1174,10 @@ describe("SqliteJoiHarnessRepository", () => {
     it("automatically reviews two continuation layers then requests a goal-level decision", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-continue", now: NOW });
+      const manualPath = await repository.chartPath({ goalInputId: "goal-continue", turnId: "turn-goal-continue",
+        open: { layer: 96, title: "User follow-up" } });
+      await repository.chartPath({ goalInputId: "goal-continue", turnId: "turn-goal-continue",
+        close: { pathId: manualPath.pathId, status: "CLOSED" } });
 
       for (const layer of [1, 2, 3]) {
         if (layer > 1) {
@@ -1166,6 +1193,7 @@ describe("SqliteJoiHarnessRepository", () => {
           const digest = digests[0];
           if (digest === undefined) throw new Error("expected continuation review digest");
           await expect(repository.enqueueReview({ digest, now: NOW })).resolves.not.toBeNull();
+          await expect(repository.enqueueReview({ digest, now: NOW })).resolves.toBeNull();
         } else {
           expect(digests).toEqual([]);
         }
@@ -1201,22 +1229,16 @@ describe("SqliteJoiHarnessRepository", () => {
     it("re-raises a continuation decision when an applied grant left the goal exhausted", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue-reraise", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-continue-reraise", now: NOW });
-      for (const layer of [1, 2, 3]) {
-        if (layer > 1) {
-          fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_harness_paths
-            (path_id, goal_input_id, layer, title, status, created_at, updated_at)
-            VALUES (?, 'goal-continue-reraise', ?, '补充证据', 'CLOSED', ?, ?)`)
-            .run(`path-reraise-${String(layer)}`, layer, NOW, NOW));
-        }
-        seedCompletedLayer(fixture, "goal-continue-reraise", layer, "CONTINUE");
-      }
+      fixture.database.transaction(connection => connection.prepare(
+        "UPDATE joi_harness_maps SET continuation_used=2 WHERE goal_input_id='goal-continue-reraise'",
+      ).run());
+      seedCompletedLayer(fixture, "goal-continue-reraise", 3, "CONTINUE");
       const decisions = await repository.listContinuationDecisionSeeds();
       const decision = decisions[0];
       if (decision === undefined) throw new Error("expected continuation decision seed");
       await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(true);
 
-      // Simulate the grant being applied without opening room (recovery-appended layers):
-      // the goal is still exhausted and idle, so the decision must be askable again.
+      // An exhausted goal can ask again after a resolved decision for the same revision.
       fixture.database.transaction((connection) => {
         connection.prepare(`UPDATE joi_user_action_requests SET status = 'APPLIED', decision = 'CONTINUE'
           WHERE input_id = 'goal-continue-reraise' AND status = 'OPEN'`).run();
@@ -1963,6 +1985,65 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("wayfinder-driven goal lifecycle", () => {
+    it.each(["review", "follow-up", "bound review"])("automatically groups deep %s Work in the next layer without replaying old review depth", async (origin) => {
+      const goalInputId = "goal-deep-review";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      const legacyPathAt = "2026-08-06T10:00:01.000Z";
+      const nextTurnAt = "2026-08-06T10:00:02.000Z";
+      const workCreatedAt = "2026-08-06T10:00:03.000Z";
+      const turnId = origin === "bound review" ? "deep-review-turn" : null;
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      fixture.database.transaction(db => {
+        const review = db.prepare(`INSERT INTO joi_inbox_messages
+          (input_id,idempotency_key,body,status,goal_input_id,workbench_id,created_at,updated_at)
+          VALUES (?,?,'Review','CONSUMED',?,?,?,?)`);
+        for (let index = 1; index <= 40; index += 1) {
+          const id = `joi_harness_review:goal:${goalInputId}:r${String(index)}`;
+          review.run(id,id,goalInputId,workbenchId,NOW,NOW);
+        }
+        if (origin !== "follow-up") {
+          const nextReview = `joi_harness_review:goal:${goalInputId}:r41`;
+          review.run(nextReview,nextReview,goalInputId,workbenchId,nextTurnAt,nextTurnAt);
+          if (turnId !== null) db.prepare(`INSERT INTO joi_turns
+            (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+            VALUES (?,?,?,'deep-review-session','COMPLETED',?,?)`).run(turnId,nextReview,workbenchId,nextTurnAt,nextTurnAt);
+        }
+        db.prepare(`INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+          VALUES ('legacy-path',?,32,'Settled path','CLOSED',?,?)`).run(goalInputId,legacyPathAt,legacyPathAt);
+      });
+      if (origin === "follow-up") {
+        fixture.clock.advance(Date.parse(nextTurnAt) - fixture.clock.now().getTime());
+        const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+        await expect(inbox.retry(goalInputId, { text: "Check the latest evidence" })).resolves.toMatchObject({ status: "PENDING" });
+      }
+      fixture.database.transaction(db => {
+        const work = db.prepare(`INSERT INTO work_items
+          (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at,planned_by_turn_id)
+          VALUES (?,?,?,?,'{}','READ','READY',?,?,?)`);
+        work.run("deep-work-a",workbenchId,goalInputId,"deep-work-a",workCreatedAt,workCreatedAt,turnId);
+      });
+      await expect(repository.synchronizeWorkPaths({ now: workCreatedAt })).resolves.toEqual({ closed: 0, created: 1 });
+      const secondWorkAt = "2026-08-06T10:00:05.000Z";
+      if (turnId !== null) fixture.database.transaction(db => db.prepare(`INSERT INTO joi_harness_paths
+        (path_id,goal_input_id,layer,title,status,created_at,updated_at)
+        VALUES ('intervening-path',?,34,'Separate reasoning','CLOSED','2026-08-06T10:00:04.000Z','2026-08-06T10:00:04.000Z')`).run(goalInputId));
+      fixture.database.transaction(db => db.prepare(`INSERT INTO work_items
+        (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at,planned_by_turn_id)
+        VALUES ('deep-work-b',?,?,'deep-work-b','{}','READ','READY',?,?,?)`)
+        .run(workbenchId,goalInputId,secondWorkAt,secondWorkAt,turnId));
+      await expect(repository.synchronizeWorkPaths({ now: secondWorkAt })).resolves.toEqual({ closed: 0, created: 1 });
+      await expect(repository.synchronizeWorkPaths({ now: secondWorkAt })).resolves.toEqual({ closed: 0, created: 0 });
+      const rows = fixture.database.transaction(db => db.prepare(
+        "SELECT path_id AS pathId,layer FROM joi_harness_paths WHERE goal_input_id=? ORDER BY layer,path_id",
+      ).all(goalInputId));
+      expect(rows).toEqual([
+        { pathId: "legacy-path", layer: 32 },
+        { pathId: "harness_path:work:deep-work-a", layer: 33 },
+        { pathId: "harness_path:work:deep-work-b", layer: 33 },
+        ...(turnId === null ? [] : [{ pathId: "intervening-path", layer: 34 }]),
+      ]);
+    });
+
     async function seedPathWork(status: "RUNNING" | "FAILED" = "RUNNING") {
       const goalInputId = "goal-canonical-path";
       const { workbenchId } = seedGoal(fixture, { goalInputId, turn: true });

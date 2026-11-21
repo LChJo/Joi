@@ -158,7 +158,7 @@ export interface JoiHarnessStore {
   graduateFog(input: {
     fogId: string;
     goalInputId: string;
-    layer: number;
+    layer?: number;
     title: string;
     turnId: string;
     workId?: string;

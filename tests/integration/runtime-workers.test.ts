@@ -22,6 +22,7 @@ import type { JoiGoalDetailDto, WorkbenchAgentCardDto } from "../../src/shared/j
 import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const LARGE_GOAL_SIZE = 1_001;
+const MAP_LAYERS = 128;
 const HISTORY_SIZE = 50_000;
 
 async function seedLargeGoal(fixture: Awaited<ReturnType<typeof createRuntimeFixture>>) {
@@ -56,7 +57,7 @@ async function seedLargeGoal(fixture: Awaited<ReturnType<typeof createRuntimeFix
       SELECT 'run-'||id,'attempt-'||id,'action-'||id,?,'work-'||id,?,'LOCAL_PI','external-'||id,'COMPLETED',stamp,stamp FROM agent_fixture`)
       .run(benchId, partner.partnerRevisionId);
     db.exec(`INSERT INTO joi_harness_paths (path_id,goal_input_id,layer,title,status,work_id,created_at,updated_at)
-      SELECT 'path-'||id,goal,seq%32+1,'Fixture','CLOSED','work-'||id,stamp,stamp FROM agent_fixture WHERE goal='target';
+      SELECT 'path-'||id,goal,seq%${String(MAP_LAYERS)}+1,'Fixture','CLOSED','work-'||id,stamp,stamp FROM agent_fixture WHERE goal='target';
       DROP TABLE agent_fixture;`);
   });
   return benchId;
@@ -196,15 +197,22 @@ describe("runtime Workers (AC-PERF-01)", () => {
       expect(agents.size).toBe(100);
 
       const paths = new Set<string>();
+      const layers = new Set<number>();
       let offset: number | undefined = 0;
       do {
         const response = await fetch(`${detailUrl}?view=map&limit=100&offset=${String(offset)}`, { headers: clientB });
         expect(response.status).toBe(200);
         const page = await response.json() as JoiGoalDetailDto;
-        for (const item of page.harness?.paths ?? []) paths.add(item.pathId);
+        for (const item of page.harness?.paths ?? []) {
+          expect(paths.has(item.pathId)).toBe(false);
+          paths.add(item.pathId);
+          layers.add(item.layer);
+        }
         offset = page.nextOffset;
       } while (offset !== undefined && offset < LARGE_GOAL_SIZE);
-      expect(paths.size).toBe(LARGE_GOAL_SIZE);
+      expect([...layers]).toEqual(Array.from({ length: 100 }, (_, index) => MAP_LAYERS - index));
+      expect(paths.size).toBe(Array.from({ length: LARGE_GOAL_SIZE }, (_, index) => (index + 1) % MAP_LAYERS + 1)
+        .filter(layer => layer > MAP_LAYERS - 100).length);
     } finally { clearInterval(writer); healthAgent.destroy(); await listeners.close(); await reader.close(); await fixture.close(); }
   }, 30_000);
 
