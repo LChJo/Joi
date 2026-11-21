@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "3d13bf329bcc6e69e1469a8ba3736a67ae41336cc6e4294a5f1efccbcd5b3bea",
-      "observedAt": "2026-11-21T13:19:33.581Z",
+      "hash": "12c231f72244fde94108f2a8323c21e738f4f616a86f2dcfd11f25df3bc1d275",
+      "observedAt": "2026-11-21T16:20:10.289Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "614a03702144c448936793982bb88eb0b9f3306af0615f81ad0568d2661d28ff",
-      "observedAt": "2026-11-21T13:19:33.583Z",
+      "hash": "f300497cc66efa260c37558ef8700632a455cb7248e6f167fe5907f9b4e2a457",
+      "observedAt": "2026-11-21T16:20:10.291Z",
       "range": {
         "startLine": 1,
         "endLine": 14193
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance.",
-      "hash": "8841191c17c4ccf3321039f03207360c1c00fac130fb68c7fce4febb26e69376",
-      "observedAt": "2026-11-21T09:43:40.187Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded.",
+      "hash": "93db70cab76f63bd89d4af1419c768e7560454f4796117847998c69622d7a2c1",
+      "observedAt": "2026-11-21T16:20:10.294Z",
       "range": {
         "startLine": 1,
-        "endLine": 2526
+        "endLine": 2529
       }
     },
     {

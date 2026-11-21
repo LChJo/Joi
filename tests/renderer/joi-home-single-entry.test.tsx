@@ -1245,6 +1245,9 @@ describe("joi home single entry", () => {
     expect(screen.getByText("3 条路径 · 3 项决策 · 1 项雾区")).toBeInTheDocument();
     fireEvent.click(expand);
     expect(screen.getByText("深入财报")).toBeInTheDocument();
+    expect(screen.queryByText("收集资料")).not.toBeInTheDocument();
+    expect(screen.queryByText("盯盘")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("第 1 层"));
     expect(screen.getByText("收集资料")).toBeInTheDocument();
     expect(screen.getByText("盯盘")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^雾区/u }));
