@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "448b5b738d5771236174370bc8ceceb354a9049b9f74c14d958ea6b370e96644",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "0ab1000eb96299d4bd6c69648b61ff02b4fb2c1586070523f54b2221218d5ceb",
+      "observedAt": "2026-11-21T11:58:14.284Z",
       "range": {
         "startLine": 1,
-        "endLine": 773
+        "endLine": 775
       }
     },
     {
@@ -4272,12 +4272,12 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across all 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "802827a734f13a9498193008a8fe125bcb01dc4fb57a24633a91bee7c73bf4a1",
-      "observedAt": "2026-11-19T17:23:26.516Z"
+      "hash": "a63291deaa1f760516b31cb6be4462c1ae6c819742c8911189e3d75221518238",
+      "observedAt": "2026-11-21T11:58:14.287Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",

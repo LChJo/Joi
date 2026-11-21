@@ -1,5 +1,6 @@
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { Agent, get } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -107,6 +108,7 @@ describe("runtime Workers (AC-PERF-01)", () => {
       joiHomeFeed: new JoiHomeFeedService({ clock: fixture.clock, repository: reader }),
     }) });
     const origin = listeners.loopback.url;
+    const healthAgent = new Agent({ keepAlive: true });
     let writer: ReturnType<typeof setInterval> | undefined;
     try {
       const bench = await seedLargeGoal(fixture);
@@ -130,7 +132,26 @@ describe("runtime Workers (AC-PERF-01)", () => {
         expect(received.status).toBe(200);
         return await received.json() as AgentPage;
       };
-      await readAgents(clientA);
+      function readHealth(): Promise<number | undefined> {
+        return new Promise((resolve, reject) => {
+          get(`${origin}/api/v1/health`, { agent: healthAgent }, response => {
+            response.on("error", reject);
+            response.once("end", () => resolve(response.statusCode));
+            response.resume();
+          }).on("error", reject);
+        });
+      }
+      const readSummary = async () => {
+        const response = await fetch(`${detailUrl}?view=summary`, { headers: clientB });
+        expect(response.status).toBe(200);
+        const detail = await response.json() as JoiGoalDetailDto;
+        expect(detail.harness?.paths).toEqual([]);
+        expect(detail.harness?.progress?.work.total).toBe(LARGE_GOAL_SIZE);
+      };
+      // Measure steady-state server latency across concurrent requests. Give the health probe
+      // its own keep-alive connection so it does not use the larger responses' client pool.
+      const [healthStatus] = await Promise.all([readHealth(), readAgents(clientA), readAgents(clientB), readSummary()]);
+      expect(healthStatus).toBe(200);
       let writes = 0;
       writer = setInterval(() => {
         fixture.database.transaction(db => db.prepare("UPDATE work_items SET status=? WHERE work_id='work-00001'")
@@ -138,25 +159,18 @@ describe("runtime Workers (AC-PERF-01)", () => {
       }, 25);
       const agentTimes: number[] = [];
       const healthTimes: number[] = [];
-      for (let i = 0; i < 20; i++) {
-        const started = performance.now();
+      for (let sample = 0; sample < 40; sample++) {
         const load = async (headers: { cookie: string }) => {
+          const started = performance.now();
           const page = await readAgents(headers);
           agentTimes.push(performance.now() - started);
           return page.items.map(item => item.agentId);
         };
         const health = async () => {
-          const response = await fetch(`${origin}/api/v1/health`);
-          expect(response.status).toBe(200);
-          await response.arrayBuffer();
+          const started = performance.now();
+          const status = await readHealth();
           healthTimes.push(performance.now() - started);
-        };
-        const readSummary = async () => {
-          const response = await fetch(`${detailUrl}?view=summary`, { headers: clientB });
-          expect(response.status).toBe(200);
-          const detail = await response.json() as JoiGoalDetailDto;
-          expect(detail.harness?.paths).toEqual([]);
-          expect(detail.harness?.progress?.work.total).toBe(LARGE_GOAL_SIZE);
+          expect(status).toBe(200);
         };
         const [left, right] = await Promise.all([load(clientA), load(clientB), health(), readSummary()]);
         expect(left).toHaveLength(100);
@@ -191,7 +205,7 @@ describe("runtime Workers (AC-PERF-01)", () => {
         offset = page.nextOffset;
       } while (offset !== undefined && offset < LARGE_GOAL_SIZE);
       expect(paths.size).toBe(LARGE_GOAL_SIZE);
-    } finally { clearInterval(writer); await listeners.close(); await reader.close(); await fixture.close(); }
+    } finally { clearInterval(writer); healthAgent.destroy(); await listeners.close(); await reader.close(); await fixture.close(); }
   }, 30_000);
 
   it("coalesces identical Agent page reads and sees only committed session changes", async () => {
