@@ -179,7 +179,7 @@ describe("sqlite joi inbox clarify", () => {
       const clarified = await repository.clarify(accepted.inputId, {
         ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-1",
       });
-      expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "ROUTED" });
+      expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "PENDING" });
       expect(clarified?.clarificationReasonCode).toBeUndefined();
       expect(await repository.clarify(accepted.inputId, { text: "too late" })).toBeNull();
     } finally {
@@ -211,7 +211,7 @@ describe("sqlite joi inbox clarify", () => {
 
       expect(await repository.clarify(accepted.inputId, { ...onScreen, workbenchId: "workbench-1" })).toBeNull();
       expect(await repository.clarify(accepted.inputId, { ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-1" }))
-        .toMatchObject({ status: "ROUTED", workbenchId: "workbench-1" });
+        .toMatchObject({ status: "PENDING", workbenchId: "workbench-1" });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
@@ -239,7 +239,7 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
-  it("inherits the goal's attachments and embeds the goal body when building the resume input", async () => {
+  it("keeps the original body and attachment bindings after first Workbench selection", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-resume-"));
     const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
@@ -256,18 +256,13 @@ describe("sqlite joi inbox clarify", () => {
       const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("screenshot bytes"), filename: "image.png", mimeType: "image/png" });
       const accepted = await inbox.accept({ attachmentIds: [uploaded.attachmentId], idempotencyKey: "key-resume-attachments", text: "分析报错：如图" });
 
-      // A workbench-selection clarification never reaches a reasoning Turn, so
-      // the resumed input is the model's first and only view of the goal.
       await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
       await repository.clarify(accepted.inputId, {
         ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-resume",
       });
 
-      const resumeInput = database.transaction((connection) => connection.prepare(
-        "SELECT input_id, body FROM joi_inbox_messages WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%'",
-      ).get(accepted.inputId)) as { body: string; input_id: string };
-      expect(resumeInput.body).toContain("savedGoalAndAnswers=分析报错：如图");
-      expect(await repository.loadInput(resumeInput.input_id)).toMatchObject({
+      expect(await repository.loadInput(accepted.inputId)).toMatchObject({
+        body: "分析报错：如图", status: "PENDING", workbenchId: "workbench-resume",
         attachments: [{ attachmentId: uploaded.attachmentId, filename: "image.png", mimeType: "image/png", size: 16 }],
       });
     } finally {

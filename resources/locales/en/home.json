@@ -308,15 +308,20 @@
     "description": "home: Could not delete the model connection. Try again.",
     "sourceText": "模型网络未删除，请重试。"
   },
-  "changesSavedAsADraftRevisionValidateBeforeEnabling": {
-    "message": "Changes saved as a draft revision. Validate before enabling.",
-    "description": "home: Changes saved as a draft revision. Validate before enabling.",
-    "sourceText": "修改已保存为草稿 revision，请验证后启用。"
+  "modelChangesValidated": {
+    "message": "Changes saved. The connection is ready.",
+    "description": "The edited model connection was saved and validated.",
+    "sourceText": "修改已保存，模型网络可用。"
   },
-  "changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": {
-    "message": "Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
-    "description": "home: Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
-    "sourceText": "修改已保存为草稿 revision，请验证后启用。钉在这个网络上的 {p0} 个搭档（{p1}{p2}）在你验证通过前会派发失败。",
+  "modelChangesValidationFailed": {
+    "message": "Changes saved, but validation did not succeed. You can retry validation.",
+    "description": "The model settings were saved but the automatic validation did not succeed.",
+    "sourceText": "修改已保存，自动验证未通过。可以重试验证。"
+  },
+  "modelChangesValidationFailedPinned": {
+    "message": "Changes saved, but validation did not succeed. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+    "description": "Automatic validation failed for a model connection with pinned partners.",
+    "sourceText": "修改已保存，自动验证未通过。绑定此网络的 {p0} 个搭档（{p1}{p2}）暂时无法接收工作。",
     "placeholders": {
       "p0": "string",
       "p1": "string",
@@ -426,6 +431,11 @@
     "message": "Validate",
     "description": "home: Validate",
     "sourceText": "验证"
+  },
+  "enable": {
+    "message": "Enable",
+    "description": "Validate and enable a disabled model connection.",
+    "sourceText": "启用"
   },
   "disable": {
     "message": "Disable",

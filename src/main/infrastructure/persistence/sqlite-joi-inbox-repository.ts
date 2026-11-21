@@ -8,8 +8,8 @@ import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.js";
 import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
+import { assertCurrentRequirements, hasOnlyInitialRequirementSource } from "../../domain/work/goal-requirements.js";
 import { hasCurrentGoalSynthesisCoverage, buildGoalSynthesisState } from "./sqlite-goal-synthesis-state.js";
-import { enqueueHistoricalMemory } from "./sqlite-historical-memory-store.js";
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
@@ -24,6 +24,7 @@ import { consumeSatisfiedRequirementsReviews, enqueueGoalRequirementsReview } fr
 import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
 import { coverageSynthesisSql, goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goal-result-synthesis.js";
 import { appendGoalRequirementSource, assertGoalRequirementsReady, goalRequirementsCurrentSql } from "./sqlite-goal-requirements-repository.js";
+import { loadGoalRequirements } from "./sqlite-goal-requirements.js";
 import { clearJoiTurnRetryState, joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
 import { settleInterruptedJoiPlanning } from "./sqlite-joi-planning-failure.js";
 import { nextGoalReopenTime } from "./sqlite-goal-reopen-time.js";
@@ -1115,10 +1116,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (resumeGate?.status === "REVIEWING" && resumeGate.resume_input_id === inputId) {
         throw new DomainError("goal_resume_required", "Review the queued goal and call goal_resume before ending this recovery turn.");
       }
-      const originalGate = connection.prepare(`SELECT gate.status, i.goal_input_id, gate.resume_input_id
+      const originalGate = connection.prepare(`SELECT gate.status, i.goal_input_id, gate.resume_input_id, gate.reason_code
         FROM joi_inbox_messages i
         JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
-        WHERE i.input_id = ?`).get(inputId) as { goal_input_id?: unknown; resume_input_id?: unknown; status?: unknown } | undefined;
+        WHERE i.input_id = ?`).get(inputId) as { goal_input_id?: unknown; resume_input_id?: unknown; status?: unknown; reason_code?: unknown } | undefined;
       const directGate = resumeGate ?? originalGate;
       if (directGate !== undefined && directGate.status !== "OPEN") {
         connection.prepare("UPDATE joi_turns SET status = 'COMPLETED', updated_at = ? WHERE turn_id = ? AND input_id = ?")
@@ -1132,14 +1133,26 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       const checkpoint = connection.prepare(`SELECT COALESCE(i.goal_input_id, i.input_id) AS goal_input_id, t.requirements_revision, t.status
         FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id WHERE t.turn_id = ? AND t.input_id = ?`).get(turnId, inputId);
-      const requirements = typeof checkpoint?.goal_input_id === "string"
-        ? assertGoalRequirementsReady(connection, checkpoint.goal_input_id, typeof checkpoint.requirements_revision === "number" ? checkpoint.requirements_revision : undefined) : null;
+      const requirements = typeof checkpoint?.goal_input_id === "string" ? loadGoalRequirements(connection, checkpoint.goal_input_id) : null;
       const epoch = typeof checkpoint?.goal_input_id === "string"
         ? connection.prepare("SELECT reopened_at FROM joi_inbox_messages WHERE input_id=?").get(checkpoint.goal_input_id)?.reopened_at : undefined;
       const completionTime = typeof epoch === "string" && epoch > now ? epoch : now;
       if (requirements !== null) {
-        consumeSatisfiedRequirementsReviews(connection, requirements, now);
-        enqueueGoalRequirementsReview(connection, requirements, now);
+        // A plain first-source reply can finish without a Work contract. Its sources remain
+        // available for any later execution, which still requires a fresh contract checkpoint.
+        const initialAssignment = originalGate?.status === "OPEN" && originalGate.reason_code === "workbench_selection_invalid"
+          && originalGate.resume_input_id === null;
+        const initialDirectReply = completion?.outcome === "DIRECT_ANSWER" && completion.committedByTool !== true
+          && checkpoint?.goal_input_id === inputId && checkpoint.requirements_revision === 0
+          && hasOnlyInitialRequirementSource(requirements) && (directGate === undefined || initialAssignment) && typeof epoch !== "string"
+          && connection.prepare(`SELECT 1 FROM joi_inbox_messages i WHERE i.input_id = ? AND i.automation_routine_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id)
+            AND NOT EXISTS (SELECT 1 FROM joi_goal_result_sets r WHERE r.original_input_id = i.input_id)`).get(inputId) !== undefined;
+        if (!initialDirectReply) {
+          assertCurrentRequirements(requirements, typeof checkpoint?.requirements_revision === "number" ? checkpoint.requirements_revision : undefined);
+          consumeSatisfiedRequirementsReviews(connection, requirements, now);
+          enqueueGoalRequirementsReview(connection, requirements, now);
+        }
       }
       // A user retry reuses the goal id, so its prior result row remains present. A Turn that
       // finishes without adding Work must not inherit that old completion as its own outcome.
@@ -1285,7 +1298,18 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
         return { disposition, goalInputId: synthesis.goal_input_id, goalOutcomePersisted: true, resultRevision: synthesis.result_revision };
       }
-      if (completion?.outcome === "DIRECT_ANSWER" || completion?.outcome === "TEAM_READY") {
+      const resumedGoal = completion?.committedByTool === true && inputId.startsWith("joi_goal_resume:goal:")
+        && resumeGate?.status === "OPEN" && resumeGate.resume_input_id === inputId && typeof resumeGate.goal_input_id === "string"
+        ? connection.prepare(`SELECT g.input_id FROM joi_inbox_messages g JOIN joi_inbox_messages resume ON resume.input_id = ?
+          WHERE g.input_id = ? AND g.goal_input_id IS NULL AND g.workbench_id = resume.workbench_id
+            AND g.status = 'CONSUMED' AND g.canceled_at IS NULL AND g.failed_at IS NULL
+            AND g.dismissed_at IS NULL AND g.clarification_reason_code IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = g.input_id)
+            AND NOT EXISTS (SELECT 1 FROM joi_goal_result_sets rs WHERE rs.original_input_id = g.input_id AND rs.revision > 0)`)
+          .get(inputId, resumeGate.goal_input_id)?.input_id
+        : undefined;
+      if ((completion?.outcome === "DIRECT_ANSWER" || completion?.outcome === "TEAM_READY")
+        && (checkpoint?.goal_input_id === inputId || typeof resumedGoal === "string")) {
         const summary = normalizeCompletionSummary(completion.completionSummary);
         if (summary === "") throw new Error("joi_turn_completion_invalid");
         connection.prepare(`INSERT INTO joi_turn_completions
@@ -1296,13 +1320,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             completed_at = excluded.completed_at, updated_at = excluded.updated_at`).run(
           inputId, turnId, completion.outcome, summary, completionTime, now,
         );
+        if (typeof resumedGoal === "string") {
+          // The Turn completion belongs to its input; the user's result journal belongs to the goal.
+          connection.prepare(`INSERT INTO joi_goal_result_history (result_id, goal_input_id, source_key, completed_at, status, body)
+            VALUES (lower(hex(randomblob(16))), ?, ?, ?, 'COMPLETED', ?)
+            ON CONFLICT(goal_input_id, source_key) DO NOTHING`).run(resumedGoal, `turn:${turnId}`, completionTime, summary);
+        }
       }
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
-      if (completion?.outcome === "DIRECT_ANSWER") {
-        const completed = connection.prepare("SELECT workbench_id FROM joi_inbox_messages WHERE input_id=?").get(inputId);
-        if (typeof completed?.workbench_id === "string") enqueueHistoricalMemory(connection,{ workbenchId: completed.workbench_id,kind: "direct",subjectId: inputId,now });
-      }
       connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
         WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')
           AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);
@@ -1727,6 +1753,29 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
     appendGoalRequirementSource(connection, goalInputId, current.body, "LEGACY");
   }
   const nextWorkbench = patch.workbenchId ?? current.workbenchId;
+  // The first Workbench selection only resolves routing. Queue the original input so
+  // the model starts from the user's request and any future dispatch still validates it.
+  const initialAssignment = patch.workbenchId !== undefined && current.workbenchId === undefined
+    && current.clarificationReasonCode === "workbench_selection_invalid" && gate?.reason_code === "workbench_selection_invalid"
+    && goalInputId === inputId && row.reopened_at === null && patch.text === undefined && action === undefined
+    && current.automationRoutineId === undefined && queueResolution === undefined && queuedQuestion === undefined
+    && connection.prepare(`SELECT 1 FROM joi_inbox_messages i WHERE i.input_id = ?
+      AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id)
+      AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id)
+      AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id)
+      AND NOT EXISTS (SELECT 1 FROM joi_goal_result_sets r WHERE r.original_input_id = i.input_id)
+      AND NOT EXISTS (SELECT 1 FROM user_questions q WHERE q.scope_kind = 'GOAL' AND q.scope_id = i.input_id AND q.status = 'QUEUED')`)
+      .get(inputId) !== undefined;
+  if (initialAssignment) {
+    const resolved = connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', resume_input_id = NULL,
+      answered_at = ?, updated_at = ? WHERE goal_input_id = ? AND status = 'WAITING_INPUT'`).run(now, now, inputId);
+    if (resolved.changes !== 1) throw new Error("joi_workbench_assignment_conflict");
+    const started = connection.prepare(`UPDATE joi_inbox_messages SET workbench_id = ?, status = 'PENDING',
+      clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+      WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED' RETURNING *`).get(nextWorkbench ?? null, now, now, inputId);
+    if (started === undefined) throw new Error("joi_workbench_assignment_conflict");
+    return mapRow(started);
+  }
   const questionId = historicalRecovery?.questionId ?? (typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`);
   const questionVersion = historicalRecovery?.questionVersion ?? (typeof gate?.question_version === "number" ? gate.question_version : 1);
   const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;

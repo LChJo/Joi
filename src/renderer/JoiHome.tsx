@@ -257,15 +257,15 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const [busySources, setBusySources] = useState<ReadonlySet<string>>(new Set());
+  const running = useRef(new Set<string>());
   const [notice, setNotice] = useNotice();
   const [noticeWarns, setNoticeWarns] = useState(false);
   const tell = useCallback((text: string, warn = false) => { setNotice(text); setNoticeWarns(warn); }, [setNotice]);
   const load = useCallback(async () => {
     try { setSources((await api.listModelSources(true)).items); }
     catch { tell(t("home.couldNotLoadModelConnectionSettings")); return; }
-    // Partners come along because editing a source resets it to DRAFT, which strands every partner
-    // pinned to it; the save has to be able to say how many that is. Advisory only, so a partner
-    // list that will not load must not keep the sources off the screen.
+    // A failed validation can leave partners pinned to a source that is temporarily unavailable.
     try { setPartners((await api.listPartners()).items); }
     catch { /* the warning is best-effort; the sources themselves are not */ }
   }, [api, tell]);
@@ -294,8 +294,32 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       tell(t("home.couldNotDeleteTheModelConnectionTryAgain"));
     }
   };
+  const replaceSource = (source: JoiSnapshotDto["modelSources"][number]) => {
+    setSources((current) => current.map((item) => {
+      if (item.sourceId !== source.sourceId) return item;
+      return item.codexAccount === undefined ? source : { codexAccount: item.codexAccount, ...source };
+    }));
+  };
+  const runSourceAction = async (sourceId: string, action: () => Promise<void>) => {
+    if (running.current.has(sourceId)) return;
+    running.current.add(sourceId);
+    setBusySources(new Set(running.current));
+    try { await action(); }
+    finally {
+      running.current.delete(sourceId);
+      setBusySources(new Set(running.current));
+    }
+  };
+  const validateSource = (sourceId: string) => runSourceAction(sourceId, async () => {
+    setNotice(null);
+    try {
+      replaceSource(await api.validateModelSource(sourceId));
+      await load();
+    } catch { tell(t("home.validationFailed"), true); }
+  });
   const saveEdit = async (event: SyntheticEvent<HTMLFormElement>, source: JoiSnapshotDto["modelSources"][number]) => {
     event.preventDefault();
+    if (running.current.has(source.sourceId)) return;
     const form = new FormData(event.currentTarget);
     const field = (name: string) => {
       const value = form.get(name);
@@ -325,33 +349,45 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         baseUrl: field("baseUrl"), displayName: field("displayName"),
       } : {}),
     };
-    try {
-      await api.updateModelSource(source.sourceId, body);
-      setEditing(null);
+    await runSourceAction(source.sourceId, async () => {
+      setNotice(null);
+      let saved: typeof source;
+      try { saved = await api.updateModelSource(source.sourceId, body); }
+      catch (error) {
+        tell(error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"), true);
+        return;
+      }
+      setEditing((current) => current === source.sourceId ? null : current);
+      replaceSource({ ...saved, status: "VALIDATING" });
+      const validated = await api.validateModelSource(saved.sourceId).catch(() => saved);
+      replaceSource(validated);
+      if (validated.status === "READY") {
+        tell(t("home.modelChangesValidated"));
+        return;
+      }
       const pinned = partners.filter((partner) => partner.status !== "DELETED" && partner.modelSourceId === source.sourceId);
       const named = pinned.slice(0, 3).map((partner) => partner.displayName).join("、");
       tell(pinned.length === 0
-        ? t("home.changesSavedAsADraftRevisionValidateBeforeEnabling")
-        : t("home.changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda", { p0: String(pinned.length), p1: named, p2: (pinned.length > 3 ? t("home.andOthers") : "") }),
-      pinned.length > 0);
-      await load();
-    } catch (error) {
-      tell(error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"));
-    }
+        ? t("home.modelChangesValidationFailed")
+        : t("home.modelChangesValidationFailedPinned", { p0: String(pinned.length), p1: named, p2: pinned.length > 3 ? t("home.andOthers") : "" }),
+      true);
+    });
   };
   return <section className="model-source-manager">
     <header><div><h2>{t("home.modelConnections")}</h2><p>{t("home.primaryAndBackupConnectionsAreUsedInThisOrder")}</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? t("home.collapse") : t("home.addConnection")}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
-    <div className="model-source-list">{sources.map((source, index) => <article className="model-source-item" key={source.sourceId}>
+    <div className="model-source-list">{sources.map((source, index) => {
+      const busy = busySources.has(source.sourceId);
+      return <article className="model-source-item" key={source.sourceId}>
       <div className="model-source-summary">
         <div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div>
         <span className="model-source-meta">{source.primary ? t("home.primary") : t("home.backupValue", { p0: String(index) })} · {source.kind === "codex" ? t("home.codexSubscription") : accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span>
         <small>{t("home.model")}{source.activeModel.id}</small>
-        {source.codexAccount === undefined ? null : <>
+        {source.codexAccount === undefined ? null : <div className="model-source-account">
           {source.codexAccount.maskedAccount === undefined ? null : <small>{t("home.codexAccountLabel", { p0: source.codexAccount.maskedAccount })}</small>}
           {source.codexAccount.plan === undefined ? null : <small>{t("home.codexPlanLabel", { p0: source.codexAccount.plan })}</small>}
           <small>{t("home.codexExpiresLabel", { p0: new Date(source.codexAccount.expiresAt).toLocaleString(currentLocale()) })}</small>
-        </>}
+        </div>}
         {source.protocol === "anthropic" && source.anthropicAuthMode === "bearer" ? <small>{t("home.authenticationBearerAuthTokenDetectedAutomatically")}</small> : null}
         {source.activeModel.thinkingEffort === undefined ? null : <small>{t("home.thinkingEffort767f05")}{thinkingEffortLabel(source.activeModel.thinkingEffort)}</small>}
         {modelLimitNote(source.activeModel)}
@@ -363,13 +399,20 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         </> : null}
       </div>
       <div aria-label={t("home.valueActions", { p0: source.displayName })} className="row-actions model-source-actions" role="group">
-        <button aria-label={t("home.editValue", { p0: source.displayName })} className="button ghost" onClick={() => { setReconnecting(null); setEditing(source.sourceId); }} type="button">{t("common.edit")}</button>
-        {source.kind === "codex" && api.desktop ? <button className="button quiet" onClick={() => { setEditing(null); setReconnecting(source.sourceId); }} type="button">{t("home.codexReconnect")}</button> : null}
-        <button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">{t("home.moveUp")}</button>
-        <button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">{t("home.moveDown")}</button>
-        <button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice(noticeMessage("home.validationFailed")))} type="button">{t("home.validate")}</button>
-        <button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">{t("home.disable")}</button>
-        <button className="button danger-text" onClick={() => void removeSource(source.sourceId)} type="button">{t("common.delete")}</button>
+        <button className="button ghost" disabled={busy || index === 0} onClick={() => void reorder(index, -1)} type="button">{t("home.moveUp")}</button>
+        <button className="button ghost" disabled={busy || index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">{t("home.moveDown")}</button>
+        <button className="button quiet" disabled={busy} onClick={() => void validateSource(source.sourceId)} type="button">{t(source.status === "DISABLED" ? "home.enable" : "home.validate")}</button>
+        <ModelSourceMenu label={source.displayName} disabled={busy} items={[
+          { label: t("common.edit"), run: () => { setReconnecting(null); setEditing(source.sourceId); } },
+          ...(source.kind === "codex" && api.desktop ? [
+            { label: t("home.codexReconnect"), run: () => { setEditing(null); setReconnecting(source.sourceId); } },
+          ] : []),
+          { label: t("home.disable"), disabled: source.status === "DISABLED", run: () => void runSourceAction(source.sourceId, async () => {
+            try { await api.updateModelSource(source.sourceId, { disabled: true }); await load(); }
+            catch { tell(t("home.modelConnectionChangesCouldNotBeSaved"), true); }
+          }) },
+          { label: t("common.delete"), danger: true, run: () => void runSourceAction(source.sourceId, () => removeSource(source.sourceId)) },
+        ]} />
       </div>
       {reconnecting === source.sourceId ? <CodexSubscriptionForm api={api} sourceId={source.sourceId} onCancel={() => setReconnecting(null)} onConnected={async () => { setReconnecting(null); await load(); }} /> : null}
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
@@ -388,11 +431,48 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
             </select>
           </label>
         </details>
-        <div className="row-actions"><button className="button primary" type="submit">{t("home.saveChanges")}</button><button className="button ghost" onClick={() => setEditing(null)} type="button">{t("common.cancel")}</button></div>
+        <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{t("home.saveAndValidate")}</button><button className="button ghost" disabled={busy} onClick={() => setEditing(null)} type="button">{t("common.cancel")}</button></div>
       </form> : null}
-    </article>)}</div>
+      </article>;
+    })}</div>
     {notice === null ? null : <p className={noticeWarns ? "inline-notice warning" : "inline-notice info"} {...(noticeWarns ? { role: "alert" as const } : {})}>{notice}</p>}
   </section>;
+}
+
+function ModelSourceMenu({ label, disabled, items }: {
+  label: string;
+  disabled: boolean;
+  items: { label: string; disabled?: boolean; danger?: boolean; run: () => void }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (open) menu.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus(); }, [open]);
+  const close = () => { setOpen(false); trigger.current?.focus(); };
+  return <div className="model-source-menu" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }}
+    onKeyDown={(event) => {
+      if (!open) {
+        if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
+        return;
+      }
+      if (event.key === "Escape") { event.preventDefault(); close(); return; }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      const options = [...(menu.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+      const current = options.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+        : (current + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      event.preventDefault();
+      options[next]?.focus();
+    }}>
+    <button className="icon-button model-source-more" type="button" aria-label={t("home.moreActionsForValue", { p0: label })}
+      aria-haspopup="menu" aria-expanded={open} disabled={disabled} onClick={() => setOpen((current) => !current)} ref={trigger}>
+      <DotsThreeIcon aria-hidden weight="bold" />
+    </button>
+    {open ? <div className="joi-goal-menu-list" role="menu" aria-label={t("home.valueActions", { p0: label })} ref={menu}>
+      {items.map((item) => <button className={item.danger ? "danger" : undefined} disabled={item.disabled} key={item.label}
+        onClick={() => { close(); item.run(); }} role="menuitem" type="button">{item.label}</button>)}
+    </div> : null}
+  </div>;
 }
 
 function ArtifactCard({ api, artifact, source, sourceId, workbenchId }: {

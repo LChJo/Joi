@@ -35,6 +35,14 @@ async function click(name: string) {
   });
 }
 
+async function chooseCodexAction(name: string) {
+  await click("Codex 更多操作");
+  await act(async () => {
+    fireEvent.click(screen.getByRole("menuitem", { name }));
+    await Promise.resolve();
+  });
+}
+
 async function poll() {
   await act(() => vi.advanceTimersByTimeAsync(1000));
 }
@@ -196,6 +204,79 @@ describe("Codex subscription form", () => {
 });
 
 describe("Codex subscription model settings", () => {
+  it("validates the edited model once after saving, and renders the returned availability", async () => {
+    const api = new DigitalLifeApi("", true);
+    const original = codexSource("READY");
+    const draft: ModelSourceDto = { ...original, status: "DRAFT", activeSourceRevisionId: "source-r2", activeModel: { ...original.activeModel, id: "gpt-6.2-sol", revisionId: "model-r2" } };
+    const validation = Promise.withResolvers<ModelSourceDto>();
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [original] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(draft);
+    const validate = vi.spyOn(api, "validateModelSource").mockReturnValue(validation.promise);
+    render(<ModelSourceManager api={api} />);
+    await screen.findByText("Codex");
+    await chooseCodexAction("编辑");
+    const model = screen.getByLabelText("编辑 Model ID");
+    fireEvent.change(model, { target: { value: "gpt-6.2-sol" } });
+    const form = model.closest("form");
+    if (form === null) throw new Error("Missing model settings form");
+    await act(async () => {
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      await Promise.resolve();
+    });
+    expect(validate).toHaveBeenCalledExactlyOnceWith(original.sourceId);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("正在验证")).toBeVisible();
+    expect(screen.getByRole("button", { name: "验证" })).toBeDisabled();
+    await act(async () => {
+      validation.resolve({ ...draft, status: "READY" });
+      await validation.promise;
+    });
+    expect(screen.getByText(/gpt-6\.2-sol/)).toBeVisible();
+    expect(screen.getByText("可用")).toBeVisible();
+  });
+
+  it("keeps ordering and validation on the card and other actions in the menu", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [codexSource("READY")] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [] });
+    const remove = vi.spyOn(api, "deleteModelSource").mockResolvedValue(undefined);
+    render(<ModelSourceManager api={api} />);
+    await screen.findByText("Codex");
+    expect(screen.getByRole("button", { name: "上移" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下移" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "验证" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /编辑|重新登录|停用|删除/u })).toBeNull();
+    await click("Codex 更多操作");
+    expect(remove).not.toHaveBeenCalled();
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["编辑", "重新登录 Codex", "停用", "删除"]);
+    await act(async () => {
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "删除" }));
+      await Promise.resolve();
+    });
+    expect(remove).toHaveBeenCalledExactlyOnceWith("codex-source");
+  });
+
+  it("enables a disabled source through validation and restores the validation action when ready", async () => {
+    const api = new DigitalLifeApi("", true);
+    const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [codexSource("DISABLED")] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [] });
+    const ready = codexSource("READY");
+    const validate = vi.spyOn(api, "validateModelSource").mockImplementation(() => {
+      list.mockResolvedValue({ items: [ready] });
+      return Promise.resolve(ready);
+    });
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText("已停用")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "验证" })).toBeNull();
+    await click("启用");
+    expect(validate).toHaveBeenCalledExactlyOnceWith(ready.sourceId);
+    expect(screen.getByText("可用")).toBeVisible();
+    expect(screen.getByRole("button", { name: "验证" })).toBeEnabled();
+  });
+
   it("preserves masked account details across reorder and reconnects the selected source", async () => {
     const api = new DigitalLifeApi("", true);
     const codex = { ...codexSource("NEEDS_AUTH"), reasonCode: "auth_failed" };
@@ -231,10 +312,10 @@ describe("Codex subscription model settings", () => {
     expect(screen.getByText("账号 ••••1234")).toBeVisible();
     expect(screen.getByText("套餐 Plus")).toBeVisible();
 
-    await click("编辑 Codex");
+    await chooseCodexAction("编辑");
     expect(screen.getByLabelText("编辑 Model ID")).toBeVisible();
     expect(screen.queryByLabelText(/替换 API Key/)).toBeNull();
-    await click("重新登录 Codex");
+    await chooseCodexAction("重新登录 Codex");
     expect(screen.queryByLabelText("编辑 Model ID")).toBeNull();
     await click(browserButton);
     expect(start).toHaveBeenCalledExactlyOnceWith("browser", codex.sourceId);

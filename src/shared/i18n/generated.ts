@@ -786,8 +786,9 @@ export interface MessageParameters {
   "home.couldNotLoadModelConnectionSettings": undefined;
   "home.modelConnectionDeleted": undefined;
   "home.couldNotDeleteTheModelConnectionTryAgain": undefined;
-  "home.changesSavedAsADraftRevisionValidateBeforeEnabling": undefined;
-  "home.changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": { "p0": string; "p1": string; "p2": string };
+  "home.modelChangesValidated": undefined;
+  "home.modelChangesValidationFailed": undefined;
+  "home.modelChangesValidationFailedPinned": { "p0": string; "p1": string; "p2": string };
   "home.andOthers": undefined;
   "home.modelConnectionChangesCouldNotBeSaved": undefined;
   "home.modelConnections": undefined;
@@ -807,6 +808,7 @@ export interface MessageParameters {
   "home.moveDown": undefined;
   "home.validationFailed": undefined;
   "home.validate": undefined;
+  "home.enable": undefined;
   "home.disable": undefined;
   "home.editDisplayName": undefined;
   "home.editBaseUrl": undefined;
@@ -2660,8 +2662,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.couldNotLoadModelConnectionSettings": "Could not load model connection settings.",
     "home.modelConnectionDeleted": "Model connection deleted.",
     "home.couldNotDeleteTheModelConnectionTryAgain": "Could not delete the model connection. Try again.",
-    "home.changesSavedAsADraftRevisionValidateBeforeEnabling": "Changes saved as a draft revision. Validate before enabling.",
-    "home.changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": "Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+    "home.modelChangesValidated": "Changes saved. The connection is ready.",
+    "home.modelChangesValidationFailed": "Changes saved, but validation did not succeed. You can retry validation.",
+    "home.modelChangesValidationFailedPinned": "Changes saved, but validation did not succeed. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
     "home.andOthers": "and others",
     "home.modelConnectionChangesCouldNotBeSaved": "Model connection changes could not be saved.",
     "home.modelConnections": "Model connections",
@@ -2681,6 +2684,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.moveDown": "Move down",
     "home.validationFailed": "Validation failed.",
     "home.validate": "Validate",
+    "home.enable": "Enable",
     "home.disable": "Disable",
     "home.editDisplayName": "Edit display name",
     "home.editBaseUrl": "Edit base URL",
@@ -4532,8 +4536,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.couldNotLoadModelConnectionSettings": "没能读取模型网络设置。",
     "home.modelConnectionDeleted": "模型网络已删除。",
     "home.couldNotDeleteTheModelConnectionTryAgain": "模型网络未删除，请重试。",
-    "home.changesSavedAsADraftRevisionValidateBeforeEnabling": "修改已保存为草稿 revision，请验证后启用。",
-    "home.changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": "修改已保存为草稿 revision，请验证后启用。钉在这个网络上的 {p0} 个搭档（{p1}{p2}）在你验证通过前会派发失败。",
+    "home.modelChangesValidated": "修改已保存，模型网络可用。",
+    "home.modelChangesValidationFailed": "修改已保存，自动验证未通过。可以重试验证。",
+    "home.modelChangesValidationFailedPinned": "修改已保存，自动验证未通过。绑定此网络的 {p0} 个搭档（{p1}{p2}）暂时无法接收工作。",
     "home.andOthers": " 等",
     "home.modelConnectionChangesCouldNotBeSaved": "模型网络修改未保存。",
     "home.modelConnections": "大模型网络",
@@ -4553,6 +4558,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.moveDown": "下移",
     "home.validationFailed": "验证没有通过。",
     "home.validate": "验证",
+    "home.enable": "启用",
     "home.disable": "停用",
     "home.editDisplayName": "编辑显示名称",
     "home.editBaseUrl": "编辑 Base URL",
@@ -7070,8 +7076,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "模型网络已删除。": "home.modelConnectionDeleted",
   "Could not delete the model connection. Try again.": "home.couldNotDeleteTheModelConnectionTryAgain",
   "模型网络未删除，请重试。": "home.couldNotDeleteTheModelConnectionTryAgain",
-  "Changes saved as a draft revision. Validate before enabling.": "home.changesSavedAsADraftRevisionValidateBeforeEnabling",
-  "修改已保存为草稿 revision，请验证后启用。": "home.changesSavedAsADraftRevisionValidateBeforeEnabling",
+  "Changes saved. The connection is ready.": "home.modelChangesValidated",
+  "修改已保存，模型网络可用。": "home.modelChangesValidated",
+  "Changes saved, but validation did not succeed. You can retry validation.": "home.modelChangesValidationFailed",
+  "修改已保存，自动验证未通过。可以重试验证。": "home.modelChangesValidationFailed",
   "and others": "home.andOthers",
   " 等": "home.andOthers",
   "Model connection changes could not be saved.": "home.modelConnectionChangesCouldNotBeSaved",
@@ -7103,6 +7111,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "验证没有通过。": "home.validationFailed",
   "Validate": "home.validate",
   "验证": "home.validate",
+  "Enable": "home.enable",
+  "启用": "home.enable",
   "Disable": "home.disable",
   "停用": "home.disable",
   "Edit display name": "home.editDisplayName",

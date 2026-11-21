@@ -12,12 +12,12 @@ import { PiReasoningFailureClassifier } from "../../src/main/infrastructure/pi/p
 
 const workbench=createWorkbench({ workbenchId:"bench",createdAt:"2026-11-02T00:00:00.000Z",memoryNamespaceId:"memory",name:"Synthetic",personaRevisionId:"persona",personaSummary:"Synthetic",project:{label:"Synthetic"},scopeSummary:"Synthetic",taskContext:{activeWorkIds:[],summary:""} });
 
-function setup(kind:"requirements"|"capability",corrected:boolean,fallback=false,retryState?:JoiTurnRetryState) {
+function setup(kind:"requirements"|"capability",corrected:boolean,fallback=false,retryState?:JoiTurnRetryState,initial=false) {
   let calls=0;
   let ready=kind!=="requirements";
   const prompts:string[]=[];
-  const contract=():GoalRequirements=>({goalInputId:"goal",workbenchId:"bench",revision:1,sourceRevision:2,processedSourceRevision:ready?2:1,status:ready?"READY":"DIRTY",requirements:[]});
-  const complete=vi.fn(async()=>{if(!ready)throw new DomainError("goal_requirements_pending","Synthetic pending requirement");});
+  const contract=():GoalRequirements=>({goalInputId:"goal",workbenchId:"bench",revision:initial?0:1,sourceRevision:initial?1:2,processedSourceRevision:initial?0:ready?2:1,status:ready?"READY":"DIRTY",requirements:[]});
+  const complete=vi.fn(async()=>{if(!ready&&!initial)throw new DomainError("goal_requirements_pending","Synthetic pending requirement");});
   const fail=vi.fn(async()=>undefined);
   const avoidSource=vi.fn();
   const createTurn=vi.fn(async(_input:Parameters<JoiCoordinatorStore["createTurn"]>[0])=>undefined);
@@ -27,7 +27,7 @@ function setup(kind:"requirements"|"capability",corrected:boolean,fallback=false
     ...(kind==="requirements"?{requirements:{ensure:async()=>contract(),load:async()=>contract()} as unknown as GoalRequirementsRepository}:{}),
     router:{decide:async()=>{throw new Error("Synthetic bound goal");}},
     sources:{avoidSource,selectFallback,selectInitial:async turnId=>({turnId,modelId:"synthetic",modelRevisionId:"model",sourceId:"source",sourceRevisionId:"revision",modelCapability:kind==="capability"?"custom-unverified-tools" as const:"release-tested" as const})},
-    store:{loadInput:async()=>({inputId:"goal",body:"Synthetic work",status:"PENDING" as const,workbenchId:"bench",...(retryState===undefined?{}:{retryState})}),createTurn,completeInput:complete,failTurn:fail,requireClarification:async()=>undefined},
+    store:{loadInput:async()=>({inputId:"goal",body:initial?"你是谁":"Synthetic work",status:"PENDING" as const,workbenchId:"bench",...(retryState===undefined?{}:{retryState})}),createTurn,completeInput:complete,failTurn:fail,requireClarification:async()=>undefined},
     runtime:{abort:()=>undefined,followUp:()=>undefined,isRunning:()=>false,restore:async()=>false,rollbackTurn:async()=>true,steer:()=>undefined,waitForIdle:async()=>undefined,
       startTurn:async turn=>{
         calls++;prompts.push(turn.prompt);
@@ -45,6 +45,12 @@ function setup(kind:"requirements"|"capability",corrected:boolean,fallback=false
 }
 
 describe("bounded tool-less prerequisite repair (AC-26/46/53/67)",()=>{
+  it("finishes a fresh direct question in one model call without preparing a Work contract",async()=>{
+    const harness=setup("requirements",false,false,undefined,true);
+    await harness.coordinator.handle("goal");
+    expect(harness.calls).toBe(1);
+    expect(harness.complete).toHaveBeenCalledWith("goal",expect.any(String),{outcome:"DIRECT_ANSWER",completionSummary:"Synthetic visible answer"});
+  });
   it("rotates persisted failed context and retains the successful generation in a fresh coordinator",async()=>{
     const failed=setup("capability",true,false,{failureCount:4,sessionGeneration:2,epoch:1,reasonCode:"temporary_failure"});
     await failed.coordinator.handle("goal");

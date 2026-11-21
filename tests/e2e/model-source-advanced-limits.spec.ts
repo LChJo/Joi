@@ -71,7 +71,17 @@ test("the advanced limits preserve custom sizes and a numeric Pi compaction thre
     await createForm.getByRole("button", { name: "取消", exact: true }).click();
     await window.getByRole("button", { name: "收起", exact: true }).click();
     const item = window.locator(".model-source-item").filter({ hasText: "127-glm" });
-    await item.getByRole("button", { name: "编辑 127-glm" }).click();
+    const more = item.getByRole("button", { name: "127-glm 更多操作" });
+    await expect(item.getByRole("button", { name: "上移" })).toBeVisible();
+    await expect(item.getByRole("button", { name: "下移" })).toBeVisible();
+    await expect(item.getByRole("button", { name: "验证" })).toBeVisible();
+    await expect(item.getByRole("button", { name: "编辑" })).toHaveCount(0);
+    await more.click();
+    await expect(item.getByRole("menuitem", { name: "删除" })).toBeVisible();
+    await window.keyboard.press("Escape");
+    await expect(item.getByRole("menu")).toHaveCount(0);
+    await more.click();
+    await item.getByRole("menuitem", { name: "编辑" }).click();
     await item.locator("summary").click();
 
     const contextWindow = item.getByLabel("上下文窗口（tokens）");
@@ -95,9 +105,25 @@ test("the advanced limits preserve custom sizes and a numeric Pi compaction thre
     await contextWindow.selectOption("3000000");
     await maxOutput.selectOption("524288");
     await compaction.fill("79");
-    await item.getByRole("button", { name: "保存修改" }).click();
-    await expect(window.getByText(/修改已保存为草稿 revision/)).toBeVisible();
-    await item.getByRole("button", { name: "编辑 127-glm" }).click();
+    await window.route("**/api/v1/model-sources/*/validate", (route) => route.fulfill({ status: 503, json: { code: "fixture_unavailable", message: "Validation temporarily unavailable" } }));
+    const validation = window.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/validate"));
+    await item.getByRole("button", { name: "保存并验证" }).click();
+    await validation;
+    await expect(window.getByText(/修改已保存，自动验证未通过/)).toBeVisible();
+    await window.setViewportSize({ height: 820, width: 420 });
+    await expect(more).toBeVisible();
+    await more.click();
+    const menu = item.getByRole("menu");
+    const bounds = await menu.boundingBox();
+    expect(bounds).not.toBeNull();
+    if (bounds !== null) {
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(420);
+    }
+    await window.keyboard.press("Escape");
+    await window.setViewportSize({ height: 900, width: 1280 });
+    await more.click();
+    await item.getByRole("menuitem", { name: "编辑" }).click();
     await item.locator("summary").click();
     await expect(contextWindow).toHaveValue("3000000");
     await expect(maxOutput).toHaveValue("524288");

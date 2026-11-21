@@ -442,6 +442,11 @@ function parentForm(element: HTMLElement): HTMLFormElement {
   return form;
 }
 
+async function editModelSource(name: string) {
+  fireEvent.click(await screen.findByRole("button", { name: `${name} 更多操作` }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "编辑" }));
+}
+
 function workbenchDto(workbenchId: string, name: string): WorkbenchDto {
   return { workbenchId, name, scopeSummary: "scope", updatedAt: "2026-01-01T00:00:00.000Z" };
 }
@@ -627,9 +632,15 @@ describe("joi home single entry", () => {
     const deepseek = screen.getByText("DeepSeek").closest("article");
     if (deepseek === null) throw new Error("DeepSeek source row missing");
     fireEvent.click(within(deepseek).getByRole("button", { name: "验证" }));
-    fireEvent.click(within(deepseek).getByRole("button", { name: "停用" }));
-    fireEvent.click(within(deepseek).getByRole("button", { name: "删除" }));
-    await waitFor(() => expect(validate).toHaveBeenCalled());
+    const more = within(deepseek).getByRole("button", { name: "DeepSeek 更多操作" });
+    await waitFor(() => expect(more).toBeEnabled());
+    fireEvent.click(more);
+    fireEvent.click(within(deepseek).getByRole("menuitem", { name: "停用" }));
+    await waitFor(() => expect(more).toBeEnabled());
+    fireEvent.click(more);
+    fireEvent.click(within(deepseek).getByRole("menuitem", { name: "删除" }));
+    await waitFor(() => expect(more).toBeEnabled());
+    expect(validate).toHaveBeenCalledWith("source-1");
     expect(update).toHaveBeenCalledWith("source-1", { disabled: true });
     expect(remove).toHaveBeenCalledWith("source-1");
     fireEvent.click(within(kimi).getByRole("button", { name: "验证" }));
@@ -657,31 +668,36 @@ describe("joi home single entry", () => {
     const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
     const remove = vi.spyOn(api, "deleteModelSource").mockRejectedValueOnce(new Error("private backend detail")).mockResolvedValue(undefined);
     render(<ModelSourceManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    const menu = await screen.findByRole("button", { name: "DeepSeek 更多操作" });
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
     expect(await screen.findByText("模型网络未删除，请重试。")).toBeInTheDocument();
     expect(screen.queryByText("private backend detail")).not.toBeInTheDocument();
     expect(screen.getByText("DeepSeek")).toBeInTheDocument();
     list.mockResolvedValue({ items: [] });
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(menu);
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
     await waitFor(() => expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument());
     expect(remove).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("模型网络未删除，请重试。")).not.toBeInTheDocument();
     expect(screen.getByText("模型网络已删除。")).toBeInTheDocument();
   });
 
-  it("edits model, endpoint metadata and optional replacement credentials as a new draft revision", async () => {
+  it("saves edited model, endpoint and replacement credentials before validating the new revision", async () => {
     const api = new DigitalLifeApi("");
     const generic = {
       ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
       displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
     };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
-    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue({
+    const draft = {
       ...generic, activeModel: { ...generic.activeModel, id: "new-model" }, baseUrl: "https://new.example/v1", displayName: "Private 2", status: "DRAFT",
-    });
+    } as const;
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(draft);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue({ ...draft, status: "READY" });
     render(<ModelSourceManager api={api} />);
     expect(await screen.findByText(/自定义接口/u)).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    await editModelSource("Private");
     fireEvent.change(screen.getByLabelText("编辑显示名称"), { target: { value: "Private 2" } });
     fireEvent.change(screen.getByLabelText("编辑 Base URL"), { target: { value: "https://new.example/v1" } });
     fireEvent.change(screen.getByLabelText("编辑 Model ID"), { target: { value: "new-model" } });
@@ -695,7 +711,7 @@ describe("joi home single entry", () => {
       contextWindow: null, maxOutputTokens: null, compactionThresholdPercent: null,
       thinkingEffort: null,
     }));
-    expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+    expect(await screen.findByText("修改已保存，模型网络可用。")).toBeInTheDocument();
   });
 
   it("edits the thinking effort tier and shows it on the source card", async () => {
@@ -714,16 +730,17 @@ describe("joi home single entry", () => {
       active = { ...active, status: "DRAFT", activeModel: { ...active.activeModel, ...(requested === undefined ? {} : { thinkingEffort: requested }) } };
       return Promise.resolve(active);
     });
+    vi.spyOn(api, "validateModelSource").mockImplementation(() => Promise.resolve({ ...active, status: "READY" }));
     render(<ModelSourceManager api={api} />);
     expect(await screen.findByText("思考强度：低")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "编辑 DeepSeek" }));
+    await editModelSource("DeepSeek");
     fireEvent.change(screen.getByLabelText("思考强度"), { target: { value: "high" } });
     fireEvent.submit(parentForm(screen.getByLabelText("思考强度")));
     await waitFor(() => expect(update).toHaveBeenCalledWith("source-1", expect.objectContaining({ thinkingEffort: "high" })));
     expect(await screen.findByText("思考强度：高")).toBeInTheDocument();
   });
 
-  it("warns that saving an edit strands the partners pinned to that source", async () => {
+  it("preserves the edit and warns about pinned partners when automatic validation fails", async () => {
     const api = new DigitalLifeApi("");
     const pinnedPartner: PartnerDto = {
       capabilities: [], createdBy: "user", displayName: "绑在 DeepSeek 上的搭档", engine: "pi-core",
@@ -734,16 +751,16 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
     vi.spyOn(api, "listPartners").mockResolvedValue({ items: [pinnedPartner] });
     vi.spyOn(api, "updateModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    vi.spyOn(api, "validateModelSource").mockResolvedValue({ ...readySource, status: "DEGRADED", reasonCode: "server_error" });
     render(<ModelSourceManager api={api} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "编辑 DeepSeek" }));
+    await editModelSource("DeepSeek");
     fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
 
-    // Saving drops the source to DRAFT, so every partner pinned to it stops dispatching until the
-    // user validates again. That is worth saying at the moment it is caused, not at the next run.
-    const warning = await screen.findByText(/钉在这个网络上的 1 个搭档（绑在 DeepSeek 上的搭档）在你验证通过前会派发失败。/u);
+    const warning = await screen.findByText(/绑定此网络的 1 个搭档（绑在 DeepSeek 上的搭档）暂时无法接收工作。/u);
     expect(warning).toHaveClass("inline-notice", "warning");
     expect(warning).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("button", { name: "验证" })).toBeEnabled();
   });
 
   it.each([
@@ -758,8 +775,9 @@ describe("joi home single entry", () => {
     };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
     const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(generic);
     render(<ModelSourceManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    await editModelSource("Private");
     const context = screen.getByLabelText("上下文窗口（tokens）");
     const output = screen.getByLabelText("最大输出（tokens）");
     expect(within(context).getByRole("option", { name: contextLabel })).toHaveValue(contextValue);
@@ -804,8 +822,9 @@ describe("joi home single entry", () => {
     };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
     const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(generic);
     render(<ModelSourceManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    await editModelSource("Private");
     const windowTier = screen.getByLabelText("上下文窗口（tokens）");
     // A select can only submit one of its own options, so a revision sized by hand has to keep an
     // entry of its own: otherwise merely opening this form and saving would rewrite a limit nobody

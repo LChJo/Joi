@@ -50,6 +50,13 @@ const LAYER_MIN = 1;
 const LAYER_MAX = 32;
 const TASK_SUMMARY_KEEP_CHARS = 2_000;
 
+const TRIVIAL_GOAL_IDLE_SQL = `NOT EXISTS (
+  SELECT 1 FROM joi_inbox_messages owner
+  WHERE (owner.input_id = g.input_id OR owner.goal_input_id = g.input_id)
+    AND (owner.status IN ('PENDING', 'ROUTED', 'CLARIFICATION_REQUIRED')
+      OR EXISTS (SELECT 1 FROM joi_turns turn WHERE turn.input_id = owner.input_id
+        AND turn.status IN ('PENDING', 'RUNNING', 'WAITING'))))`;
+
 /**
  * Shared review-recovery predicates. The scan (listReviewRecoveries) and its write-time
  * recheck (reconcileReview) must stay in lockstep: a candidate that passes the scan but
@@ -227,11 +234,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          -- attach to the goal id) and exposing that orphan map to the trivial clear.
          AND i.input_id NOT LIKE 'joi_goal_resume:%'
          AND i.input_id NOT LIKE 'joi_recovery:%'
-         -- A goal whose first Turn raised a clarification gate at routing time never gets a
-         -- joi_turns row, but its gate row proves the goal exists: without this arm such a
-         -- goal is never adopted and stays mapless for the rest of its life.
-         AND (EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id)
-           OR EXISTS (SELECT 1 FROM joi_goal_execution_gates g WHERE g.goal_input_id = i.input_id))
+         -- Explicit roadmap tools create their own map. Automatic adoption mirrors dispatched Work.
+         AND EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.workbench_id = i.workbench_id)
          AND NOT EXISTS (SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id = i.input_id)
        ORDER BY i.created_at, i.input_id LIMIT 20`).all()) as Row[])
       .map((row) => ({ workbenchId: textValue(row, "workbench_id"), goalInputId: textValue(row, "input_id") }));
@@ -548,7 +552,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                           WHERE rs.original_input_id = m.goal_input_id AND rs.revision > 0)
          AND EXISTS (SELECT 1 FROM joi_inbox_messages g
                       WHERE g.input_id = m.goal_input_id
-                        AND (g.status = 'CONSUMED' OR g.canceled_at IS NOT NULL))
+                        AND (g.canceled_at IS NOT NULL OR (g.status = 'CONSUMED' AND ${TRIVIAL_GOAL_IDLE_SQL})))
        ORDER BY m.created_at, m.goal_input_id LIMIT 10`).all()) as Row[])
       .map((row) => ({ goalInputId: textValue(row, "goal_input_id") }));
   }
@@ -1119,7 +1123,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                           WHERE rs.original_input_id = joi_harness_maps.goal_input_id AND rs.revision > 0)
          AND EXISTS (SELECT 1 FROM joi_inbox_messages g
                       WHERE g.input_id = joi_harness_maps.goal_input_id
-                        AND (g.status = 'CONSUMED' OR g.canceled_at IS NOT NULL))`)
+                        AND (g.canceled_at IS NOT NULL OR (g.status = 'CONSUMED' AND ${TRIVIAL_GOAL_IDLE_SQL})))`)
       .run(input.now, input.now, input.now, input.goalInputId).changes > 0);
   }
 

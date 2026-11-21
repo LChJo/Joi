@@ -1,5 +1,8 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import { createServer as createTcpServer } from "node:net";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createServer as createViteServer } from "vite";
 
 async function freeLoopbackPort(): Promise<number> {
@@ -21,11 +24,12 @@ test("development window loads Vite, completes local setup and opens conversatio
     logLevel: "silent",
     server: { port: 0, proxy: { "/api": `http://127.0.0.1:${String(apiPort)}` } },
   });
+  const profile = await mkdtemp(path.join(tmpdir(), "joi-retained-dev-test-"));
   try {
     await vite.listen();
     const origin = vite.resolvedUrls?.local[0];
     if (origin === undefined) throw new Error("Expected a Vite loopback URL.");
-    const app = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1", JOI_DEV_API_PORT: String(apiPort), VITE_DEV_SERVER_URL: origin } });
+    const app = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1", JOI_DEV_API_PORT: String(apiPort), JOI_DEV_USER_DATA_DIR: profile, VITE_DEV_SERVER_URL: origin } });
     try {
       const page = await app.firstWindow();
       const pageErrors: string[] = [];
@@ -43,5 +47,9 @@ test("development window loads Vite, completes local setup and opens conversatio
       await expect(page.locator(".chat-composer textarea")).toBeVisible();
       expect(pageErrors).toEqual([]);
     } finally { await app.close(); }
-  } finally { await vite.close(); }
+    await access(path.join(profile, "runtime.sqlite"));
+  } finally {
+    await vite.close();
+    await rm(profile, { force: true, recursive: true });
+  }
 });

@@ -9,6 +9,14 @@ const base = {
 };
 
 describe("joi system prompt", () => {
+  it("answers ordinary questions before considering execution or a roadmap", () => {
+    const prompt = buildJoiSystemPrompt(base);
+    expect(prompt).toContain("Greetings, questions about your identity or capabilities, and questions answerable from the supplied context are direct replies");
+    expect(prompt).toContain("Use no tools unless a lookup or a pending clarification gate is required");
+    expect(prompt).toContain("Start a goal map only for requests that need a roadmap");
+    expect(prompt).toContain("Never use DIRECT_ANSWER for a request to analyze, research, create, change or otherwise perform work");
+  });
+
   it("orders implementation before review through explicit dependencies while independent work stays parallel", () => {
     const prompt = buildJoiSystemPrompt(base);
     expect(prompt).toContain("Parallel dispatch is only for independent Work");
@@ -112,7 +120,8 @@ describe("joi system prompt", () => {
       attachments: [{ attachmentId: "att_1", filename: "brief.txt", mimeType: "text/plain", size: 5 }],
       modelCapability: "custom-unverified-tools",
     });
-    expect(prompt).toContain("not tool-verified");
+    expect(prompt).toContain("must demonstrate one real structured tool call");
+    expect(prompt).toContain("For a direct reply, commit DIRECT_ANSWER");
     expect(prompt).toContain("Attachments: att_1 brief.txt text/plain 5 bytes");
     expect(prompt).toContain("Attachment delivery: text attachments are inlined in the user message");
     expect(prompt).toContain("attachment_read");

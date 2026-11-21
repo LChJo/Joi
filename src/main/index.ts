@@ -22,16 +22,22 @@ const developmentApiPort = developmentUrl === undefined ? undefined : process.en
 const applicationIconPath = app.isPackaged
   ? path.join(process.resourcesPath, "resources", "branding", "icon.png")
   : path.resolve(currentDirectory, "../../../resources/branding/icon.png");
-const testUserDataPath = isTest
+const retainedDevDataPath = !app.isPackaged && isTest && developmentUrl !== undefined
+  ? process.env.JOI_DEV_USER_DATA_DIR?.trim() : undefined;
+if (retainedDevDataPath !== undefined && !path.isAbsolute(retainedDevDataPath)) {
+  throw new Error("JOI_DEV_USER_DATA_DIR must be an absolute path.");
+}
+const testUserDataPath = isTest && retainedDevDataPath === undefined
   ? path.join(os.tmpdir(), `joi-e2e-${String(process.pid)}-${randomUUID()}`)
   : undefined;
 
-if (testUserDataPath !== undefined) {
-  app.setPath("userData", testUserDataPath);
+const isolatedDataPath = retainedDevDataPath ?? testUserDataPath;
+if (isolatedDataPath !== undefined) {
+  app.setPath("userData", isolatedDataPath);
 }
 
-// E2E uses an isolated userData directory and must be able to run while a developer instance is open.
-const hasSingleInstanceLock = isTest || app.requestSingleInstanceLock();
+// An ephemeral test profile is unique to its process. Reusable profiles require a lock.
+const hasSingleInstanceLock = testUserDataPath !== undefined || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 }

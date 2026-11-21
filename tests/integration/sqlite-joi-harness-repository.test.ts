@@ -12,14 +12,26 @@ import { HISTORICAL_MEMORY_KIND } from "../../src/main/application/ports/histori
 const NOW = "2026-08-06T10:00:00.000Z";
 
 async function completeHistorySource(fixture: RuntimeFixture, inputId: string, body: string, workbenchId?: string) {
-  const seeded = seedGoal(fixture,{ goalInputId: inputId,turn: true,turnStatus: "RUNNING",
+  const seeded = seedGoal(fixture,{ goalInputId: inputId,status: "CONSUMED",
     ...(workbenchId === undefined ? {} : { workbenchId }) });
-  fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET body=?,created_at=? WHERE input_id=?")
-    .run(body,fixture.clock.now().toISOString(),inputId));
-  await new SqliteJoiInboxRepository(fixture.database,fixture.clock)
-    .completeInput(inputId,`turn-${inputId}`,{ outcome: "DIRECT_ANSWER",completionSummary: body });
+  fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET body=? WHERE input_id=?").run(body,inputId));
+  await settleHistoryGoal(fixture, inputId, seeded.workbenchId, body);
   const source = fixture.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources WHERE subject_id=?").get(inputId));
   return { ...seeded,sourceId: String(source?.source_id) };
+}
+
+async function settleHistoryGoal(fixture: RuntimeFixture, goalInputId: string, workbenchId: string, body: string) {
+  const harness = new SqliteJoiHarnessRepository(fixture.database);
+  const now = fixture.clock.now().toISOString();
+  await harness.createMap({ goalInputId, workbenchId, now });
+  seedCompletedLayer(fixture, goalInputId, 1);
+  fixture.database.transaction(db => {
+    db.prepare("UPDATE joi_inbox_messages SET created_at=? WHERE input_id=?").run(now,goalInputId);
+    db.prepare("UPDATE joi_goal_outcomes SET completion_summary=?,completed_at=?,updated_at=? WHERE input_id=?")
+      .run(body,now,now,goalInputId);
+  });
+  forceMapCleared(fixture, goalInputId);
+  expect(await harness.recordCompletionFeedback({ goalInputId, workbenchId, entry: body, now })).toBe(true);
 }
 
 function historyJob(sourceId: string, scope: "joi" | "workbench") {
@@ -27,7 +39,7 @@ function historyJob(sourceId: string, scope: "joi" | "workbench") {
     availableAt: NOW,createdAt: NOW,attemptCount: 1,status: "CLAIMED" as const };
 }
 
-it("KN-01 organizes a committed answer from its sealed facts without reading the original text", async () => {
+it("KN-01 organizes a completed goal from its sealed facts without reading the original text", async () => {
   const fixture = await createRuntimeFixture();
   try {
     const source = await completeHistorySource(fixture,"sealed-answer","global preference[verbosity]: concise");
@@ -37,7 +49,7 @@ it("KN-01 organizes a committed answer from its sealed facts without reading the
     });
     fixture.database.transaction(db => db.setAuthorizer((action,table,column) =>
       action === sqlite.SQLITE_READ && ((table === "joi_inbox_messages" && column === "body")
-        || (table === "joi_turn_completions" && column === "completion_summary")) ? sqlite.SQLITE_DENY : sqlite.SQLITE_OK));
+        || (table === "joi_current_goal_outcomes" && column === "completion_summary")) ? sqlite.SQLITE_DENY : sqlite.SQLITE_OK));
     try {
       await memory.handle(historyJob(source.sourceId,"joi"));
       await memory.handle(historyJob(source.sourceId,"workbench"));
@@ -154,16 +166,15 @@ it.each([false,true])("HIST-04 never reapplies an older keyed preference after a
   } finally { await fixture.close(); }
 });
 
-it("HIST-02/04/07 indexes direct answers only after completion and scopes reads to their owner", async () => {
+it("HIST-02/04/07 indexes completed Workbench conclusions and scopes reads to their owner", async () => {
   const fixture = await createRuntimeFixture();
   try {
     const goalInputId = "memory-goal";
-    const { workbenchId } = seedGoal(fixture,{ goalInputId,turn: true,turnStatus: "RUNNING" });
-    const repository = new SqliteJoiInboxRepository(fixture.database,fixture.clock);
+    const { workbenchId } = seedGoal(fixture,{ goalInputId,status: "CONSUMED" });
     const history = new SqliteHistoricalMemoryStore(fixture.database);
     const sources = () => fixture.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources").all());
     expect(sources()).toHaveLength(0);
-    await repository.completeInput(goalInputId,`turn-${goalInputId}`,{ outcome: "DIRECT_ANSWER",completionSummary: "Verified conclusion" });
+    await settleHistoryGoal(fixture, goalInputId, workbenchId, "Verified conclusion");
     expect(sources()).toHaveLength(1);
     const sourceId = String(sources()[0]?.source_id);
     const update = history.loadUpdate(sourceId,"workbench");
@@ -458,7 +469,7 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("adoption scan and map creation", () => {
-    it("lists goals that have a turn but no map, skipping system inputs and canceled goals", async () => {
+    it("lists goals with dispatched Work and no map, skipping system inputs and canceled goals", async () => {
       seedGoal(fixture, { goalInputId: "goal-adopt", turn: true });
       seedGoal(fixture, { goalInputId: "goal-no-turn" });
       seedGoal(fixture, { goalInputId: "goal-canceled", status: "CONSUMED", turn: true });
@@ -472,16 +483,19 @@ describe("SqliteJoiHarnessRepository", () => {
           (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
           VALUES ('turn-synthetic', 'joi_result_input:goal:goal-adopt', 'workbench-goal-adopt', 's', 'COMPLETED', ?, ?)`)
           .run(NOW, NOW);
+        const insertWork = connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, ?, 'Fixture Work', '{}', 'READ', 'COMPLETED', ?, ?)`);
+        insertWork.run("work-adopt", "workbench-goal-adopt", "goal-adopt", NOW, NOW);
+        insertWork.run("work-canceled", "workbench-goal-canceled", "goal-canceled", NOW, NOW);
+        insertWork.run("work-synthetic", "workbench-goal-adopt", "joi_result_input:goal:goal-adopt", NOW, NOW);
       });
       expect(await repository.listGoalsWithoutMap()).toEqual([
         { workbenchId: "workbench-goal-adopt", goalInputId: "goal-adopt" },
       ]);
     });
 
-    it("adopts a goal that only reached a clarification gate and never its continuation rows", async () => {
-      // A goal whose first Turn raised a workbench-selection clarification never gets a
-      // joi_turns row: the gate row is the only proof the goal exists. Its resume/recovery
-      // rows are orchestration continuations of that goal and must never own the map.
+    it("waits for dispatched Work on the original goal after clarification", async () => {
       seedGoal(fixture, { goalInputId: "goal-gated" });
       seedGoal(fixture, { goalInputId: "goal-resumed", turn: true });
       await new SqliteJoiInboxRepository(fixture.database, fixture.clock)
@@ -502,8 +516,12 @@ describe("SqliteJoiHarnessRepository", () => {
         }
       });
 
+      expect(await repository.listGoalsWithoutMap()).toEqual([]);
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-resumed', 'workbench-goal-resumed', 'goal-resumed', 'Fixture Work', '{}', 'READ', 'PLANNED', ?, ?)`)
+        .run(NOW, NOW));
       expect(await repository.listGoalsWithoutMap()).toEqual([
-        { workbenchId: "workbench-goal-gated", goalInputId: "goal-gated" },
         { workbenchId: "workbench-goal-resumed", goalInputId: "goal-resumed" },
       ]);
     });

@@ -4108,14 +4108,19 @@
     "description": "home: Could not delete the model connection. Try again.",
     "placeholders": {}
   },
-  "homeChangesSavedAsADraftRevisionValidateBeforeEnabling": "Changes saved as a draft revision. Validate before enabling.",
-  "@homeChangesSavedAsADraftRevisionValidateBeforeEnabling": {
-    "description": "home: Changes saved as a draft revision. Validate before enabling.",
+  "homeModelChangesValidated": "Changes saved. The connection is ready.",
+  "@homeModelChangesValidated": {
+    "description": "The edited model connection was saved and validated.",
     "placeholders": {}
   },
-  "homeChangesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": "Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
-  "@homeChangesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": {
-    "description": "home: Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+  "homeModelChangesValidationFailed": "Changes saved, but validation did not succeed. You can retry validation.",
+  "@homeModelChangesValidationFailed": {
+    "description": "The model settings were saved but the automatic validation did not succeed.",
+    "placeholders": {}
+  },
+  "homeModelChangesValidationFailedPinned": "Changes saved, but validation did not succeed. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+  "@homeModelChangesValidationFailedPinned": {
+    "description": "Automatic validation failed for a model connection with pinned partners.",
     "placeholders": {
       "p0": {
         "type": "String"
@@ -4233,6 +4238,11 @@
   "homeValidate": "Validate",
   "@homeValidate": {
     "description": "home: Validate",
+    "placeholders": {}
+  },
+  "homeEnable": "Enable",
+  "@homeEnable": {
+    "description": "Validate and enable a disabled model connection.",
     "placeholders": {}
   },
   "homeDisable": "Disable",

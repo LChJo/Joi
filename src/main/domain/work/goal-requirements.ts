@@ -48,6 +48,10 @@ export function assertCurrentRequirements(contract: GoalRequirements, expectedRe
   if (expectedRevision !== contract.revision) throw new DomainError("goal_requirements_stale", "Read the current requirements and refresh the task.");
 }
 
+export function hasOnlyInitialRequirementSource(contract: GoalRequirements): boolean {
+  return contract.revision === 0 && contract.sourceRevision === 1 && contract.processedSourceRevision === 0;
+}
+
 /** Untouched requirements remain active; every replacement needs a new trusted source. */
 export function mergeGoalRequirements(current: GoalRequirements, update: RequirementsUpdate): GoalRequirement[] {
   if (update.expectedRevision !== current.revision) throw new DomainError("goal_requirements_stale", "Read the current requirements before updating them.");
@@ -101,7 +105,7 @@ export function renderGoalRequirements(contract: GoalRequirements, selectedIds?:
     `requirementsRevision=${String(contract.revision)} sourceRevision=${String(contract.sourceRevision)} processedSourceRevision=${String(contract.processedSourceRevision)} status=${contract.status}`,
     ...(contract.nextUnreadSource === undefined ? [] : [`nextUnreadSource=${JSON.stringify(contract.nextUnreadSource)}`]),
   ];
-  const guidance = contract.status === "DIRTY" ? ["Before dispatch, resume or completion: page through all unprocessed goal_read_inputs sources, merge goal_update_requirements, preserve every unmentioned requirement. Only an explicit user correction may replace or retire one. Read pages sequentially; checkpoint newly extracted requirements from each page while keeping processedSourceRevision unchanged until that entire source is read. Acknowledge even inputs that do not change requirements."] : [];
+  const guidance = contract.status === "DIRTY" ? ["Before dispatch, resume or a versioned completion tool: page through all unprocessed goal_read_inputs sources, merge goal_update_requirements, preserve every unmentioned requirement. Only an explicit user correction may replace or retire one. Read pages sequentially; checkpoint newly extracted requirements from each page while keeping processedSourceRevision unchanged until that entire source is read. Acknowledge even inputs that do not change requirements."] : [];
   const lines = requirements.map(item => ({ priority: item.mandatory ? item.kind === "CONSTRAINT" ? 0 : 1 : 2,
     text: JSON.stringify({ id: item.id, kind: item.kind, mandatory: item.mandatory, scope: item.scope, text: item.text }) }));
   const rendered = [...header, ...lines.map(line => line.text), ...guidance].join("\n");

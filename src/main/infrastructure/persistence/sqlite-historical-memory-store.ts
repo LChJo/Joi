@@ -36,8 +36,8 @@ const partnerSource = `SELECT p.partner_id, r.partner_revision_id, r.instance_id
     AND r.action_id=(SELECT a.action_id FROM dispatch_attempts a WHERE a.work_id=r.work_id ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1)`;
 
 /** Source identity and outbox receipts commit with the existing completion transaction. */
-export function enqueueHistoricalMemory(db: DatabaseSync, input: { workbenchId: string; kind: HistoricalSource["kind"]; subjectId: string; now: string }): void {
-  const query = input.kind === "goal" ? goalSource : input.kind === "direct" ? directSource : partnerSource;
+export function enqueueHistoricalMemory(db: DatabaseSync, input: { workbenchId: string; kind: "goal" | "partner"; subjectId: string; now: string }): void {
+  const query = input.kind === "goal" ? goalSource : partnerSource;
   const eligible = db.prepare(query).get(input.subjectId,input.workbenchId);
   if (eligible === undefined) return;
   const version = input.kind === "partner" ? input.subjectId : String(eligible.version);

@@ -23,7 +23,7 @@ import { normalizeCompletionSummary } from "../partners/agent-conversation-prese
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 import type { WorkOrchestrationService } from "../work/work-orchestration-service.js";
 import type { GoalRequirementsRepository } from "../ports/goal-requirements.js";
-import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
+import { hasOnlyInitialRequirementSource, renderGoalRequirements } from "../../domain/work/goal-requirements.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -127,14 +127,14 @@ const EMPTY_COMPLETION_REPAIR_PROMPT = [
 const REQUIREMENTS_REPAIR_PROMPT = [
   "[joi prerequisite repair] This goal has unprocessed trusted inputs and cannot finish yet.",
   "Call goal_read_inputs, process every remaining page and call goal_update_requirements with the exact returned revisions.",
-  "Then continue only the remaining work with the current requirementsRevision. Preserve completed Work and existing goal facts.",
-  "Do not repeat a direct answer or ask the user to repair internal requirement versions.",
+  "Then continue only the remaining work with the current requirementsRevision. If this is a direct reply, commit DIRECT_ANSWER and provide the complete visible reply. Preserve completed Work and existing goal facts.",
+  "Do not ask the user to repair internal requirement versions.",
 ].join(" ");
 
 const TOOL_CAPABILITY_REPAIR_PROMPT = [
   "[joi prerequisite repair] This model revision has not demonstrated real structured tool calling.",
-  "Call partner_list_available through the actual tool-call mechanism before responding.",
-  "Then process the current goal requirements and commit the required outcome. Plain-text tool markup does not execute tools.",
+  "For a direct reply, satisfy any pending requirements or resume prerequisites, then commit DIRECT_ANSWER with turn_complete through the actual tool-call mechanism.",
+  "For execution, process the current goal requirements, use partner_list_available when choosing a partner, and commit the required outcome. Plain-text tool markup does not execute tools.",
 ].join(" ");
 
 const LEAKED_TOOL_CALL_REPAIR_PROMPT = [
@@ -444,6 +444,13 @@ export class JoiCoordinator {
     let synthesisRecovery: { code: string; coverageReady: boolean } | undefined;
     const evidenceRead = { inactive: false };
     let completionText = "";
+    const directOutcomeForTurn = () => {
+      if (isGoalSynthesis) return undefined;
+      const explicit = committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
+        ? committedTurnOutcome : undefined;
+      if (input.goalInputId !== undefined) return inputId.startsWith("joi_goal_resume:goal:") ? explicit : undefined;
+      return explicit ?? (committedOutcomeTools.has("turn_complete") || observedToolCalls.size === 0 ? "DIRECT_ANSWER" : undefined);
+    };
     let persistingOutcome = false;
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
@@ -645,7 +652,11 @@ export class JoiCoordinator {
           }
           if (!isGoalSynthesis && observedToolCalls.size === 0 && requirementsStore !== undefined) {
             const current = await requirementsStore.load(goalId, workbenchId);
-            if (current?.status === "DIRTY") {
+            const initialDirectReply = input.goalInputId === undefined && input.automationRoutineId === undefined
+              && input.continuationPrompt === undefined
+              && contract !== undefined && hasOnlyInitialRequirementSource(contract) && current !== null
+              && hasOnlyInitialRequirementSource(current) && directOutcomeForTurn() === "DIRECT_ANSWER";
+            if (current?.status === "DIRTY" && !initialDirectReply) {
               if (requirementsRepairAttempted) throw new DomainError("goal_requirements_pending", "Process the goal's trusted inputs before completing the turn.");
               requirementsRepairAttempted = true;
               emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", { workbenchId, inputId, observedToolCount: 0, turnId });
@@ -702,13 +713,7 @@ export class JoiCoordinator {
             turnImages = undefined;
             continue;
           }
-          const inferredDirectOutcome = !isGoalSynthesis && input.goalInputId === undefined
-            ? committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
-              ? committedTurnOutcome
-              : committedOutcomeTools.has("turn_complete") || observedToolCalls.size === 0
-                ? "DIRECT_ANSWER"
-                : undefined
-            : undefined;
+          const inferredDirectOutcome = directOutcomeForTurn();
           if ((finishedTurnIds.has(turnId) && inferredDirectOutcome !== undefined || isGoalSynthesis && synthesisOutcomeCommitted)
             && normalizeCompletionSummary(completionText) === "") {
             if (completionRepairAttempted) {
@@ -834,13 +839,7 @@ export class JoiCoordinator {
       if (isGoalSynthesis && synthesisOutcome === undefined) {
         throw new DomainError("joi_goal_synthesis_outcome_uncommitted", "Goal synthesis ended without a committed disposition.");
       }
-      const directOutcome = completionSummary !== "" && !isGoalSynthesis && input.goalInputId === undefined
-        ? committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
-          ? committedTurnOutcome
-          : committedOutcomeTools.has("turn_complete") || observedToolCalls.size === 0
-            ? "DIRECT_ANSWER" as const
-            : undefined
-        : undefined;
+      const directOutcome = completionSummary === "" ? undefined : directOutcomeForTurn();
       persistingOutcome = true;
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
         ...(committedSynthesisState === undefined ? {} : { synthesisState: committedSynthesisState }),

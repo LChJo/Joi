@@ -35,6 +35,8 @@ $env:JOI_DEV_API_PORT = "43131"
 npm run dev
 ```
 
+需要跨重启保留隔离 dev 的数据时，启动前将 `JOI_DEV_USER_DATA_DIR` 设置为该实例专用目录的绝对路径。该选项只用于 `JOI_TEST=1` 的本地 Electron 开发态。后续重启复用同一目录，每个运行中的实例使用独立目录。
+
 检查开发态首次设置、登录初始化与对话入口时，使用 `npm run build:electron`，然后执行 `npx playwright test tests/e2e/dev-startup.spec.ts`。该用例使用独立的 Vite 和 API 端口。
 
 等价别名：

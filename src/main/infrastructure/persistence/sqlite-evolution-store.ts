@@ -184,8 +184,9 @@ export class SqliteEvolutionStore implements EvolutionStore {
       -- would hide the verification failures that made the user give up in the first place.
       AND (o.disposition IS NULL OR o.disposition <> 'CONTINUE'
         OR i.canceled_at IS NOT NULL OR i.dismissed_at IS NOT NULL)
+      -- A reply with no execution or synthesis provides no facts about orchestration quality.
       AND (o.disposition IS NOT NULL OR i.canceled_at IS NOT NULL
-        OR NOT EXISTS(SELECT 1 FROM work_items w WHERE w.input_id = i.input_id))
+        OR (i.dismissed_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM work_items w WHERE w.input_id = i.input_id)))
       AND NOT EXISTS(SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id
         AND child.status <> 'CONSUMED' AND child.canceled_at IS NULL)
       AND NOT EXISTS(SELECT 1 FROM joi_turns t JOIN joi_inbox_messages turn_input ON turn_input.input_id = t.input_id

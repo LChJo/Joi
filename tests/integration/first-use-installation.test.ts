@@ -48,13 +48,13 @@ describe("first-use installation and managed dispatch", () => {
         "UPDATE workbench_workspace_bindings SET status = 'FAILED' WHERE workbench_id = ?",
       ).run(workbench.workbenchId));
       const pending = (await repository.list()).find(input => input.status === "PENDING");
-      if (pending === undefined) throw new Error("missing recovery input");
+      expect(pending?.inputId).toBe(original.inputId);
       const work = new WorkOrchestrationService({ clock: fixture.clock, ids: fixture.ids, partners: fixture.partners,
         repository: new SqliteWorkPlanRepository(fixture.database), policy: new SqliteDispatchPolicyGate({ clock: fixture.clock, database: fixture.database }) });
       const faux = fauxProvider({ provider: `first-use-${state.toLowerCase()}` });
       const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) => fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
       faux.setResponses([
-        call("goal_resume", {}), call("workbench_bind_workspace", {}),
+        call("workbench_bind_workspace", {}),
         call("work_dispatch", { work: [{ key: "report", partnerId: partner.partnerId, title: "Reference report",
           instructions: "Return a short textual reference report.", accessMode: "READ", executionNeeds: [], acceptanceChecks: [{ kind: "BODY_PRESENT" }] }] }),
         fauxAssistantMessage([fauxText("The report has been dispatched.")]),
@@ -86,7 +86,7 @@ describe("first-use installation and managed dispatch", () => {
         router: { decide: () => Promise.reject(new Error("already bound")) },
         sources: { selectInitial: turnId => Promise.resolve({ turnId, sourceId: "fake", sourceRevisionId: "fake", modelRevisionId: "fake", modelId: "fake" }) },
       });
-      await coordinator.handle(pending.inputId);
+      await coordinator.handle(original.inputId);
       expect((await repository.list()).some(input => input.status === "CLARIFICATION_REQUIRED")).toBe(false);
       const claim = fixture.database.transaction(db => db.prepare(
         "SELECT outbox_id, payload_json FROM outbox WHERE kind = 'partner.dispatch'",
@@ -125,7 +125,7 @@ describe("first-use installation and managed dispatch", () => {
           .toMatchObject({ status: "COMPLETED" });
       }
       expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE kind = 'partner.dispatch'").get())).toEqual({ n: 1 });
-      expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_turns WHERE input_id = ?").get(original.inputId))).toEqual({ n: 0 });
+      expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_turns WHERE input_id = ?").get(original.inputId))).toEqual({ n: 1 });
     } finally { await fixture.close(); }
   });
 });

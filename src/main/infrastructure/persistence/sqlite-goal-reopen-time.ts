@@ -6,7 +6,8 @@ export function nextGoalReopenTime(connection: DatabaseSync, goalId: string, now
     SELECT reopened_at AS at FROM joi_inbox_messages WHERE input_id=?
     UNION ALL SELECT completed_at FROM joi_goal_outcomes WHERE input_id=?
     UNION ALL SELECT completed_at FROM joi_turn_completions WHERE input_id=?
-  )`).get(goalId, goalId, goalId);
+    UNION ALL SELECT completed_at FROM joi_goal_result_history WHERE goal_input_id=?
+  )`).get(goalId, goalId, goalId, goalId);
   const previous = Date.parse(String(row?.at ?? ""));
   return Number.isFinite(previous) ? new Date(Math.max(Date.parse(now), previous + 1)).toISOString() : now;
 }

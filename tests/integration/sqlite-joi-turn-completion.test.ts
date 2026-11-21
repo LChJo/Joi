@@ -1,8 +1,107 @@
+import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
+import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { HISTORICAL_MEMORY_KIND } from "../../src/main/application/ports/historical-memory.js";
+import { createModelSource } from "../../src/main/domain/model-sources/model-source.js";
+import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store.js";
+import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-requirements-repository.js";
+import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
+import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("persisted joi Turn completions", () => {
+  it.each(["first assignment", "recovery"])("publishes a greeting on the original goal after %s", async (mode) => {
+    const fixture = await createRuntimeFixture();
+    const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+    const inputs = new JoiInboxService({ repository: inbox, clock: fixture.clock, ids: fixture.ids });
+    const harness = new SqliteJoiHarnessRepository(fixture.database);
+    const feed = new SqliteJoiHomeFeedRepository(fixture.database);
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "日常交流工坊", personaSummary: "fixture", projectLabel: "日常", scopeSummary: "交流" });
+      const goal = await inputs.accept({ text: "hi", idempotencyKey: "fixture-greeting" });
+      const fresh = mode === "first assignment";
+      if (!fresh) fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET workbench_id=? WHERE input_id=?").run(workbench.workbenchId, goal.inputId));
+      await inbox.requireClarification(goal.inputId, "workbench_selection_invalid");
+      const choice = (await inputs.list())[0];
+      if (choice?.questionId === undefined || choice.questionVersion === undefined) throw new Error("Missing workbench choice");
+      const selected = await inputs.clarify({ inputId: goal.inputId, questionId: choice.questionId, questionVersion: choice.questionVersion, workbenchId: workbench.workbenchId });
+      expect(selected.status).toBe(fresh ? "PENDING" : "ROUTED");
+      const resumeId = `joi_goal_resume:goal:${goal.inputId}:v${String(choice.questionVersion)}`;
+      const now = fixture.clock.now().toISOString();
+      const source = createModelSource({ createdAt: now, credentialRef: "fixture-ref", credentialVersion: 1,
+        displayName: "Fixture", kind: "deepseek", modelCapability: "release-tested", modelId: "fixture-model",
+        modelRevisionId: "fixture-model-revision", sourceId: "fixture-source", sourceRevisionId: "fixture-source-revision" });
+      fixture.database.transaction(db => db.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES ('fixture-ref','api_key',?,1,?)`)
+        .run(new Uint8Array([1, 2, 3]), now));
+      await new SqliteModelSourceRepository(fixture.database).create({ local: false, order: 0, primary: true, source });
+      const reply = "你好！";
+      let modelTurns = 0;
+      const coordinator = new JoiCoordinator({
+        clock: fixture.clock, ids: fixture.ids, store: inbox, workbenches: fixture.workbenches,
+        ...(fresh ? { requirements: new SqliteGoalRequirementsRepository(fixture.database) } : {}),
+        router: { decide: () => Promise.reject(new Error("The workbench was already selected")) },
+        sources: { selectInitial: (turnId) => Promise.resolve({ turnId, sourceId: "fixture-source", sourceRevisionId: "fixture-source-revision", modelId: "fixture-model", modelRevisionId: "fixture-model-revision" }) },
+        runtime: {
+          abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: () => Promise.resolve(false),
+          rollbackTurn: () => Promise.resolve(false), steer: () => undefined, waitForIdle: () => Promise.resolve(),
+          startTurn: async (turn) => {
+            modelTurns++;
+            expect.soft(await harness.listGoalsWithoutMap()).toEqual([]);
+            if (fresh) {
+              expect(turn.inputId).toBe(goal.inputId);
+              expect(turn.prompt).toBe("hi");
+              turn.onEvent?.({ type: "text_delta", delta: reply, turnId: turn.turnId });
+              turn.onEvent?.({ type: "turn_finished", turnId: turn.turnId });
+              return;
+            }
+            await harness.createMap({ goalInputId: goal.inputId, workbenchId: workbench.workbenchId, now });
+            turn.onEvent?.({ type: "tool_started", toolCallId: "resume", toolName: "goal_resume", turnId: turn.turnId });
+            await inbox.resumeGoal({ inputId: resumeId, turnId: turn.turnId });
+            turn.onEvent?.({ type: "tool_finished", isError: false, toolCallId: "resume", toolName: "goal_resume", turnId: turn.turnId });
+            expect.soft(await harness.listTrivialMapCandidates()).toEqual([]);
+            expect.soft(await harness.clearTrivialMap({ goalInputId: goal.inputId, now })).toBe(false);
+            turn.onEvent?.({ type: "tool_started", toolCallId: "answer", toolName: "turn_complete", turnId: turn.turnId });
+            turn.onEvent?.({ type: "tool_finished", isError: false, outcome: "DIRECT_ANSWER", toolCallId: "answer", toolName: "turn_complete", turnId: turn.turnId });
+            turn.onEvent?.({ type: "text_delta", delta: reply, turnId: turn.turnId });
+            turn.onEvent?.({ type: "turn_finished", turnId: turn.turnId });
+          },
+        },
+      });
+      await coordinator.handle(fresh ? goal.inputId : resumeId);
+      const card = (await feed.load(fixture.clock.now())).goals[0];
+      expect.soft(card).toMatchObject({ goalId: goal.inputId, completionSummary: reply, status: "COMPLETED", work: { total: 0 } });
+      expect.soft((await feed.listGoalResults(goal.inputId))?.items).toEqual([expect.objectContaining({ resultId: card?.resultId, status: "COMPLETED" })]);
+      if (fresh) {
+        expect(modelTurns).toBe(1);
+        expect(await inbox.loadInput(resumeId)).toBeNull();
+        expect(card?.harness).toBeUndefined();
+        return;
+      }
+      const unrelated = await inputs.accept({ text: "Another goal", idempotencyKey: "fixture-other-goal", workbenchId: workbench.workbenchId });
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(unrelated.inputId);
+        db.prepare(`INSERT INTO joi_goal_execution_gates
+          (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, updated_at)
+          VALUES (?, 'fixture-other-question', 1, 'OPEN', 'fixture', ?, ?, ?)`).run(unrelated.inputId, resumeId, now, now);
+      });
+      const otherCard = (await feed.load(fixture.clock.now())).goals.find((item) => item.goalId === unrelated.inputId);
+      expect(otherCard?.completionSummary).toBeUndefined();
+      expect(await harness.listTrivialMapCandidates()).toEqual([{ goalInputId: goal.inputId }]);
+      expect(await harness.clearTrivialMap({ goalInputId: goal.inputId, now })).toBe(true);
+      await inbox.retry(goal.inputId, {});
+      await inbox.createTurn({ createdAt: now, inputId: goal.inputId, sessionId: "fixture-continued", turnId: "fixture-continued", workbenchId: workbench.workbenchId });
+      await inbox.completeInput(goal.inputId, "fixture-continued");
+      const retried = (await feed.load(fixture.clock.now())).goals.find((item) => item.goalId === goal.inputId);
+      expect(retried).toMatchObject({ goalId: goal.inputId, status: "FAILED" });
+      expect(retried?.completionSummary).toBeUndefined();
+      expect((await feed.listGoalResults(goal.inputId))?.items).toHaveLength(1);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("atomically persists a safe direct answer and projects it after repository reconstruction", async () => {
     const fixture = await createRuntimeFixture();
     try {
@@ -18,8 +117,15 @@ describe("persisted joi Turn completions", () => {
           (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
           VALUES ('turn-direct', 'input-direct', ?, 'session-direct', 'RUNNING', ?, ?)`)
           .run(workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_turns SET requirements_revision = 0 WHERE turn_id = 'turn-direct'").run();
       });
       const inbox = new SqliteJoiInboxRepository(fixture.database);
+      const harness = new SqliteJoiHarnessRepository(fixture.database);
+      const evolution = new SqliteEvolutionStore(fixture.database);
+      evolution.bindGoal(workbench.workbenchId, "input-direct", null);
+      const requirements = new SqliteGoalRequirementsRepository(fixture.database);
+      expect(await requirements.ensure({ goalInputId: "input-direct", workbenchId: workbench.workbenchId })).toMatchObject({ status: "DIRTY", sourceRevision: 1 });
+      expect.soft(await harness.listGoalsWithoutMap()).toEqual([]);
       await (inbox.completeInput as unknown as (
         inputId: string,
         turnId: string,
@@ -44,6 +150,15 @@ describe("persisted joi Turn completions", () => {
         status: "COMPLETED",
         work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0, executing: 0, resourceWaiting: 0 },
       })]);
+      expect.soft(feed.goals[0]?.harness).toBeUndefined();
+      expect.soft(await harness.listGoalsWithoutMap()).toEqual([]);
+      expect.soft(await harness.listReviewDigests()).toEqual([]);
+      expect.soft(await harness.listFeedbackTargets()).toEqual([]);
+      expect.soft(await requirements.load("input-direct")).toMatchObject({ processedSourceRevision: 0 });
+      expect.soft(evolution.evidenceSeeds()).toEqual([]);
+      expect.soft(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT 1 FROM outbox WHERE kind = ?",
+      ).all(HISTORICAL_MEMORY_KIND))).toEqual([]);
 
       await inbox.retry("input-direct", {});
       const retrying = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());

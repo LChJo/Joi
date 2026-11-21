@@ -96,8 +96,11 @@ it("CHAT-02/06 wires path-only creation, default Joi partner, scoped memory inhe
           VALUES (?,?,?,?,'RUNNING',?,?)`).run(turn,goal,benchId,turn,now,now);
       });
       await persistence.joiInboxRepository.completeInput(goal,turn,{ outcome: "DIRECT_ANSWER",completionSummary: "Source conclusion" });
-      const source = f.database.transaction(db => db.prepare("SELECT source_id FROM historical_memory_sources WHERE workbench_id=?").get(benchId));
-      const update = persistence.historicalMemory.loadUpdate(String(source?.source_id),"workbench");
+      // The conversation inherits previously recorded direct-answer history from its own Workbench.
+      const sourceId = `history-${benchId}`;
+      f.database.transaction(db => db.prepare("INSERT INTO historical_memory_sources VALUES (?,?,'direct',?,?,?)")
+        .run(sourceId,benchId,goal,JSON.stringify([turn,0,now]),now));
+      const update = persistence.historicalMemory.loadUpdate(sourceId,"workbench");
       if (update === null) throw new Error("Missing Workbench history update");
       persistence.historicalMemory.commit(update,[{ section: "conclusions",text,source: update.sourceId }]);
     }

@@ -703,15 +703,21 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
 .model-source-manager > header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
 .model-source-manager h2 { margin: 0; }
 .model-source-list { display: grid; gap: 8px; width: 100%; }
-.model-source-list article { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 16px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); }
-.model-source-summary { display: grid; min-width: 0; gap: 4px; }
+.model-source-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 18px; align-items: start; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.model-source-summary { display: grid; min-width: 0; gap: 5px; }
 .model-source-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.model-source-meta { overflow-wrap: anywhere; }
+.model-source-meta { overflow-wrap: anywhere; font-size: 12px; }
+.model-source-summary small { overflow-wrap: anywhere; }
+.model-source-account { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 .model-source-status { padding: 2px 7px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 11px; }
 .model-source-status.ready { border-color: color-mix(in srgb, var(--forest) 45%, var(--line)); color: var(--forest-dark); }
 .model-source-status.validating, .model-source-status.degraded, .model-source-status.needs_auth { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); color: var(--amber); }
-.row-actions.model-source-actions { display: grid; grid-template-columns: repeat(3, max-content); justify-content: end; max-width: none; }
+.row-actions.model-source-actions { display: flex; justify-content: end; align-items: center; gap: 6px; max-width: none; }
 .model-source-actions .button { white-space: nowrap; }
+.model-source-menu { position: relative; }
+.model-source-menu .model-source-more { width: 34px; height: 34px; }
+.model-source-menu .joi-goal-menu-list { min-width: 148px; }
+.model-source-menu .joi-goal-menu-list .danger { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; }
 .model-source-item > .model-source-form { grid-column: 1 / -1; }
 .model-source-list span, .model-source-list small { color: var(--muted); }
 .model-source-list .model-source-reason { color: var(--amber); font-size: 12px; font-weight: 600; }
@@ -1344,10 +1350,11 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 @media (max-width: 800px) {
   .access-layout { grid-template-columns: 1fr; }.access-story { display: none; }.access-form { min-height: 100dvh; }
   .setup-header { padding-inline: 24px; }.setup-progress { gap: 12px; }.setup-progress li { font-size: 0; }.setup-progress li span { font-size: 11px; }
-  .model-source-manager > header, .model-source-list article { grid-template-columns: 1fr; align-items: stretch; }
+  .model-source-manager > header, .model-source-item { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
   .model-source-manager > header { display: grid; }
   .model-source-manager > header .button, .model-source-actions { justify-self: start; }
-  .model-source-actions { justify-content: start; }
+  .row-actions.model-source-actions { position: relative; justify-content: start; flex-wrap: wrap; }
+  .model-source-menu { position: static; }
   .empty-observatory { grid-template-columns: 1fr; }.orbit-illustration { display: none; }.empty-observatory > .button, .empty-observatory > small { grid-column: 1; }
   .resource-columns { grid-template-columns: 1fr; }.resource-columns > section + section { margin-top: 16px; }.agent-row { grid-template-columns: auto 1fr; }.agent-row .row-actions { grid-column: 2; }.metric-strip { grid-template-columns: 1fr 1fr; }.diagnostic-table div { grid-template-columns: 120px 1fr; }.diagnostic-table i { grid-column: 2; }.wizard-steps { gap: 10px; }.wizard-steps span { font-size: 0; }.two-fields { grid-template-columns: 1fr; }.rhythm-preview { grid-template-columns: 1fr; }.rhythm-preview div { grid-template-columns: auto 80px 1fr; align-items: center; border-right: 0; border-bottom: 1px solid var(--line); }.memory-board section { grid-template-columns: 1fr; }.memory-board .section-heading { margin: 0; }
   .settings-sections > section { grid-template-columns: auto minmax(0, 1fr); align-items: start; }

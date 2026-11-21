@@ -32,15 +32,15 @@
     {
       "id": "b4e0c245-401d-4f68-9009-f3ead2f2c98a",
       "kind": "source-code",
-      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite. The named Codex window hands approved HTTPS authorization links to the system browser.",
+      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite. The named Codex window hands approved HTTPS authorization links to the system browser. An explicitly retained isolated developer profile keeps its data across restarts and has a single-instance lock.",
       "location": {
         "path": "src/main/index.ts"
       },
-      "hash": "f7336b6d60d7145ae7f3ceec71f5da16e06a0e6e2f7e1fb71ee6bdc223c694d1",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "792222fa640559ef6bc3cf8c35bec9b51f5e683abe03c9cefd29c945f4332a07",
+      "observedAt": "2026-11-21T10:29:05.998Z",
       "range": {
         "startLine": 1,
-        "endLine": 252
+        "endLine": 258
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-09/29/36 protect private Pi thinking while preserving lifecycle and explicitly public summaries. AC-WR-01 preserves FIFO write admission. Keyboard input, conversation motion and the completed footer map to the desktop and mobile acceptance criteria. Adds partner transcript rendering and phone parity to the scoped acceptance checks. DEV-01 validates coordinated developer startup through renderer, authenticated onboarding and conversation entry. Android package acceptance ties the APK version name and filename to the root manifest and retains the increasing Flutter build number. CHAT-PERF-01?06 define independent first-paint reads and compatible partner transcript paging. AC-14/37/48 define explicit retry of a canceled goal after active turns settle, with stale child inputs revoked and the scheduler gate reopened. Desktop boot recovery reconciles durable Turns and dispatch claims before scheduling and distinguishes proven replay safety from uncertain effects. The roadmap indexes proposed review evidence criteria REV-01 through REV-08. AC-PERF-01 includes live large-goal HTTP pagination, concurrent readers and writer, and separate list and health latency gates. AC-43/48/53/67 define scoped older evidence reuse, private coverage issues and bounded read-only disposition through the existing continuation budget. KN-03 limits goal Agent reads to the recent activity window. AC-43/48/53/67 and WEB-05 cover specific synthesis rejection reasons, read-only recovery and safe failure cards with completed Work counts. AC-10/43/48 permit up to four independent goal syntheses, with an ordinary serial slot and exclusion by original goal. AC-66 also covers bounded alternate source selection and Wayfinder advancement after a validated recovery. Current dirty or stale requirements stop synthesis recovery before source fallback. AC-24, AC-55 and AC-65 include the Codex subscription transport contract. Defines GPT-6.1 Sol as the initial model and high as the default Codex reasoning effort. Codex sends output limits bounded by the model catalog and observed provider caps.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "d964a66f11597bce2a2e8a5f7bb37d31d3bb8814c563571824ae3e5f8ff62830",
-      "observedAt": "2026-11-20T12:54:05.751Z",
+      "hash": "52c1308b6a343e7b652a727f37e90ab2d749f3ba85bfc92b59e5dfdfa023b28f",
+      "observedAt": "2026-11-21T10:29:05.999Z",
       "range": {
         "startLine": 1,
-        "endLine": 763
+        "endLine": 771
       }
     },
     {
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "3714dea62d0223069b34c3441f5aff65f44375bcf7900b40e226fe973f3bafd3",
-      "observedAt": "2026-11-18T04:00:07.628Z",
+      "hash": "91c93c2ce8e5eb428972e67b282b94100f2c4c2ff1865d9f5ddfb81ddb8f276f",
+      "observedAt": "2026-11-21T09:19:40.522Z",
       "range": {
         "startLine": 1,
-        "endLine": 1586
+        "endLine": 1593
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization.",
-      "hash": "4e549bc1eed7a785949543afa5bb1b541baa426bf23eb5c0a23198c885b8cbb1",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu.",
+      "hash": "aa8eb63aa23b8cfe27e421a9fc8f6de9d59d55f5aa6d586fd8dcf1d99fab78ed",
+      "observedAt": "2026-11-21T09:43:40.186Z",
       "range": {
         "startLine": 1,
-        "endLine": 1889
+        "endLine": 1969
       }
     },
     {
@@ -1632,11 +1632,11 @@
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
       "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance.",
-      "hash": "3adb65d51af8d0a324c1ad7677620432fca72ebec949bac417d91e7b9a93575a",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "8841191c17c4ccf3321039f03207360c1c00fac130fb68c7fce4febb26e69376",
+      "observedAt": "2026-11-21T09:43:40.187Z",
       "range": {
         "startLine": 1,
-        "endLine": 2507
+        "endLine": 2526
       }
     },
     {
@@ -1645,12 +1645,12 @@
       "location": {
         "path": "tests/e2e/model-source-advanced-limits.spec.ts"
       },
-      "claim": "Disposable Electron regression verifies model defaults, token limit tiers, saved nonstandard sizes and reopening a 3M/512K revision with a numeric Pi compaction percentage.",
-      "hash": "3885e8f7eb329a16885a1e830a2f9ca7559a6e9b403f065b760dffdf6548f896",
-      "observedAt": "2026-11-18T04:41:04.229Z",
+      "claim": "Disposable Electron regression verifies model defaults, token limit tiers, saved nonstandard sizes and reopening a 3M/512K revision with a numeric Pi compaction percentage. Verifies automatic validation, saved settings after validation fails, and placement and dismissal of the overflow menu at desktop and narrow widths.",
+      "hash": "625780b190ec380a862c1fd91ad4bd47f6c8ca9c6c8d3d882c1769d6d833dfdb",
+      "observedAt": "2026-11-21T09:43:40.189Z",
       "range": {
         "startLine": 1,
-        "endLine": 108
+        "endLine": 134
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "c2db936e24e1ca476f4bb006503c9b6be84d017fb0e9fd824f97f28fb219e6e6",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "c5cdcbbfd4da3a307f134b8b7ea96939e6a6e83719311e1e8d389e7e9f3600f4",
+      "observedAt": "2026-11-21T09:43:40.189Z",
       "range": {
         "startLine": 1,
-        "endLine": 10179
+        "endLine": 10189
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "677fd293061d674898d87690a4e1977d48729e297d46e41f20ba556b8d762eaf",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "f7c0c4b541a36294a8a6bd3b24567f9826e03b0ce887fa3dd684433c1fd218c4",
+      "observedAt": "2026-11-21T09:43:40.191Z",
       "range": {
         "startLine": 1,
-        "endLine": 7177
+        "endLine": 7185
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "069fa5534797834ab39ca6b85f5b5f407459a656967c77675ec5389404a2b7db",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "54f674dde6046caa818461d1de81090194278e2321813dc930724e865207e80e",
+      "observedAt": "2026-11-21T09:43:40.193Z",
       "range": {
         "startLine": 1,
-        "endLine": 9060
+        "endLine": 9070
       }
     },
     {
@@ -1978,15 +1978,15 @@
     {
       "id": "d163a01d-2706-4679-8bea-de546e1ead3a",
       "kind": "source-code",
-      "claim": "The foreman preserves resource waits and declares producer-to-review dependencies explicitly. Only independent Work is parallel; reviewers wait for all successful producers, and array order or waiting instructions do not substitute for the DAG.",
+      "claim": "The foreman answers greetings, identity questions, and context-bound queries directly. It creates a roadmap when needed, preserves resource waits, and declares producer-to-review dependencies explicitly.",
       "location": {
         "path": "src/main/application/joi/joi-system-prompt.ts"
       },
-      "hash": "299124437289d79e6b8f7bd7a61b3122b772bc97071cb2f7e271dc9ddc47d58d",
-      "observedAt": "2026-11-17T07:38:02.782Z",
+      "hash": "3d4e9cc36f7be6862e1e7c2d351482455befc80c1764ba2bb7d32013ac2648ab",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
-        "endLine": 65
+        "endLine": 66
       }
     },
     {
@@ -2384,15 +2384,15 @@
     {
       "id": "3fe19ae5-307a-42df-a06c-51a4f22df5f0",
       "kind": "source-code",
-      "claim": "Harness scans do not copy Work evidence. Clearance checks live execution and map eligibility before current coverage. An active legacy conclusion can trigger a versioned coverage-only review.",
+      "claim": "Explicit roadmap tools or the presence of Work create a map. Review and feedback wait for current facts; idle cleanup clears only trivial maps.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "65456344d316db15cacd5c09b92b34d70134e50809fbfe7e0d9573521262f56f",
-      "observedAt": "2026-11-19T06:56:47.075Z",
+      "hash": "bef36deccdf4ab5844c85b34c72ba3e29d0a295e26ee9a54f2853b42a500fd8b",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
-        "endLine": 1353
+        "endLine": 1357
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover scoped history, guarded preference order, and atomic compaction with complete additions, stable provenance and failure fallback. Historical memory can process a newly committed settlement with origin text columns denied. History regressions cover partial compaction, invalid jobs, short-history compaction bounds and source freshness at commit. A second WAL connection holds a write transaction while the history index and page see the last committed snapshot. The reader observes invalidation on commit.",
+      "claim": "Disposable SQLite tests cover Work-backed map adoption, explicit map creation, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "f5ab5e2dd62be6b5e107eddf4be4816349d1b3d48895888cd888b346d1b9c553",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "hash": "843930e2b8312bdcbe5981d2c4536dffc2da0cf8cf33e0837beda896c7bfc8ed",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
-        "endLine": 2302
+        "endLine": 2320
       }
     },
     {
@@ -2678,15 +2678,15 @@
     {
       "id": "972b280a-98e7-48be-b81e-9086e58d83a3",
       "kind": "source-code",
-      "claim": "Synthesis validates private references and mandatory coverage for structured and plain-text output before the authoritative transaction. Read-only recovery after trusted rejection can verify evidence and submit a complete report, continue for a concrete gap, or persist a blocked result when coverage is insufficient. Unresolved reference and format failures retain their reason. Recovery never repeats Work or relaxes validation. After exhausted read-only recovery, Joi tries an untried READY source before settling. Source-specific availability failures can switch without bypassing replay guards. Outcome persistence diagnostics carry a safe stage and SQLite number. A fresh dirty or stale requirements verdict stops recovery before source fallback.",
+      "claim": "A first-source direct reply can finish without requesting Work prerequisites. Recovery, synthesis, and structured execution retain their existing requirements and tool-proof gates. Matched resume inputs may explicitly publish a direct reply to the original goal.",
       "location": {
         "path": "src/main/application/joi/joi-coordinator.ts"
       },
-      "hash": "94cf7e33c3dc0bee074ae2c8b9c0910d51751d7091a6099572a2b405d0727237",
-      "observedAt": "2026-11-19T17:38:00.758Z",
+      "hash": "226100d7a07fc12d3d84d829cd5509e7dce0c6f7f2b520de7525dbe1b754cd54",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
-        "endLine": 969
+        "endLine": 968
       }
     },
     {
@@ -2706,29 +2706,29 @@
     {
       "id": "bb2f305f-a3a8-48f8-8374-aa0117dcad93",
       "kind": "source-code",
-      "claim": "Home feed exposes current coverage refresh queue and failure even while a prior same-version conclusion remains. Stale requirements, live execution, cleared maps and user gates constrain the projection. Home reads lazily import legacy goal questions and expose every pending card plus the latest 24 receipts through sanitized DTOs, including unassigned actions.",
+      "claim": "Home feed exposes current coverage refresh queue and failure even while a prior same-version conclusion remains. Stale requirements, live execution, cleared maps and user gates constrain the projection. Home reads lazily import legacy goal questions and expose every pending card plus the latest 24 receipts through sanitized DTOs, including unassigned actions. Current resume completions are scoped to the original goal and workbench; a continuation epoch hides the superseded answer.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.ts"
       },
-      "hash": "f7465001dc631c0770ea6657baf227ef2c5a5cc445d5952641208e1d20a39c5f",
-      "observedAt": "2026-11-19T13:53:57.645Z",
+      "hash": "13eb64f3b6594342692186ff20afd5c22aa73d2efdd3220b4151dfb681da338a",
+      "observedAt": "2026-11-21T09:19:40.522Z",
       "range": {
         "startLine": 1,
-        "endLine": 573
+        "endLine": 580
       }
     },
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "Evidence Turns rebuild scope and version, validate mandatory claims and preserve read-backed conflict resolution. Explicit retry requeues same-version coverage without restarting Work or discarding its predecessor conclusion. Goal questions preserve FIFO and exact action/run ownership, import legacy gate identities, defer or supersede ordinary questions behind independent choices, and persist active gate projection with enqueue. Saved answers reconcile with explicit source provenance, resolve each Work action and create one aggregate recovery review only after the queue empties. Resume revalidates current queue, goal and gate; cancellation never revives questions. Canceling Work retires its cards, including saved answers awaiting projection. The remaining queue advances or schedules an explicit recovery review with withdrawal provenance. Exclusive writer startup recovery imports pending legacy goal questions before serve. The coverage preflight and transactional completion use the same scoped evidence rules. Scheduled continuation startup reads settled summaries without loading older Work bodies. First Turn admission assigns a durable Routine run sequence reused by retries.",
+      "claim": "A first-source direct reply atomically persists its completion without settling a Work contract or queuing historical memory. The current resumed Turn can publish directly to its original zero-Work goal. First Workbench assignment saves its versioned receipt and queues the original input. Existing and interrupted goals retain recovery gates.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "60c5319c2b3d9a07a18c1854d812761ed22348f4a76093a025fb1c6729f39df8",
-      "observedAt": "2026-11-19T16:11:58.366Z",
+      "hash": "4f28b1f85018dca1c84ceb738846ed29744f9055ded8cdc4c56329901530f858",
+      "observedAt": "2026-11-21T10:29:06.001Z",
       "range": {
         "startLine": 1,
-        "endLine": 1828
+        "endLine": 1877
       }
     },
     {
@@ -2947,12 +2947,12 @@
       "location": {
         "path": "tests/unit/joi-system-prompt.test.ts"
       },
-      "claim": "The foreman prompt contract requires explicit implementation-before-review edges, all-predecessor success and parallel execution only for independent Work.",
-      "hash": "24f8906b0c967e4732317741e90c5da9bdf43a1081a66cc41ecd134f07f1b9be",
-      "observedAt": "2026-11-17T07:38:02.782Z",
+      "claim": "Prompt regressions cover direct responses, explicit producer dependencies, execution prerequisites, attachment handling and tool capability verification.",
+      "hash": "0d52c313ee531281b1392b3dae00e6c48711f3559b3614e319536c0e2fad3fe4",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
-        "endLine": 137
+        "endLine": 146
       }
     },
     {
@@ -3770,15 +3770,15 @@
     {
       "id": "92555394-4dad-40aa-9f34-a4fe6b909b7b",
       "kind": "source-code",
-      "claim": "A disposable Vite and Electron run exercises preload and authenticated setup through the same-origin API proxy before opening the ordinary conversation composer.",
+      "claim": "A disposable Vite and Electron run exercises preload and authenticated setup through the same-origin API proxy before opening the ordinary conversation composer. The smoke test verifies an explicitly retained profile keeps its SQLite database after quitting.",
       "location": {
         "path": "tests/e2e/dev-startup.spec.ts"
       },
-      "hash": "7b2ad058472835e05dec8b18a877b5584852fbe963884efab9175305dabacd0f",
-      "observedAt": "2026-11-18T04:14:36.902Z",
+      "hash": "777db39a266c94060decf757e4b885f0357481b5ad0a55b36ca41be7b46e5fa4",
+      "observedAt": "2026-11-21T10:29:06.002Z",
       "range": {
         "startLine": 1,
-        "endLine": 47
+        "endLine": 55
       }
     },
     {
@@ -3882,12 +3882,12 @@
     {
       "id": "4b18689f-6b0f-410b-a946-5b7479e53b33",
       "kind": "document",
-      "claim": "HIST-01?07 define scoped histories, soft compaction triggers, provenance and independently guarded provider requests. HIST-07 specifies indexed reads with SQLite snapshots and no write lock or directory traversal.",
+      "claim": "Historical memory admits completed Workbench conclusions, scoped Partner experience and explicit preferences from eligible settlements. Direct replies stay in the input result record.",
       "location": {
         "path": "docs/historical-context-policy-spec.md"
       },
-      "hash": "743876facbe993659a92c00a1a11c4066f4ee7361c6113a5b50cfbff6d1128d4",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "hash": "068d7865303c37c0a130e95f4a7973e64f3a5fa7bf408153e25716708937c2c1",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
         "endLine": 109
@@ -3924,12 +3924,12 @@
     {
       "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
       "kind": "source-code",
-      "claim": "SQLite atomically merges fact compaction and new settlement entries, preserving each source and validating lifecycle and preference order. New Joi and Workbench settlement sources snapshot bounded facts in the existing origin transaction. Background extraction uses these facts and checks only origin eligibility metadata before accessing the snapshot. Read-only history operations use deferred SQLite snapshots and source-scoped queries without acquiring a writer lock.",
+      "claim": "New memory settlements are scoped to Workbench conclusions and authoritative Partner results. Existing direct-answer history remains readable with source and version checks.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
       },
-      "hash": "9f6ee3040c14f95bdca94f7e357db923075da9c4e4cf071f65f77a5cc04eedbb",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "hash": "93cd78aad333bc895480ab03534262e11eea16c5f6523b91043140dfda8c6a96",
+      "observedAt": "2026-11-21T09:59:50.128Z",
       "range": {
         "startLine": 1,
         "endLine": 211
@@ -4485,6 +4485,20 @@
       "range": {
         "startLine": 1,
         "endLine": 309
+      }
+    },
+    {
+      "id": "bae8d364-33e7-4865-913a-66a17d622a21",
+      "kind": "source-code",
+      "claim": "An isolated SQLite database verifies initial and resumed direct replies publish to the original card, stay outside roadmap adoption, review and historical memory, and remain scoped to the active goal. First Workbench assignment completes once through the original prompt, with no recovery child.",
+      "location": {
+        "path": "tests/integration/sqlite-joi-turn-completion.test.ts"
+      },
+      "hash": "17c562ac31cdef53adacb2c8bb00f4e7298871b8f1113ca49378ec99a2a2e455",
+      "observedAt": "2026-11-21T10:29:06.003Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 401
       }
     }
   ]

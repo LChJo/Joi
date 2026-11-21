@@ -392,8 +392,15 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_inbox_messages synth ON synth.input_id = rs.synthetic_input_id
         LEFT JOIN joi_current_goal_outcomes o ON o.input_id = i.input_id
-        LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+        LEFT JOIN joi_turn_completions tc ON tc.input_id = (SELECT completion.input_id FROM joi_turn_completions completion
+          WHERE completion.input_id IN (i.input_id, (
+            SELECT resume.input_id FROM joi_inbox_messages resume
+            WHERE gate.status = 'OPEN' AND resume.input_id = gate.resume_input_id
+              AND resume.goal_input_id = i.input_id AND resume.workbench_id = i.workbench_id
+              AND resume.status = 'CONSUMED' AND resume.canceled_at IS NULL AND resume.failed_at IS NULL
+          ))
+          ORDER BY completion.completed_at DESC, completion.input_id DESC LIMIT 1)
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
           AND i.input_id NOT LIKE 'joi_harness_review:%'
           AND i.goal_input_id IS NULL
@@ -462,12 +469,12 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
           ...(finalOutcome && typeof row.completion_summary === "string"
             ? { completionSummary: stripPathRedactions(row.completion_summary) }
-            : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completion_summary === "string"
+            : number(row, "result_revision") === 0 && number(row, "turn_completion_current") === 1 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completion_summary === "string"
               ? { completionSummary: stripPathRedactions(row.turn_completion_summary) }
               : {}),
           ...(finalOutcome && typeof row.completed_at === "string"
             ? { completedAt: row.completed_at }
-            : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completed_at === "string"
+            : number(row, "result_revision") === 0 && number(row, "turn_completion_current") === 1 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completed_at === "string"
               ? { completedAt: row.turn_completed_at }
               : {}),
           title: title === "" ? "未命名目标" : title,
