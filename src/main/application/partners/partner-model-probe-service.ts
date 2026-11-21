@@ -40,30 +40,37 @@ export class PartnerModelProbeService {
     const testedAt = this.dependencies.clock.now().toISOString();
     if (source === undefined || source.status === "DISABLED") {
       return {
-        ...(partner.modelIdOverride === undefined ? {} : { modelId: partner.modelIdOverride }),
         partnerId,
         reasonCode: "partner_model_source_not_ready",
         status: "FAILED",
         testedAt,
       };
     }
-    const modelId = partner.modelIdOverride ?? source.activeModel.id;
-    const identity = { modelId, partnerId, sourceDisplayName: source.displayName, sourceId: source.sourceId };
-    if (modelId !== source.activeModel.id) {
-      return { ...identity, reasonCode: "partner_model_override_not_ready", status: "FAILED", testedAt };
-    }
     try {
       const validated = await this.dependencies.sources.validate(source.sourceId);
-      const completedAt = validated.lastValidatedAt ?? this.dependencies.clock.now().toISOString();
-      if (validated.status === "READY") return { ...identity, status: "READY", testedAt: completedAt };
+      const details = {
+        modelId: validated.activeModel.id,
+        partnerId,
+        sourceDisplayName: validated.displayName,
+        sourceId: validated.sourceId,
+        testedAt: validated.lastValidatedAt ?? this.dependencies.clock.now().toISOString(),
+      };
+      if (validated.status === "READY") return { ...details, status: "READY" };
       return {
-        ...identity,
+        ...details,
         reasonCode: validated.reasonCode ?? "partner_model_test_failed",
         status: "FAILED",
-        testedAt: completedAt,
       };
     } catch {
-      return { ...identity, reasonCode: "partner_model_test_failed", status: "FAILED", testedAt: this.dependencies.clock.now().toISOString() };
+      return {
+        modelId: source.activeModel.id,
+        partnerId,
+        sourceDisplayName: source.displayName,
+        sourceId: source.sourceId,
+        reasonCode: "partner_model_test_failed",
+        status: "FAILED",
+        testedAt: this.dependencies.clock.now().toISOString(),
+      };
     }
   }
 }

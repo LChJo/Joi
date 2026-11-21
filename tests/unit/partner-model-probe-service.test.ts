@@ -31,8 +31,8 @@ describe("partner model probe", () => {
     expect(validate).toHaveBeenCalledOnce();
   });
 
-  it("fails safely before network access when the pinned model is not active on the selected source", async () => {
-    const validate = vi.fn();
+  it("validates the active network model when a partner stores a legacy model name", async () => {
+    const validate = vi.fn(async () => source);
     const service = new PartnerModelProbeService({
       clock: new TestClock(),
       partners: { inspect: async () => ({ ...partner, modelIdOverride: "DeepSeek-V4-Pro" }) },
@@ -40,9 +40,9 @@ describe("partner model probe", () => {
     });
 
     await expect(service.test("partner-1")).resolves.toMatchObject({
-      modelId: "DeepSeek-V4-Pro", reasonCode: "partner_model_override_not_ready", status: "FAILED",
+      modelId: source.activeModel.id, status: "READY",
     });
-    expect(validate).not.toHaveBeenCalled();
+    expect(validate).toHaveBeenCalledExactlyOnceWith(source.sourceId);
   });
 
   it.each(["codex", "claude-code"] as const)("actively tests the %s CLI partner without using managed model sources", async (engine) => {
@@ -91,9 +91,9 @@ describe("partner model probe", () => {
       clock: new TestClock(), partners: { inspect: async () => partner },
       sources: { list: async () => [], validate: missingValidate },
     });
-    await expect(missing.test("partner-1")).resolves.toMatchObject({
-      modelId: "gpt-5.6-sol-sub", reasonCode: "partner_model_source_not_ready", status: "FAILED",
-    });
+    const missingResult = await missing.test("partner-1");
+    expect(missingResult).toMatchObject({ reasonCode: "partner_model_source_not_ready", status: "FAILED" });
+    expect(missingResult).not.toHaveProperty("modelId");
     expect(missingValidate).not.toHaveBeenCalled();
 
     const disabledValidate = vi.fn();
@@ -110,7 +110,6 @@ describe("partner model probe", () => {
     const second = { ...source, order: 1, primary: true, sourceId: "source-primary" };
     const validate = vi.fn(async () => first);
     const globalPartner = structuredClone(partner);
-    delete globalPartner.modelIdOverride;
     delete globalPartner.modelSourceId;
     const service = new PartnerModelProbeService({
       clock: new TestClock(),

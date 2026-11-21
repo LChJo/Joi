@@ -210,9 +210,9 @@ describe("partner page", () => {
     }));
   });
 
-  it("updates description and advanced model fields through the tabbed editor", async () => {
+  it("edits the network next to the Pi engine without an editable model name", async () => {
     const api = new DigitalLifeApi("");
-    mockCatalog(api, [coder]);
+    mockCatalog(api, [{ ...coder, skills: [] }]);
     vi.spyOn(api, "listModelSources").mockResolvedValue({
       items: [{
         accessMode: "api", activeModel: { capability: "release-tested", id: "kimi-k2.5", revisionId: "model-1" },
@@ -226,11 +226,13 @@ describe("partner page", () => {
     fireEvent.change(screen.getByLabelText("描述（给 joi 做参考）"), { target: { value: "擅长重构" } });
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
     expect(screen.getByText("Kimi（kimi）")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("模型名"), { target: { value: "kimi-k2.5" } });
-    fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "pi-core" } });
+    expect(screen.queryByLabelText("模型名")).not.toBeInTheDocument();
+    const network = screen.getByLabelText("大模型网络");
+    expect(screen.getByLabelText("搭档引擎").closest("label")?.nextElementSibling).toContainElement(network);
+    fireEvent.change(network, { target: { value: "source-1" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
-      description: "擅长重构", displayName: "Local Coder", modelIdOverride: "kimi-k2.5",
+      description: "擅长重构", displayName: "Local Coder", modelIdOverride: null, modelSourceId: "source-1",
     })));
   });
 
@@ -466,12 +468,13 @@ describe("partner page", () => {
     fireEvent.change(screen.getByLabelText("搭档提示词"), { target: { value: "只写文档" } });
     expect(screen.queryByLabelText("工作路径（cwd）")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
-    fireEvent.change(screen.getByLabelText("供应商"), { target: { value: "source-1" } });
+    fireEvent.change(screen.getByLabelText("大模型网络"), { target: { value: "source-1" } });
     fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       displayName: "Writer", modelSourceId: "source-1", prompt: "只写文档",
     })));
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("workspaceRef");
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty("modelIdOverride");
   });
 
   it("labels engine options by detection status and shows Codex permission controls instead of tools", async () => {
@@ -703,10 +706,11 @@ describe("partner page", () => {
     expect(setTab).toHaveBeenCalledWith("partners");
   });
 
-  it("synchronizes the editable model name when the provider changes and reloads the saved revision", async () => {
+  it("replaces a missing network binding and clears a legacy model name on save", async () => {
     const api = new DigitalLifeApi("");
-    const revised = { ...coder, modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready", partnerRevisionId: "revision-2", registryRevision: 2 };
-    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [coder] }).mockResolvedValue({ items: [revised] });
+    const legacy = { ...coder, modelIdOverride: "stale-model", modelSourceId: "source-removed" };
+    const revised = { ...coder, modelSourceId: "source-ready", partnerRevisionId: "revision-2", registryRevision: 2 };
+    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [legacy] }).mockResolvedValue({ items: [revised] });
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [{
       accessMode: "api", activeModel: { capability: "release-tested", id: "gpt-5.6-sol-sub", revisionId: "model-1" },
       activeSourceRevisionId: "source-revision-1", credential: { configured: true, version: 1 }, displayName: "gpt-sub",
@@ -720,11 +724,12 @@ describe("partner page", () => {
     fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
     expect(await screen.findByText("TypeScript")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
-    fireEvent.change(screen.getByLabelText("供应商"), { target: { value: "source-ready" } });
-    expect(screen.getByLabelText("模型名")).toHaveValue("gpt-5.6-sol-sub");
+    const network = screen.getByLabelText("大模型网络");
+    expect(network).toHaveValue("source-removed");
+    fireEvent.change(network, { target: { value: "source-ready" } });
     fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
-      modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready",
+      modelIdOverride: null, modelSourceId: "source-ready",
     })));
     expect(await screen.findByRole("heading", { name: "Local Coder" })).toBeInTheDocument();
   });
@@ -816,7 +821,7 @@ describe("partner page", () => {
     expect(await screen.findByText("本地会话记录失败")).toBeInTheDocument();
   });
 
-  it("restores persisted provider validation status and detects a stale partner override", async () => {
+  it("shows the active network model and its persisted validation for partners with legacy model names", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, [
       { ...coder, displayName: "Ready Coder", modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready" },
@@ -830,8 +835,9 @@ describe("partner page", () => {
     }] });
     render(<PartnerPage api={api} />);
 
-    expect((await screen.findAllByText("模型可用")).length).toBeGreaterThan(0);
-    expect(screen.getByText("模型名与供应商当前模型不一致")).toBeInTheDocument();
+    expect(await screen.findAllByText("模型可用")).toHaveLength(2);
+    expect(screen.getAllByText(/gpt-sub · gpt-5\.6-sol-sub/u)).toHaveLength(2);
+    expect(screen.queryByText("模型名与供应商当前模型不一致")).not.toBeInTheDocument();
   });
 
   it("warns about a partner pinned to a source that is not READY, with no validation stamp", async () => {

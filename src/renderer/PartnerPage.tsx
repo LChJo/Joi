@@ -72,29 +72,21 @@ function persistedModelTest(partner: PartnerDto, sources: ModelSourceDto[]): Par
     ? ordered.find((candidate) => candidate.status === "READY") ?? ordered[0]
     : sources.find((candidate) => candidate.sourceId === partner.modelSourceId);
   if (source === undefined) return undefined;
-  const modelMismatch = partner.modelIdOverride !== undefined && partner.modelIdOverride !== source.activeModel.id;
-  // Editing a model source resets it to DRAFT and clears its validation stamp, and that is exactly
-  // the state the next dispatch fails on. Waiting for `lastValidatedAt` would hide it, so a partner
-  // the user pinned to a source that is not READY says so now rather than after a wasted run.
+  const identity = { modelId: source.activeModel.id, partnerId: partner.partnerId, sourceDisplayName: source.displayName, sourceId: source.sourceId };
+  // Explicit network bindings require a READY source even without a validation timestamp.
   if (partner.modelSourceId !== undefined && source.status !== "READY") {
     return {
-      modelId: partner.modelIdOverride ?? source.activeModel.id,
-      partnerId: partner.partnerId,
+      ...identity,
       reasonCode: "partner_model_source_not_ready",
-      sourceDisplayName: source.displayName,
-      sourceId: source.sourceId,
       status: "FAILED",
       ...(source.lastValidatedAt === undefined ? {} : { testedAt: source.lastValidatedAt }),
     };
   }
   if (source.lastValidatedAt === undefined) return undefined;
   return {
-    modelId: partner.modelIdOverride ?? source.activeModel.id,
-    partnerId: partner.partnerId,
-    ...(modelMismatch ? { reasonCode: "partner_model_override_not_ready" } : source.reasonCode === undefined ? {} : { reasonCode: source.reasonCode }),
-    sourceDisplayName: source.displayName,
-    sourceId: source.sourceId,
-    status: source.status === "READY" && !modelMismatch ? "READY" : "FAILED",
+    ...identity,
+    ...(source.reasonCode === undefined ? {} : { reasonCode: source.reasonCode }),
+    status: source.status === "READY" ? "READY" : "FAILED",
     testedAt: source.lastValidatedAt,
   };
 }
@@ -148,7 +140,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     sandboxMode: "workspace-write",
     webSearchMode: "live",
   });
-  const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
   const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
   const [notice, setNotice] = useNotice();
   const [promptDraft, setPromptDraft] = useState("");
@@ -207,7 +198,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const form = new FormData(event.currentTarget);
     const description = textValue(form.get("description"));
     const engineModelId = textValue(form.get("engineModelId"));
-    const normalizedModelId = modelIdOverride.trim();
     const normalizedSourceId = modelSourceId.trim();
     const prompt = partner === null ? textValue(form.get("prompt")) : promptTouched ? textValue(promptDraft) : undefined;
     const fields = {
@@ -228,10 +218,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         const created = await api.createPartner({
           ...fields,
           ...(engine === "pi-core"
-            ? {
-              ...(normalizedModelId === "" ? {} : { modelIdOverride: normalizedModelId }),
-              ...(normalizedSourceId === "" ? {} : { modelSourceId: normalizedSourceId }),
-            }
+            ? normalizedSourceId === "" ? {} : { modelSourceId: normalizedSourceId }
             : engineModelId === undefined ? {} : { engineModelId }),
           kind: "local-pi",
         });
@@ -242,7 +229,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           ...(prompt === undefined ? {} : { promptMode }),
           ...(engine === "pi-core"
             ? {
-              modelIdOverride: normalizedModelId === "" ? null : normalizedModelId,
+              modelIdOverride: null,
               modelSourceId: normalizedSourceId === "" ? null : normalizedSourceId,
             }
             : { engineModelId: engineModelId ?? null }),
@@ -343,15 +330,16 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           {ENGINE_ORDER.map((id) => { const status = engineStatuses[id]; const suffix = id === "pi-core" ? "" : status === undefined ? "" : status.available ? t("partners.detected") : t("partners.notDetected"); return <option key={id} value={id}>{ENGINE_LABELS[id]}{suffix}</option>; })}
         </select></label>
         {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason}  {t("partners.completeLocalSetupAsInstructedOrSwitchBackTo")}</p>}
-        {engine === "pi-core" ? <>
-          <label>{t("partners.modelName")}<input name="modelIdOverride" onChange={(event) => setModelIdOverride(event.target.value)} placeholder={t("partners.leaveBlankForTheGlobalPreferredModel")} value={modelIdOverride} /></label>
-          <label>{t("partners.provider")}<span className="picker-field"><select name="modelSourceId" onChange={(event) => {
-            const nextSourceId = event.target.value;
-            setModelSourceId(nextSourceId);
-            const selected = sources.find((source) => source.sourceId === nextSourceId);
-            setModelIdOverride(selected?.activeModel.id ?? "");
-          }} value={modelSourceId}><option value="">{t("partners.useTheGlobalPreferredModelConnection")}</option>{sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : t("partners.notReady")}</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">{t("partners.manageModelConnections")}</button></span></label>
-        </> : <>
+        {engine === "pi-core" ? <label>{t("home.modelConnections")}
+          <span className="picker-field">
+            <select name="modelSourceId" onChange={(event) => setModelSourceId(event.target.value)} value={modelSourceId}>
+              <option value="">{t("partners.useTheGlobalPreferredModelConnection")}</option>
+              {modelSourceId !== "" && !sources.some((source) => source.sourceId === modelSourceId) ? <option disabled value={modelSourceId}>{t("partners.providerNotReady")}</option> : null}
+              {sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : t("partners.notReady")}</option>)}
+            </select>
+            <button className="button ghost" onClick={() => onManageProviders?.()} type="button">{t("partners.manageModelConnections")}</button>
+          </span>
+        </label> : <>
           <label>{t("partners.modelNameOptionalOverride")}<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder={t("partners.leaveBlankForTheLocalClaudeCodexConfiguration")} /></label>
           <p className="field-hint">{engine === "claude-code"
             ? t("partners.claudeCodeUsesLocalClaudeConfigurationAndAuthenticationInvoking")

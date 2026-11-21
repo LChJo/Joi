@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "0ab1000eb96299d4bd6c69648b61ff02b4fb2c1586070523f54b2221218d5ceb",
-      "observedAt": "2026-11-21T11:58:14.284Z",
+      "hash": "b63d1c89176e2e30796d5b148cfe70cdb89926e4e082967336835aaf37316166",
+      "observedAt": "2026-11-21T12:19:48.637Z",
       "range": {
         "startLine": 1,
-        "endLine": 775
+        "endLine": 777
       }
     },
     {
@@ -928,15 +928,15 @@
     {
       "id": "8b99a8d3-c9b5-4f56-aca5-67d33579c709",
       "kind": "source-code",
-      "claim": "One default-off Agent Browser switch selects or clears all available browser operations while preserving independent core tools. Legacy partial selections save as off without widening; unavailable catalogs preserve prior configuration. The family counts once.",
+      "claim": "One default-off Agent Browser switch selects or clears all available browser operations while preserving independent core tools. Legacy partial selections save as off without widening; unavailable catalogs preserve prior configuration. The family counts once. The Pi partner editor places network selection beside engine selection. Its cards use the active network model, and saving clears legacy partner model overrides.",
       "location": {
         "path": "src/renderer/PartnerPage.tsx"
       },
-      "hash": "86d616d3f6562c9af435c51ed55fd28fb401ab0d7c51e7d6118d32e04fe5e03b",
-      "observedAt": "2026-11-12T17:43:19.464Z",
+      "hash": "9eeb27cb0fe603c1612d4a9d979fb3eed893201931423e701760cf335747916d",
+      "observedAt": "2026-11-21T12:17:22.540Z",
       "range": {
         "startLine": 1,
-        "endLine": 595
+        "endLine": 583
       }
     },
     {
@@ -970,15 +970,15 @@
     {
       "id": "a8d58319-cdbe-4c6d-ab62-1d334fa3b766",
       "kind": "source-code",
-      "claim": "Renderer regressions cover one browser-family switch, new and existing defaults, complete and partial stored selections, preserved core controls, grouped counts and catalog-failure preservation.",
+      "claim": "Renderer regressions cover one browser-family switch, new and existing defaults, complete and partial stored selections, preserved core controls, grouped counts and catalog-failure preservation. AC-55 covers network field placement, bindings, legacy model cleanup and card status from the active model.",
       "location": {
         "path": "tests/renderer/partner-page.test.tsx"
       },
-      "hash": "594fbbceae4c638edc5a59538b4912def74adc05bb0632f9f58b267bb05e21b5",
-      "observedAt": "2026-11-12T17:43:19.465Z",
+      "hash": "74e61adb2bd3b1403f850bf5e8b366961244572a45c7ce45ee3f83b1cdb99aae",
+      "observedAt": "2026-11-21T12:17:22.540Z",
       "range": {
         "startLine": 1,
-        "endLine": 872
+        "endLine": 878
       }
     },
     {
@@ -2440,12 +2440,12 @@
     {
       "id": "0139295d-c933-4f90-8dbe-e817016f1e65",
       "kind": "document",
-      "claim": "AC-07/14/44/48/53 map Worker CLI detection, current-source dispatch admission, path identity and recovery projection to bounded regressions. AC-10 covers serial ordinary turns, same-goal exclusion and bounded synthesis concurrency.",
+      "claim": "AC-07/14/44/48/53 map Worker CLI detection, current-source dispatch admission, path identity and recovery projection to bounded regressions. AC-10 covers serial ordinary turns, same-goal exclusion and bounded synthesis concurrency. AC-55 maps model network selection and legacy model cleanup to renderer, application and HTTP checks.",
       "location": {
         "path": "docs/10-requirements-traceability.md"
       },
-      "hash": "0daa9e71b27798454b760153fc9ad782f47db130911d3fa813a13b7c8039b3cc",
-      "observedAt": "2026-11-19T16:56:14.563Z",
+      "hash": "d7e2056691c1e2da8cff2079abecef0fcc847381a54c962cd8af47c3b5b63cd0",
+      "observedAt": "2026-11-21T12:17:22.540Z",
       "range": {
         "startLine": 1,
         "endLine": 286
@@ -4611,6 +4611,34 @@
       "range": {
         "startLine": 1,
         "endLine": 539
+      }
+    },
+    {
+      "id": "c8464cc4-985f-4e01-90bb-6ac28594cad3",
+      "kind": "source-code",
+      "claim": "Pi partner probing validates the active model of the selected network or effective global network. The result identifies the validated network revision's active model. Native engines retain their engine probe.",
+      "location": {
+        "path": "src/main/application/partners/partner-model-probe-service.ts"
+      },
+      "hash": "b75a2fc8705d19feaf1bd71730e58716d8b78906c607f30be7de742cd9567e55",
+      "observedAt": "2026-11-21T12:17:22.540Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 81
+      }
+    },
+    {
+      "id": "6e6e6e48-5393-4d88-a9be-bffbab16783c",
+      "kind": "source-code",
+      "claim": "Probe regressions cover current models for legacy partners, ranked global selection, unavailable sources and safe validation results.",
+      "location": {
+        "path": "tests/unit/partner-model-probe-service.test.ts"
+      },
+      "hash": "7dedae0c9614cfa5f5d0c29f3bd8c0d02d4f158d83e7de9503f3fc942699f668",
+      "observedAt": "2026-11-21T12:17:22.540Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 160
       }
     }
   ]
