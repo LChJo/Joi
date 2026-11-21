@@ -32,15 +32,15 @@
     {
       "id": "b4e0c245-401d-4f68-9009-f3ead2f2c98a",
       "kind": "source-code",
-      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite. The named Codex window hands approved HTTPS authorization links to the system browser. An explicitly retained isolated developer profile keeps its data across restarts and has a single-instance lock.",
+      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client. An explicit development API port reaches the runtime before the Electron window loads Vite. The named Codex window hands approved HTTPS authorization links to the system browser. An explicitly retained isolated developer profile keeps its data across restarts and has a single-instance lock. The installed desktop shell presents verified updates and launches Windows NSIS after graceful runtime shutdown.",
       "location": {
         "path": "src/main/index.ts"
       },
-      "hash": "792222fa640559ef6bc3cf8c35bec9b51f5e683abe03c9cefd29c945f4332a07",
-      "observedAt": "2026-11-21T10:29:05.998Z",
+      "hash": "d7895748d005aa362a2c8c113fc2d5adbdee260497c063ec3a13d6dff2a75bef",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 258
+        "endLine": 321
       }
     },
     {
@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint. An idempotent fork request targets a completed reply and returns the new conversation. Scoped question answers and explicit conversation recovery use the same authenticated request layer. The existing goal detail endpoint accepts optional summary and map page views.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint. An idempotent fork request targets a completed reply and returns the new conversation. Scoped question answers and explicit conversation recovery use the same authenticated request layer. The existing goal detail endpoint accepts optional summary and map page views. Desktop-only update reads and versioned writes use the same authenticated HTTP client.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "7571eae8821e394b6f2781a6abc85dc6a8b8d9336a076f7fa3626e5fad5f8205",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "c0ede67d9853178a811cb0961af05c570f3d0c621d71eee2359fb1db801ead21",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 627
+        "endLine": 630
       }
     },
     {
@@ -452,15 +452,15 @@
     {
       "id": "bdb1be5c-c983-4e99-8b95-e1f0df5ed37f",
       "kind": "source-code",
-      "claim": "Global navigation uses user-selected Heartbeat for Joi and SquaresFour for workbenches; supports glyph-only collapse/expand, icon tooltips, retained page state and a narrow overlay. Archive navigation opens task/conversation tabs.",
+      "claim": "Global navigation uses user-selected Heartbeat for Joi and SquaresFour for workbenches; supports glyph-only collapse/expand, icon tooltips, retained page state and a narrow overlay. Archive navigation opens task/conversation tabs. The Version tab places software updates above existing backup and restore controls.",
       "location": {
         "path": "src/renderer/Console.tsx"
       },
-      "hash": "56de2be38634dce0e6aeb49a66a42eeb4dceb862a5ff9dfca66dcea7f639e223",
-      "observedAt": "2026-11-11T16:20:32.372328Z",
+      "hash": "91ebbcdb7e4ca1ac9e0714f4b4d2d6a45f2af60d7d320fc532fdaa3e80682ac2",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 396
+        "endLine": 400
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "52c1308b6a343e7b652a727f37e90ab2d749f3ba85bfc92b59e5dfdfa023b28f",
-      "observedAt": "2026-11-21T10:29:05.999Z",
+      "hash": "448b5b738d5771236174370bc8ceceb354a9049b9f74c14d958ea6b370e96644",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 771
+        "endLine": 773
       }
     },
     {
@@ -900,15 +900,15 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied. The exclusive desktop writer awaits Turn and dispatch claim reconciliation before its first outbox dispatch and actor tick. One SQLite-backed question service wires conversation/Pi and HTTP/paired answers, starts deadline/reconciliation processing and invokes goal inbox answer projection. Graceful shutdown first closes conversation/child execution with its shutdown reason, then closes the question service before draining the remaining runtime, preserving pending cards for recovery. Startup marks interrupted conversation questions before enabling the default-answer timer. Agent card list reads use the independent WAL snapshot Worker.",
+      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied. The exclusive desktop writer awaits Turn and dispatch claim reconciliation before its first outbox dispatch and actor tick. One SQLite-backed question service wires conversation/Pi and HTTP/paired answers, starts deadline/reconciliation processing and invokes goal inbox answer projection. Graceful shutdown first closes conversation/child execution with its shutdown reason, then closes the question service before draining the remaining runtime, preserving pending cards for recovery. Startup marks interrupted conversation questions before enabling the default-answer timer. Agent card list reads use the independent WAL snapshot Worker. The authenticated HTTP handler receives a desktop update control backed by worker RPC.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "374d9da6c44f021d3aa6353fce24fff983aaf9402614440667374fbbbed0af7f",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "0257a19f17a6105b32c65f014c3d35053a5244fae22d6118a10c0410bef5bc31",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 389
+        "endLine": 390
       }
     },
     {
@@ -946,11 +946,11 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "91c93c2ce8e5eb428972e67b282b94100f2c4c2ff1865d9f5ddfb81ddb8f276f",
-      "observedAt": "2026-11-21T09:19:40.522Z",
+      "hash": "fa4ce4fe220556c3195dbbd7b0563f08e6093c9ca1e94975f9040c5c35f6a70c",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 1593
+        "endLine": 1597
       }
     },
     {
@@ -1436,11 +1436,11 @@
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "ccea95a7202e03b4dd27f3f29454e109b37bf2034c1517d93348c1f64720f639",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "9610e141e1a01b087bac0ec2fc5e8520146e37ef2e7b4c92938c2643cefa227b",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 222
+        "endLine": 223
       }
     },
     {
@@ -1488,15 +1488,15 @@
     {
       "id": "25d2574d-1c15-4d09-85d8-982d6df10500",
       "kind": "source-code",
-      "claim": "The golden route manifest includes authenticated conversation SSE, fork, question answer and question resume, and the authenticated goal question answer endpoint.",
+      "claim": "The golden route manifest includes authenticated conversation SSE, fork, question answer and question resume, and the authenticated goal question answer endpoint. Desktop update reads and writes are included in the route manifest.",
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "184cbaf28e76333e7a1c1c29f1215552e766a9d20d85f77a774ffa76700cdd14",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "84537c7ac53b62319986504a6060e8d6de1df36f2e9edb13e97f4d6d0693113d",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 173
+        "endLine": 175
       }
     },
     {
@@ -1572,15 +1572,15 @@
     {
       "id": "3ed7ea76-20a9-424b-b16f-32b73d6dfded",
       "kind": "source-code",
-      "claim": "Worker start has a 60-second deadline and emergency stop/close have 15-second deadlines; terminal close terminates the owned worker and starts no retry loop.",
+      "claim": "Worker start has a 60-second deadline and emergency stop/close have 15-second deadlines; terminal close terminates the owned worker and starts no retry loop. The main process owns update status and version-checked actions through worker RPC.",
       "location": {
         "path": "src/main/composition/desktop-runtime-client.ts"
       },
-      "hash": "05512caeb775f4a6cabeb6dc1bdc5fff8f71593e88cce4420be19530e18bf713",
-      "observedAt": "2026-11-13T10:32:13.886Z",
+      "hash": "27faa9a4e086dff8c1e567489bd4cefc85890335757b2aa36acbb97b8d32bb6e",
+      "observedAt": "2026-11-21T11:14:01.531Z",
       "range": {
         "startLine": 1,
-        "endLine": 65
+        "endLine": 69
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "c5cdcbbfd4da3a307f134b8b7ea96939e6a6e83719311e1e8d389e7e9f3600f4",
-      "observedAt": "2026-11-21T09:43:40.189Z",
+      "hash": "576a4cf7f9e5e53288cb2151b05b8f9feb48dfd2ed974f56c50e47f9c60a367f",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 10189
+        "endLine": 10312
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "f7c0c4b541a36294a8a6bd3b24567f9826e03b0ce887fa3dd684433c1fd218c4",
-      "observedAt": "2026-11-21T09:43:40.191Z",
+      "hash": "065251976e5455fd7804fa4a5a56b67b0b677e9a53fcdf5038c26e77acef104e",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 7185
+        "endLine": 7273
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "54f674dde6046caa818461d1de81090194278e2321813dc930724e865207e80e",
-      "observedAt": "2026-11-21T09:43:40.193Z",
+      "hash": "643f413a1bba0d6c9cc14669f4f658bafda5041c02cace97ea1d36c3d738955d",
+      "observedAt": "2026-11-21T11:26:27.523Z",
       "range": {
         "startLine": 1,
-        "endLine": 9070
+        "endLine": 9181
       }
     },
     {
@@ -4499,6 +4499,104 @@
       "range": {
         "startLine": 1,
         "endLine": 401
+      }
+    },
+    {
+      "id": "704f33e5-542a-4ad8-b253-7e7a5f256156",
+      "kind": "source-code",
+      "claim": "Compares stable versions from the pinned GitHub Latest redirect, selects platform and architecture assets from release SHA-256 sums, and manages bounded verification and version-bound staging.",
+      "location": {
+        "path": "src/main/infrastructure/operations/desktop-updater.ts"
+      },
+      "hash": "21e36c0e09bc3e61f59786005a55ba0876572672368d1f150b7a235ad8507e6b",
+      "observedAt": "2026-11-21T11:15:59.861Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 196
+      }
+    },
+    {
+      "id": "f4f03faf-1a47-4fa7-ac1d-2027919b22d0",
+      "kind": "source-code",
+      "claim": "The Version tab uses desktop HTTP status, reports transfer progress, and exposes release notes, check, verified download and platform-specific installation actions.",
+      "location": {
+        "path": "src/renderer/DesktopUpdateSettings.tsx"
+      },
+      "hash": "e9f5a88c630f5b1369925246941e3a710600e1e42ab33b5bd96fd94fbb3039b0",
+      "observedAt": "2026-11-21T11:14:01.531Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 109
+      }
+    },
+    {
+      "id": "62d6d85e-e8bb-48ee-84c3-bca0f4f78f65",
+      "kind": "source-code",
+      "claim": "GET and POST desktop update routes require a local desktop session. Writes use CSRF verification and accept only a known action and stable target version.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/system-routes.ts"
+      },
+      "hash": "7f7e653e4f92ca7f0c5b8d3612ea16e80304dd869615bce4010369235990c4aa",
+      "observedAt": "2026-11-21T11:14:01.531Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 259
+      }
+    },
+    {
+      "id": "eb47fab0-e85f-439d-8b78-aca576b2023f",
+      "kind": "source-code",
+      "claim": "Desktop update shared contracts carry version, mode, state, progress and safe error codes. GitHub release navigation stays on the pinned repository.",
+      "location": {
+        "path": "src/shared/desktop-update.ts"
+      },
+      "hash": "f47ca753827038dead075753e7834e7ac3fcf535041abd62ca25db55a3701f3f",
+      "observedAt": "2026-11-21T11:14:01.531Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 22
+      }
+    },
+    {
+      "id": "7872e210-c174-4570-972c-805800f5830d",
+      "kind": "source-code",
+      "claim": "Synthetic release tests cover numeric ordering, trusted redirects, idempotent staging, corrupt transfers and revalidation before opening installers.",
+      "location": {
+        "path": "tests/unit/desktop-updater.test.ts"
+      },
+      "hash": "0638d365f37f98c7f85595e849b1805eb598724f4a98418b5eaf1f5cd7c19587",
+      "observedAt": "2026-11-21T11:14:01.531Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 135
+      }
+    },
+    {
+      "id": "fa31cb48-0fc1-484b-a19b-12c3faf22e66",
+      "kind": "source-code",
+      "claim": "The drive-letter boundary preserves source-path detection without treating an HTTPS scheme as a Windows drive.",
+      "location": {
+        "path": "scripts/package-contents.mjs"
+      },
+      "hash": "cbe8e89078e4cc42658962564c1516571419786c6a35dd77642f6048b18172ae",
+      "observedAt": "2026-11-21T11:15:59.861Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 36
+      }
+    },
+    {
+      "id": "b8ee1a11-43bb-460c-9659-43d86fb11ab6",
+      "kind": "source-code",
+      "claim": "The package audit accepts the pinned GitHub Release URL while rejecting slash and backslash Windows source paths.",
+      "location": {
+        "path": "tests/contract/package-contents.test.ts"
+      },
+      "hash": "732c102683174e5a84b26ef869142a7296ff246c21bf1448796c15ba3ed489f5",
+      "observedAt": "2026-11-21T11:15:59.861Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 77
       }
     }
   ]

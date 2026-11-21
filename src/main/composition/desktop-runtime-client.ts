@@ -1,5 +1,6 @@
 import { MessageChannel, Worker } from "node:worker_threads";
 import type { DesktopBootstrapNonce } from "../../shared/product.js";
+import type { DesktopUpdateCommand, DesktopUpdateStatus } from "../../shared/desktop-update.js";
 import type { UiLocalePreference } from "../../shared/i18n/index.js";
 import { WorkerRpc } from "../infrastructure/runtime/worker-rpc.js";
 import type { ExportRecord } from "../infrastructure/persistence/sqlite-result-exports.js";
@@ -18,7 +19,10 @@ export async function startDesktopRuntime(configuration: DesktopRuntimeConfigura
   let closing = false;
   let ready = false;
   let closePromise: Promise<void> | undefined;
+  const unavailableUpdate: DesktopUpdateStatus = { currentVersion: configuration.appVersion, mode: "disabled", phase: "idle" };
   const rpc = new WorkerRpc(port1, {
+    desktopUpdateStatus: () => desktop.desktopUpdate?.status() ?? unavailableUpdate,
+    desktopUpdateCommand: (command) => desktop.desktopUpdate?.command(command as DesktopUpdateCommand) ?? unavailableUpdate,
     setUiLocale: (preference) => desktop.setUiLocale?.(preference as UiLocalePreference),
     encrypt: (token) => desktop.vault.encrypt(token as string),
     decrypt: (ciphertext) => desktop.vault.decrypt(ciphertext as Uint8Array),

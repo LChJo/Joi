@@ -8,7 +8,7 @@ const forbiddenPathPatterns = [
 const forbiddenContentPatterns = [
   { label: "test-token-secret", pattern: /test-token-secret/i },
   { label: "Bearer credential", pattern: /Authorization\s*:\s*Bearer\s+[A-Za-z0-9._~-]+/i },
-  { label: "source path", pattern: /[A-Za-z]:[\\/][^\n\r"'`]*[\\/](?:digital-life|joi)(?:[\\/]|\b)/i },
+  { label: "source path", pattern: /(?<![\w+.-])[A-Za-z]:[\\/][^\n\r"'`]*[\\/](?:digital-life|joi)(?:[\\/]|\b)/i },
   { label: "source path", pattern: /\/(?:Users|home)\/[^\n\r"'`]+\/(?:digital-life|joi)(?:\/|\b)/i },
 ];
 

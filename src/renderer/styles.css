@@ -1288,6 +1288,10 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .settings-sections { display: grid; }.settings-sections > section { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 25px 0; border-bottom: 1px solid var(--line); }.settings-sections > section > svg { color: var(--forest); }.settings-sections > section > div { display: grid; gap: 5px; }.settings-sections h2 { font-size: 16px; }.settings-sections p { color: var(--muted); font-size: 12px; }.settings-sections .status-dot { justify-self: start; }
 .inline-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; margin-top: 8px; }.inline-settings > label:first-child, .inline-settings > label:nth-last-child(2), .inline-settings > .row-actions { grid-column: 1 / -1; }.inline-settings label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; }.inline-settings input[type="checkbox"] { width: auto; }.session-list { display: flex; flex-wrap: wrap; gap: 5px; }.session-list span { padding: 4px 7px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font-size: 10px; }.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 5px; }
 .settings-sections > .remote-access-settings { align-items: start; }
+.settings-sections > .desktop-update-settings { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+.desktop-update-summary { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.desktop-update-settings .row-actions:not(:empty) { margin-top: 6px; }
+.desktop-update-settings progress { width: min(20rem, 100%); accent-color: var(--forest); }
 .remote-access-settings > div { gap: 9px !important; }
 .remote-access-form { width: min(720px, 100%); }
 .remote-pairing { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 18px; margin-top: 8px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }

@@ -122,7 +122,7 @@ describe("settings panel", () => {
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "技能", "设备连接", "安全", "数据", "诊断"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "技能", "设备连接", "安全", "版本", "诊断"]);
     expect(screen.getByRole("tab", { name: "模型网络" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tabpanel", { name: "模型网络" })).toBeInTheDocument();
     expect(screen.queryByText("其他设备访问")).not.toBeInTheDocument();
@@ -142,14 +142,35 @@ describe("settings panel", () => {
     expect(screen.getByRole("tab", { name: "诊断" })).toHaveFocus();
     expect(await screen.findByRole("heading", { name: "joi 的运行状态" })).toBeInTheDocument();
 
-    fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "ArrowRight" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "版本" }), { key: "ArrowRight" });
     expect(screen.getByRole("tab", { name: "诊断" })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole("tab", { name: "诊断" }), { key: "ArrowLeft" });
-    expect(screen.getByRole("tab", { name: "数据" })).toHaveFocus();
-    fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "Home" });
+    expect(screen.getByRole("tab", { name: "版本" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "版本" }), { key: "Home" });
     expect(screen.getByRole("tab", { name: "模型网络" })).toHaveFocus();
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     expect(await screen.findByText("备份与恢复")).toBeInTheDocument();
+  });
+
+  it("shows update actions and the existing backup controls together", async () => {
+    const api = new DigitalLifeApi("", true);
+    mockOperations(api);
+    const available = { currentVersion: "0.1.6", latestVersion: "0.1.7", mode: "restart", phase: "available" } as const;
+    const readUpdate = vi.spyOn(api, "desktopUpdate").mockResolvedValue(available);
+    const update = vi.spyOn(api, "updateDesktop").mockImplementation(({ action }) => {
+      const next = { ...available, phase: action === "download" ? "ready" : "installing" } as const;
+      readUpdate.mockResolvedValue(next);
+      return Promise.resolve(next);
+    });
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
+    const panel = screen.getByRole("tabpanel", { name: "版本" });
+    expect(panel).toContainElement(await screen.findByRole("heading", { name: "软件更新" }));
+    expect(panel).toContainElement(await screen.findByRole("heading", { name: "备份与恢复" }));
+    expect(screen.getByText("当前版本 v0.1.6")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "下载更新" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重启并安装" }));
+    await waitFor(() => expect(update.mock.calls).toEqual([[{ action: "download", version: "0.1.7" }], [{ action: "install", version: "0.1.7" }]]));
   });
 
   it("configures native relay access, generates a QR code and revokes paired phones", async () => {
@@ -368,7 +389,7 @@ describe("settings panel", () => {
     await waitFor(() => expect(changePassword).toHaveBeenCalledWith("current-pass-1", "next-pass-22"));
     expect(await screen.findByText("管理密码已更新，其他设备需要重新登录。", {}, { timeout: 4_000 })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     await waitFor(() => expect(createBackup).toHaveBeenCalledOnce());
     expect(await screen.findByText("备份已完成，joi 检查过了。", {}, { timeout: 4_000 })).toBeInTheDocument();

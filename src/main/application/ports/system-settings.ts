@@ -1,5 +1,11 @@
 import type { LanAddressOption, LanRuntimeState } from "../../../shared/system-settings.js";
 import type { UiLocalePreference } from "../../../shared/i18n/index.js";
+import type { DesktopUpdateCommand, DesktopUpdateStatus } from "../../../shared/desktop-update.js";
+
+export interface DesktopUpdateControl {
+  status(): DesktopUpdateStatus | Promise<DesktopUpdateStatus>;
+  command(command: DesktopUpdateCommand): DesktopUpdateStatus | Promise<DesktopUpdateStatus>;
+}
 
 export interface LanSettings {
   address: string;

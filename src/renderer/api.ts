@@ -18,6 +18,7 @@ import type { AgentConversationMessagesDto, AgentConversationPageDto, CodexPermi
 import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
+import type { DesktopUpdateCommand, DesktopUpdateStatus } from "../shared/desktop-update";
 import { randomUuid } from "./random-uuid";
 import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } from "./i18n";
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
@@ -595,6 +596,8 @@ export class DigitalLifeApi {
   diagnosticsExportUrl() { return `${this.origin}/api/v1/diagnostics/export`; }
   settings() { return this.request<SystemSettingsDto>("/api/v1/settings"); }
   updateSettings(body: UpdateSystemSettingsInput) { return this.request<SystemSettingsDto>("/api/v1/settings", { body: body as Record<string, unknown>, method: "POST" }); }
+  desktopUpdate(signal?: AbortSignal) { return this.request<DesktopUpdateStatus>("/api/v1/desktop-update", { ...(signal === undefined ? {} : { signal }) }); }
+  updateDesktop(body: DesktopUpdateCommand) { return this.request<DesktopUpdateStatus>("/api/v1/desktop-update", { body, method: "POST" }); }
   remoteAccessStatus() { return this.request<RemoteAccessStatusDto>("/api/v1/remote"); }
   updateRemoteAccess(body: { enabled?: boolean; relayAuthentication?: string | null; relayUrl?: string }) {
     return this.request<RemoteAccessStatusDto>("/api/v1/remote", { body, method: "POST" });

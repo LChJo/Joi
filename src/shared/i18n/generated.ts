@@ -1563,6 +1563,29 @@ export interface MessageParameters {
   "remote.tellJoiWhatToDoNext": undefined;
   "remote.send": undefined;
   "remote.remoteAccessSupportsConversationsAndTaskViewingOnly": undefined;
+  "settings.version": undefined;
+  "settings.softwareUpdate": undefined;
+  "settings.updateCurrentVersion": { "p0": string };
+  "settings.updateLatestVersion": { "p0": string };
+  "settings.updateDesktopOnly": undefined;
+  "settings.updateUnavailable": undefined;
+  "settings.updateChecking": undefined;
+  "settings.updateUnpublished": undefined;
+  "settings.updateUpToDate": undefined;
+  "settings.updateNoInstaller": undefined;
+  "settings.updateDownloading": undefined;
+  "settings.updateVerified": undefined;
+  "settings.updateInstalling": undefined;
+  "settings.updateMacInstructions": undefined;
+  "settings.updateStatusFailed": undefined;
+  "settings.updateCheckFailed": undefined;
+  "settings.updateDownloadFailed": undefined;
+  "settings.updateInstallFailed": undefined;
+  "settings.updateCheck": undefined;
+  "settings.updateDownload": undefined;
+  "settings.updateRestartInstall": undefined;
+  "settings.updateOpenInstaller": undefined;
+  "settings.updateReleaseNotes": undefined;
   "settings.modelConnections": undefined;
   "settings.skills": undefined;
   "settings.deviceConnections": undefined;
@@ -3439,6 +3462,29 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "remote.tellJoiWhatToDoNext": "Tell joi what to do next…",
     "remote.send": "Send",
     "remote.remoteAccessSupportsConversationsAndTaskViewingOnly": "Remote access supports conversations and task viewing only",
+    "settings.version": "Version",
+    "settings.softwareUpdate": "Software update",
+    "settings.updateCurrentVersion": "Current version v{p0}",
+    "settings.updateLatestVersion": "Latest version v{p0}",
+    "settings.updateDesktopOnly": "Manage software updates in the Joi desktop app.",
+    "settings.updateUnavailable": "Updates are available in an installed desktop build.",
+    "settings.updateChecking": "Checking GitHub for updates…",
+    "settings.updateUnpublished": "No stable release has been published yet.",
+    "settings.updateUpToDate": "You're up to date.",
+    "settings.updateNoInstaller": "This release has no installer for your system and architecture.",
+    "settings.updateDownloading": "Downloading and verifying the installer…",
+    "settings.updateVerified": "The installer is verified and ready. Joi will close and reopen during installation.",
+    "settings.updateInstalling": "Starting the installer…",
+    "settings.updateMacInstructions": "Open the verified disk image, then quit Joi and replace it in Applications.",
+    "settings.updateStatusFailed": "Could not load the update status. Try again.",
+    "settings.updateCheckFailed": "Could not check GitHub for updates. Try again.",
+    "settings.updateDownloadFailed": "The installer could not be downloaded or verified. Try again.",
+    "settings.updateInstallFailed": "The installer could not start. Try again from Settings.",
+    "settings.updateCheck": "Check for updates",
+    "settings.updateDownload": "Download update",
+    "settings.updateRestartInstall": "Restart and install",
+    "settings.updateOpenInstaller": "Open disk image",
+    "settings.updateReleaseNotes": "Release notes",
     "settings.modelConnections": "Model connections",
     "settings.skills": "Skills",
     "settings.deviceConnections": "Device connections",
@@ -5313,6 +5359,29 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "remote.tellJoiWhatToDoNext": "告诉 joi 接下来要做什么…",
     "remote.send": "发送",
     "remote.remoteAccessSupportsConversationsAndTaskViewingOnly": "远程页面仅支持对话与任务查看",
+    "settings.version": "版本",
+    "settings.softwareUpdate": "软件更新",
+    "settings.updateCurrentVersion": "当前版本 v{p0}",
+    "settings.updateLatestVersion": "最新版本 v{p0}",
+    "settings.updateDesktopOnly": "请在 Joi 桌面应用中管理更新。",
+    "settings.updateUnavailable": "请使用已安装的 Joi 桌面版检查更新。",
+    "settings.updateChecking": "正在检查 GitHub 更新…",
+    "settings.updateUnpublished": "GitHub 暂无稳定版发布。",
+    "settings.updateUpToDate": "当前已是最新版本。",
+    "settings.updateNoInstaller": "此版本没有适用于当前系统与架构的安装包。",
+    "settings.updateDownloading": "正在下载和校验安装包…",
+    "settings.updateVerified": "安装包已通过校验。安装时 Joi 会退出并重新打开。",
+    "settings.updateInstalling": "正在启动安装…",
+    "settings.updateMacInstructions": "打开已校验的磁盘镜像，退出 Joi 后，将新版拖入「应用程序」覆盖旧版。",
+    "settings.updateStatusFailed": "未能获取更新状态，请重试。",
+    "settings.updateCheckFailed": "未能从 GitHub 检查更新，请重试。",
+    "settings.updateDownloadFailed": "未能下载或校验安装包，请重试。",
+    "settings.updateInstallFailed": "未能启动安装，请在设置中重试。",
+    "settings.updateCheck": "检查更新",
+    "settings.updateDownload": "下载更新",
+    "settings.updateRestartInstall": "重启并安装",
+    "settings.updateOpenInstaller": "打开磁盘镜像",
+    "settings.updateReleaseNotes": "发布说明",
     "settings.modelConnections": "模型网络",
     "settings.skills": "技能",
     "settings.deviceConnections": "设备连接",
@@ -8439,6 +8508,48 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "发送": "remote.send",
   "Remote access supports conversations and task viewing only": "remote.remoteAccessSupportsConversationsAndTaskViewingOnly",
   "远程页面仅支持对话与任务查看": "remote.remoteAccessSupportsConversationsAndTaskViewingOnly",
+  "Version": "settings.version",
+  "版本": "settings.version",
+  "Software update": "settings.softwareUpdate",
+  "软件更新": "settings.softwareUpdate",
+  "Manage software updates in the Joi desktop app.": "settings.updateDesktopOnly",
+  "请在 Joi 桌面应用中管理更新。": "settings.updateDesktopOnly",
+  "Updates are available in an installed desktop build.": "settings.updateUnavailable",
+  "请使用已安装的 Joi 桌面版检查更新。": "settings.updateUnavailable",
+  "Checking GitHub for updates…": "settings.updateChecking",
+  "正在检查 GitHub 更新…": "settings.updateChecking",
+  "No stable release has been published yet.": "settings.updateUnpublished",
+  "GitHub 暂无稳定版发布。": "settings.updateUnpublished",
+  "You're up to date.": "settings.updateUpToDate",
+  "当前已是最新版本。": "settings.updateUpToDate",
+  "This release has no installer for your system and architecture.": "settings.updateNoInstaller",
+  "此版本没有适用于当前系统与架构的安装包。": "settings.updateNoInstaller",
+  "Downloading and verifying the installer…": "settings.updateDownloading",
+  "正在下载和校验安装包…": "settings.updateDownloading",
+  "The installer is verified and ready. Joi will close and reopen during installation.": "settings.updateVerified",
+  "安装包已通过校验。安装时 Joi 会退出并重新打开。": "settings.updateVerified",
+  "Starting the installer…": "settings.updateInstalling",
+  "正在启动安装…": "settings.updateInstalling",
+  "Open the verified disk image, then quit Joi and replace it in Applications.": "settings.updateMacInstructions",
+  "打开已校验的磁盘镜像，退出 Joi 后，将新版拖入「应用程序」覆盖旧版。": "settings.updateMacInstructions",
+  "Could not load the update status. Try again.": "settings.updateStatusFailed",
+  "未能获取更新状态，请重试。": "settings.updateStatusFailed",
+  "Could not check GitHub for updates. Try again.": "settings.updateCheckFailed",
+  "未能从 GitHub 检查更新，请重试。": "settings.updateCheckFailed",
+  "The installer could not be downloaded or verified. Try again.": "settings.updateDownloadFailed",
+  "未能下载或校验安装包，请重试。": "settings.updateDownloadFailed",
+  "The installer could not start. Try again from Settings.": "settings.updateInstallFailed",
+  "未能启动安装，请在设置中重试。": "settings.updateInstallFailed",
+  "Check for updates": "settings.updateCheck",
+  "检查更新": "settings.updateCheck",
+  "Download update": "settings.updateDownload",
+  "下载更新": "settings.updateDownload",
+  "Restart and install": "settings.updateRestartInstall",
+  "重启并安装": "settings.updateRestartInstall",
+  "Open disk image": "settings.updateOpenInstaller",
+  "打开磁盘镜像": "settings.updateOpenInstaller",
+  "Release notes": "settings.updateReleaseNotes",
+  "发布说明": "settings.updateReleaseNotes",
   "模型网络": "settings.modelConnections",
   "技能": "settings.skills",
   "Device connections": "settings.deviceConnections",

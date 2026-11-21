@@ -33,7 +33,7 @@ import type { PartnerInstanceManager } from "../../application/partners/partner-
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
-import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
+import type { DesktopUpdateControl, SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { RemoteAccessControl } from "../../application/ports/remote-access.js";
 import type { ArtifactReadPort, JoiAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
@@ -43,6 +43,7 @@ import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddre
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
+  desktopUpdate?: DesktopUpdateControl;
   userQuestions?: Pick<UserQuestionService,"list" | "answer">;
   conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "rename" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild" | "subscribe" | "fork" | "answerQuestion" | "resumeQuestion">>;
   conversationWorkspace?: ConversationWorkspacePort;

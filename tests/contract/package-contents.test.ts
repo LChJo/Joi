@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { validatePackageContents } from "../../scripts/package-contents.mjs";
+import { JOI_RELEASES_URL } from "../../src/shared/desktop-update";
 
 describe("production package contents", () => {
   it("rejects secrets, development files, real user data, and source paths", () => {
@@ -31,6 +32,11 @@ describe("production package contents", () => {
     );
 
     expect(result.violations).toEqual([]);
+  });
+
+  it("permits the GitHub release URL while detecting Windows source paths", () => {
+    const result = validatePackageContents([], [JOI_RELEASES_URL, "I:/AI/Joi/src", "I:\\AI\\Joi\\src"]);
+    expect(result.violations).toEqual(["source path found in packaged text", "source path found in packaged text"]);
   });
 
   it("excludes transitive Codex CLI binaries while retaining the SDK bridge", () => {

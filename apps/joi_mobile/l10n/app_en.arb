@@ -8386,6 +8386,129 @@
     "description": "remote: Remote access supports conversations and task viewing only",
     "placeholders": {}
   },
+  "settingsVersion": "Version",
+  "@settingsVersion": {
+    "description": "Settings: version",
+    "placeholders": {}
+  },
+  "settingsSoftwareUpdate": "Software update",
+  "@settingsSoftwareUpdate": {
+    "description": "Settings: software update",
+    "placeholders": {}
+  },
+  "settingsUpdateCurrentVersion": "Current version v{p0}",
+  "@settingsUpdateCurrentVersion": {
+    "description": "Settings: update current version",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUpdateLatestVersion": "Latest version v{p0}",
+  "@settingsUpdateLatestVersion": {
+    "description": "Settings: update latest version",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsUpdateDesktopOnly": "Manage software updates in the Joi desktop app.",
+  "@settingsUpdateDesktopOnly": {
+    "description": "Settings: update desktop only",
+    "placeholders": {}
+  },
+  "settingsUpdateUnavailable": "Updates are available in an installed desktop build.",
+  "@settingsUpdateUnavailable": {
+    "description": "Settings: update unavailable",
+    "placeholders": {}
+  },
+  "settingsUpdateChecking": "Checking GitHub for updates…",
+  "@settingsUpdateChecking": {
+    "description": "Settings: update checking",
+    "placeholders": {}
+  },
+  "settingsUpdateUnpublished": "No stable release has been published yet.",
+  "@settingsUpdateUnpublished": {
+    "description": "Settings: update unpublished",
+    "placeholders": {}
+  },
+  "settingsUpdateUpToDate": "You're up to date.",
+  "@settingsUpdateUpToDate": {
+    "description": "Settings: update up to date",
+    "placeholders": {}
+  },
+  "settingsUpdateNoInstaller": "This release has no installer for your system and architecture.",
+  "@settingsUpdateNoInstaller": {
+    "description": "Settings: update no installer",
+    "placeholders": {}
+  },
+  "settingsUpdateDownloading": "Downloading and verifying the installer…",
+  "@settingsUpdateDownloading": {
+    "description": "Settings: update downloading",
+    "placeholders": {}
+  },
+  "settingsUpdateVerified": "The installer is verified and ready. Joi will close and reopen during installation.",
+  "@settingsUpdateVerified": {
+    "description": "Settings: update verified",
+    "placeholders": {}
+  },
+  "settingsUpdateInstalling": "Starting the installer…",
+  "@settingsUpdateInstalling": {
+    "description": "Settings: update installing",
+    "placeholders": {}
+  },
+  "settingsUpdateMacInstructions": "Open the verified disk image, then quit Joi and replace it in Applications.",
+  "@settingsUpdateMacInstructions": {
+    "description": "Settings: update mac instructions",
+    "placeholders": {}
+  },
+  "settingsUpdateStatusFailed": "Could not load the update status. Try again.",
+  "@settingsUpdateStatusFailed": {
+    "description": "Settings: update status failed",
+    "placeholders": {}
+  },
+  "settingsUpdateCheckFailed": "Could not check GitHub for updates. Try again.",
+  "@settingsUpdateCheckFailed": {
+    "description": "Settings: update check failed",
+    "placeholders": {}
+  },
+  "settingsUpdateDownloadFailed": "The installer could not be downloaded or verified. Try again.",
+  "@settingsUpdateDownloadFailed": {
+    "description": "Settings: update download failed",
+    "placeholders": {}
+  },
+  "settingsUpdateInstallFailed": "The installer could not start. Try again from Settings.",
+  "@settingsUpdateInstallFailed": {
+    "description": "Settings: update install failed",
+    "placeholders": {}
+  },
+  "settingsUpdateCheck": "Check for updates",
+  "@settingsUpdateCheck": {
+    "description": "Settings: update check",
+    "placeholders": {}
+  },
+  "settingsUpdateDownload": "Download update",
+  "@settingsUpdateDownload": {
+    "description": "Settings: update download",
+    "placeholders": {}
+  },
+  "settingsUpdateRestartInstall": "Restart and install",
+  "@settingsUpdateRestartInstall": {
+    "description": "Settings: update restart install",
+    "placeholders": {}
+  },
+  "settingsUpdateOpenInstaller": "Open disk image",
+  "@settingsUpdateOpenInstaller": {
+    "description": "Settings: update open installer",
+    "placeholders": {}
+  },
+  "settingsUpdateReleaseNotes": "Release notes",
+  "@settingsUpdateReleaseNotes": {
+    "description": "Settings: update release notes",
+    "placeholders": {}
+  },
   "settingsModelConnections": "Model connections",
   "@settingsModelConnections": {
     "description": "settings: Model connections",

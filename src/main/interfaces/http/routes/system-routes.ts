@@ -8,7 +8,15 @@ import {
 } from "../http-core.js";
 import { interactionService, onboardingService } from "../api-dependencies.js";
 import { isLocalePreference } from "../../../../shared/i18n/index.js";
+import { stableDesktopVersion, type DesktopUpdateCommand } from "../../../../shared/desktop-update.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
+
+async function requireDesktopUpdater(ctx: Parameters<RouteDefinition["handle"]>[0]) {
+  const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
+  if (session.kind !== "desktop") throw new HttpError("desktop_required", "Updates are managed in the desktop app.", 403);
+  if (ctx.dependencies.desktopUpdate === undefined) throw new HttpError("settings_unavailable", "Desktop updates are unavailable.", 503);
+  return ctx.dependencies.desktopUpdate;
+}
 
 export const AGENT_ROUTES: RouteDefinition[] = [
   {
@@ -181,6 +189,29 @@ export const SYSTEM_ROUTES: RouteDefinition[] = [
           ...(typeof lan.riskAccepted === "boolean" ? { riskAccepted: lan.riskAccepted } : {}),
         } }),
       }));
+    },
+  },
+  {
+    auth: "read",
+    id: "GET /api/v1/desktop-update",
+    match: exact("GET", "/api/v1/desktop-update"),
+    handle: async (ctx) => {
+      const update = await requireDesktopUpdater(ctx);
+      sendJson(ctx.response, 200, await update.status());
+    },
+  },
+  {
+    auth: "write",
+    id: "POST /api/v1/desktop-update",
+    match: exact("POST", "/api/v1/desktop-update"),
+    handle: async (ctx) => {
+      const update = await requireDesktopUpdater(ctx);
+      const { action, version } = await readJson(ctx.request);
+      let command: DesktopUpdateCommand;
+      if (action === "check") command = { action };
+      else if ((action === "download" || action === "install") && typeof version === "string" && stableDesktopVersion.test(version)) command = { action, version };
+      else throw new HttpError("request_field_invalid", "A valid update action and target version are required.", 400);
+      sendJson(ctx.response, 202, await update.command(command));
     },
   },
   {

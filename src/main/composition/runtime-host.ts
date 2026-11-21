@@ -280,6 +280,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       partners: partnerStack.partners,
       scenarioPacks: partnerStack.scenarioPacks,
       requestRestart: () => desktop.requestRestart(),
+      ...(desktop.desktopUpdate === undefined ? {} : { desktopUpdate: desktop.desktopUpdate }),
       remoteAccess,
       settings,
       work: workbenchStack.workRepository,

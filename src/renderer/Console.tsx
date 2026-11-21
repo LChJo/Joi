@@ -34,9 +34,10 @@ import { JoiBrand } from "./JoiBrand";
 import { ConversationPage } from "./ConversationPage";
 import { ArchivePage } from "./ArchivePage";
 import { LanguageSelector } from "./LanguageSelector";
+import { DesktopUpdateSettings } from "./DesktopUpdateSettings";
 
 type Section = "agents" | "archived" | "automations" | "joi" | "conversations" | "lives" | "settings" | "statistics";
-type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security" | "skills";
+type SettingsTab = "connections" | "diagnostics" | "models" | "security" | "skills" | "version";
 
 const SESSION_DISPLAY_LIMIT = 10;
 const REMOTE_STATUS_REFRESH_MS = 1_000;
@@ -47,7 +48,7 @@ const SETTINGS_TABS = [
   { key: "skills", get label() { return t("settings.skills"); } },
   { key: "connections", get label() { return t("settings.deviceConnections"); } },
   { key: "security", get label() { return t("settings.security"); } },
-  { key: "data", get label() { return t("settings.data"); } },
+  { key: "version", get label() { return t("settings.version"); } },
   { key: "diagnostics", get label() { return t("settings.diagnostics"); } },
 ] as const satisfies readonly { key: SettingsTab; label: string }[];
 
@@ -339,7 +340,10 @@ export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: Di
         </>}</div></section>
       </> : null}
       {activeTab === "security" ? <section><ShieldWarningIcon aria-hidden /><div><h2>{t("settings.passwordAndDevices")}</h2><p>{t("settings.joiShowsOnlyDeviceTypesAndRecentActivityChanging")}</p><div className="session-list">{sessions.slice(0, SESSION_DISPLAY_LIMIT).map((session, index) => <span key={session.deviceId}>{session.current ? t("settings.currentDevice") : session.kind === "desktop" ? t("settings.anotherDesktopWindow") : t("settings.lanDeviceValue", { p0: String(index + 1) })} · {new Date(session.lastActivityAt).toLocaleString(currentLocale())}</span>)}</div><form className="inline-settings" onSubmit={(event) => void changePassword(event)}><label>{t("settings.currentPassword")}<input autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="currentPassword" required type="password" /></label><label>{t("settings.newPassword")}<input autoComplete="new-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="newPassword" required type="password" /></label><div className="row-actions"><button className="button quiet" type="submit">{t("settings.changePassword")}</button><button className="button ghost" onClick={() => void api.logoutAllLan().then(loadOperations).then(() => setNotice(noticeMessage("settings.allLanDevicesHaveBeenSignedOut")))} type="button">{t("settings.signOutAllLanDevices")}</button></div></form><span className={`status-dot ${currentDiagnostics?.storage?.state === "low" ? "warn" : "ok"}`}>{currentDiagnostics?.storage?.state === "low" ? t("settings.lowDiskSpace") : t("settings.credentialsStoredSeparately")}</span></div></section> : null}
-      {activeTab === "data" ? <section className="backup-settings"><ClockCounterClockwiseIcon aria-hidden /><div><h2>{t("settings.backupAndRestore")}</h2><p>{t("settings.backupsExcludePartnerCredentialsAfterRestoringOtherDevicesMust")}</p><span className="status-dot muted">{t("settings.dataFormatV")}{currentDiagnostics?.schemaVersion ?? "-"} · {backups.length}  {t("settings.availableBackups")}</span>{backups.slice(0, 3).map((backup) => <div className="backup-row" key={backup.backupId}><span>{new Date(backup.createdAt).toLocaleString(currentLocale())} · {(backup.databaseBytes / 1024 / 1024).toFixed(1)} MB</span><button className="button ghost" onClick={() => void restore(backup.backupId)} type="button">{t("common.resume")}</button></div>)}</div><button className="button quiet" onClick={() => void createBackup()} type="button">{t("settings.createBackup")}</button></section> : null}
+      {activeTab === "version" ? <>
+        <DesktopUpdateSettings api={api} />
+        <section className="backup-settings"><ClockCounterClockwiseIcon aria-hidden /><div><h2>{t("settings.backupAndRestore")}</h2><p>{t("settings.backupsExcludePartnerCredentialsAfterRestoringOtherDevicesMust")}</p><span className="status-dot muted">{t("settings.dataFormatV")}{currentDiagnostics?.schemaVersion ?? "-"} · {backups.length}  {t("settings.availableBackups")}</span>{backups.slice(0, 3).map((backup) => <div className="backup-row" key={backup.backupId}><span>{new Date(backup.createdAt).toLocaleString(currentLocale())} · {(backup.databaseBytes / 1024 / 1024).toFixed(1)} MB</span><button className="button ghost" onClick={() => void restore(backup.backupId)} type="button">{t("common.resume")}</button></div>)}</div><button className="button quiet" onClick={() => void createBackup()} type="button">{t("settings.createBackup")}</button></section>
+      </> : null}
       {activeTab === "diagnostics" ? <SystemPanel api={api} diagnostics={currentDiagnostics} interactions={interactions} onIntegrityCheck={checkDatabaseIntegrity} /> : null}
     </div>
   </section>;

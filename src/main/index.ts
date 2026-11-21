@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,9 +13,11 @@ import { ElectronResultExporter } from "./infrastructure/artifacts/electron-resu
 import { transcodeBitmapToPng } from "./infrastructure/artifacts/bitmap-transcoder.js";
 import { DomainError } from "./domain/errors.js";
 import { trayMenuTemplate } from "./infrastructure/operations/tray-menu.js";
+import { DesktopUpdater } from "./infrastructure/operations/desktop-updater.js";
 import { PRODUCT_NAME, type DesktopBootstrapNonce, type DesktopRuntimeInfo } from "../shared/product.js";
 import { resolveLocale, translate, type UiLocalePreference } from "../shared/i18n/index.js";
 import { CODEX_AUTHORIZATION_WINDOW, isCodexAuthorizationUrl } from "../shared/codex-authorization.js";
+import { isJoiReleaseUrl, JOI_RELEASE_WINDOW } from "../shared/desktop-update.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isTest = process.env.JOI_TEST === "1";
@@ -49,9 +53,12 @@ let uiLocale: UiLocalePreference = "system";
 const nativeText = (key: "common.trayOpen" | "common.trayStop" | "common.trayLogin" | "common.trayQuit" | "common.directoryPicker") => translate(resolveLocale(uiLocale, app.getPreferredSystemLanguages()), key);
 let isQuitting = false;
 let restartRequested = false;
+let pendingWindowsUpdate: string | undefined;
 let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
-async function startRuntime(): Promise<void> {
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+async function startRuntime(desktopUpdate: DesktopUpdater): Promise<void> {
   const vault = new ElectronCredentialVault();
   const userDataDirectory = app.getPath("userData");
   const loopbackPort = developmentApiPort === undefined ? undefined : Number(developmentApiPort);
@@ -72,6 +79,7 @@ async function startRuntime(): Promise<void> {
     launchAtLogin: app.getLoginItemSettings().openAtLogin,
     credentialStorageAvailable: vault.isAvailable(),
   }, {
+    desktopUpdate,
     vault,
     getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
     setUiLocale: (preference) => { uiLocale = preference; rebuildTrayMenu(); },
@@ -114,6 +122,10 @@ function createMainWindow() {
   });
   window.setMenu(null);
   window.webContents.setWindowOpenHandler(({ frameName, url }) => {
+    if (frameName === JOI_RELEASE_WINDOW) {
+      if (isJoiReleaseUrl(url)) void shell.openExternal(url).catch(() => undefined);
+      return { action: "deny" };
+    }
     if (frameName !== CODEX_AUTHORIZATION_WINDOW) return { action: "allow" };
     if (isCodexAuthorizationUrl(url)) void shell.openExternal(url).catch(() => undefined);
     return { action: "deny" };
@@ -156,6 +168,39 @@ function requestApplicationRestart() {
 function requestApplicationQuit() {
   isQuitting = true;
   app.quit();
+}
+
+async function createDesktopUpdater(): Promise<DesktopUpdater> {
+  let mode: "disabled" | "open" | "restart" = "disabled";
+  if (app.isPackaged && !isTest) {
+    if (process.platform === "darwin") mode = "open";
+    if (process.platform === "win32" && existsSync(path.join(path.dirname(process.execPath), "Uninstall joi.exe"))) mode = "restart";
+  }
+  const directory = path.join(app.getPath("userData"), "desktop-updates");
+  if (mode !== "disabled") await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+  return new DesktopUpdater({
+    arch: process.arch,
+    currentVersion: app.getVersion(),
+    directory,
+    mode,
+    install: async (installer) => {
+      if (isQuitting) throw new Error("application_quitting");
+      if (mode === "open") {
+        if (await shell.openPath(installer) !== "") throw new Error("installer_open_failed");
+      } else {
+        pendingWindowsUpdate = installer;
+        requestApplicationQuit();
+      }
+    },
+  });
+}
+
+async function launchWindowsUpdate(installer: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(installer, ["/S", "--updated", "--force-run"], { detached: true, stdio: "ignore" });
+    child.once("error", reject);
+    child.once("spawn", () => { child.unref(); resolve(); });
+  });
 }
 
 function rebuildTrayMenu() {
@@ -216,9 +261,17 @@ if (hasSingleInstanceLock) {
 
   app.whenReady()
     .then(async () => {
-      await startRuntime();
+      const desktopUpdate = await createDesktopUpdater();
+      await startRuntime(desktopUpdate);
       mainWindow = createMainWindow();
       createRuntimeTray();
+      if (desktopUpdate.status().mode !== "disabled") {
+        const check = () => { desktopUpdate.command({ action: "check" }); };
+        check();
+        const checks = setInterval(check, UPDATE_CHECK_INTERVAL_MS);
+        checks.unref();
+        app.once("before-quit", () => clearInterval(checks));
+      }
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           mainWindow = createMainWindow();
@@ -238,10 +291,20 @@ if (hasSingleInstanceLock) {
     isQuitting = true;
     if (shutdownComplete) return;
     event.preventDefault();
-    shutdownPromise ??= shutdownRuntime();
-    void shutdownPromise.then(() => {
+    if (shutdownPromise !== null) return;
+    shutdownPromise = shutdownRuntime();
+    void shutdownPromise.then(async () => {
+      if (pendingWindowsUpdate !== undefined) {
+        try { await launchWindowsUpdate(pendingWindowsUpdate); }
+        catch {
+          const locale = resolveLocale(uiLocale, app.getPreferredSystemLanguages());
+          dialog.showErrorBox(PRODUCT_NAME, translate(locale, "settings.updateInstallFailed"));
+          app.relaunch();
+        }
+      } else if (restartRequested) {
+        app.relaunch();
+      }
       shutdownComplete = true;
-      if (restartRequested) app.relaunch();
       app.quit();
     }).catch(() => app.exit(1));
   });

@@ -1,4 +1,125 @@
 {
+  "version": {
+    "message": "Version",
+    "description": "Settings: version",
+    "sourceText": "版本"
+  },
+  "softwareUpdate": {
+    "message": "Software update",
+    "description": "Settings: software update",
+    "sourceText": "软件更新"
+  },
+  "updateCurrentVersion": {
+    "message": "Current version v{p0}",
+    "description": "Settings: update current version",
+    "sourceText": "当前版本 v{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "updateLatestVersion": {
+    "message": "Latest version v{p0}",
+    "description": "Settings: update latest version",
+    "sourceText": "最新版本 v{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "updateDesktopOnly": {
+    "message": "Manage software updates in the Joi desktop app.",
+    "description": "Settings: update desktop only",
+    "sourceText": "请在 Joi 桌面应用中管理更新。"
+  },
+  "updateUnavailable": {
+    "message": "Updates are available in an installed desktop build.",
+    "description": "Settings: update unavailable",
+    "sourceText": "请使用已安装的 Joi 桌面版检查更新。"
+  },
+  "updateChecking": {
+    "message": "Checking GitHub for updates…",
+    "description": "Settings: update checking",
+    "sourceText": "正在检查 GitHub 更新…"
+  },
+  "updateUnpublished": {
+    "message": "No stable release has been published yet.",
+    "description": "Settings: update unpublished",
+    "sourceText": "GitHub 暂无稳定版发布。"
+  },
+  "updateUpToDate": {
+    "message": "You're up to date.",
+    "description": "Settings: update up to date",
+    "sourceText": "当前已是最新版本。"
+  },
+  "updateNoInstaller": {
+    "message": "This release has no installer for your system and architecture.",
+    "description": "Settings: update no installer",
+    "sourceText": "此版本没有适用于当前系统与架构的安装包。"
+  },
+  "updateDownloading": {
+    "message": "Downloading and verifying the installer…",
+    "description": "Settings: update downloading",
+    "sourceText": "正在下载和校验安装包…"
+  },
+  "updateVerified": {
+    "message": "The installer is verified and ready. Joi will close and reopen during installation.",
+    "description": "Settings: update verified",
+    "sourceText": "安装包已通过校验。安装时 Joi 会退出并重新打开。"
+  },
+  "updateInstalling": {
+    "message": "Starting the installer…",
+    "description": "Settings: update installing",
+    "sourceText": "正在启动安装…"
+  },
+  "updateMacInstructions": {
+    "message": "Open the verified disk image, then quit Joi and replace it in Applications.",
+    "description": "Settings: update mac instructions",
+    "sourceText": "打开已校验的磁盘镜像，退出 Joi 后，将新版拖入「应用程序」覆盖旧版。"
+  },
+  "updateStatusFailed": {
+    "message": "Could not load the update status. Try again.",
+    "description": "Settings: update status failed",
+    "sourceText": "未能获取更新状态，请重试。"
+  },
+  "updateCheckFailed": {
+    "message": "Could not check GitHub for updates. Try again.",
+    "description": "Settings: update check failed",
+    "sourceText": "未能从 GitHub 检查更新，请重试。"
+  },
+  "updateDownloadFailed": {
+    "message": "The installer could not be downloaded or verified. Try again.",
+    "description": "Settings: update download failed",
+    "sourceText": "未能下载或校验安装包，请重试。"
+  },
+  "updateInstallFailed": {
+    "message": "The installer could not start. Try again from Settings.",
+    "description": "Settings: update install failed",
+    "sourceText": "未能启动安装，请在设置中重试。"
+  },
+  "updateCheck": {
+    "message": "Check for updates",
+    "description": "Settings: update check",
+    "sourceText": "检查更新"
+  },
+  "updateDownload": {
+    "message": "Download update",
+    "description": "Settings: update download",
+    "sourceText": "下载更新"
+  },
+  "updateRestartInstall": {
+    "message": "Restart and install",
+    "description": "Settings: update restart install",
+    "sourceText": "重启并安装"
+  },
+  "updateOpenInstaller": {
+    "message": "Open disk image",
+    "description": "Settings: update open installer",
+    "sourceText": "打开磁盘镜像"
+  },
+  "updateReleaseNotes": {
+    "message": "Release notes",
+    "description": "Settings: update release notes",
+    "sourceText": "发布说明"
+  },
   "modelConnections": {
     "message": "Model connections",
     "description": "settings: Model connections",

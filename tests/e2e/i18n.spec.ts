@@ -20,6 +20,13 @@ test("AC-I18N desktop and browser switch independently without resetting drafts"
       await page.locator(".language-selector select").selectOption(locale);
       await expect.poll(() => page.evaluate(async () => (await window.digitalLifeDesktop?.getRuntimeInfo())?.uiLocale)).toBe(locale);
       await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      const versionTab = locale === "en" ? "Version" : "版本";
+      await page.getByRole("tab", { name: versionTab }).click();
+      const versionPanel = page.getByRole("tabpanel", { name: versionTab });
+      await expect(versionPanel.getByRole("heading", { name: locale === "en" ? "Software update" : "软件更新" })).toBeVisible();
+      await expect(versionPanel.getByRole("heading", { name: locale === "en" ? "Backup and restore" : "备份与恢复" })).toBeVisible();
+      const version = await page.evaluate(async () => (await window.digitalLifeDesktop?.getRuntimeInfo())?.version);
+      await expect(versionPanel.getByText(`${locale === "en" ? "Current version" : "当前版本"} v${version ?? ""}`, { exact: true })).toBeVisible();
       for (const colorScheme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme });
         for (const width of [1280, 960, 768]) {

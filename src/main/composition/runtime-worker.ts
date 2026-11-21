@@ -14,6 +14,10 @@ const peer = new WorkerRpc(input.port, {
     starting = true;
     const config = configuration as DesktopRuntimeConfiguration;
     host = await createRuntimeHost(config, {
+      desktopUpdate: {
+        status: () => peer.call("desktopUpdateStatus"),
+        command: (command) => peer.call("desktopUpdateCommand", command),
+      },
       vault: {
         isAvailable: () => config.credentialStorageAvailable,
         encrypt: (token) => peer.call("encrypt", token),

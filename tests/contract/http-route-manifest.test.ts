@@ -148,6 +148,8 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/diagnostics/export",
   "GET /api/v1/settings",
   "POST /api/v1/settings",
+  "GET /api/v1/desktop-update",
+  "POST /api/v1/desktop-update",
   "GET /api/v1/backups",
   "POST /api/v1/backups",
   "POST /api/v1/backups/:backupId/restore",
