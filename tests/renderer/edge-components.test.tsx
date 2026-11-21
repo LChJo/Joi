@@ -31,7 +31,7 @@ describe("renderer edge components", () => {
     expect(screen.getByText("待确认")).toBeInTheDocument();
     expect(screen.getByText("需要关注")).toBeInTheDocument();
     view.rerender(<SettingsPanel api={api} diagnostics={null} />);
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     expect(screen.getByText(/数据格式 v-/)).toBeInTheDocument();
   });
 });

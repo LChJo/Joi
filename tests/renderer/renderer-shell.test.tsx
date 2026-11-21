@@ -246,7 +246,7 @@ describe("joi renderer console", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
 
-      fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+      fireEvent.click(screen.getByRole("tab", { name: "版本" }));
       await vi.advanceTimersByTimeAsync(20_000);
       expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2);
       view.unmount();
@@ -306,7 +306,7 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.changePassword).toHaveBeenCalledWith("old password secure", "new password secure"));
     fireEvent.click(screen.getByRole("button", { name: "退出所有局域网设备" }));
     await waitFor(() => expect(fixture.logoutAllLan).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     await waitFor(() => expect(fixture.createBackup).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
@@ -324,7 +324,7 @@ describe("joi renderer console", () => {
     fixture.restoreBackup.mockRejectedValue(new Error("restore failed"));
     vi.stubGlobal("confirm", vi.fn(() => true));
     render(<SettingsPanel api={fixture.api} diagnostics={diagnostics} />);
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     expect(await screen.findByText("备份校验失败")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
@@ -336,7 +336,7 @@ describe("joi renderer console", () => {
     fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "new password secure" } });
     fireEvent.submit(formFor(screen.getByLabelText("当前密码")));
     expect(await screen.findByText("当前密码错误")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     expect(await screen.findByText("恢复没开始。")).toBeInTheDocument();
     vi.unstubAllGlobals();

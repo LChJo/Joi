@@ -5,6 +5,7 @@ import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { ConsoleApp, RemoteAccessSettings, SettingsPanel, SystemPanel } from "../../src/renderer/Console.js";
 import type { DiagnosticsDto } from "../../src/renderer/types";
 import { JoiSkillSettings } from "../../src/renderer/JoiSkillSettings";
+import type { DesktopUpdateStatus } from "../../src/shared/desktop-update.js";
 
 const diagnostics: DiagnosticsDto = {
   agents: { connections: 0 },
@@ -171,6 +172,68 @@ describe("settings panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "下载更新" }));
     fireEvent.click(await screen.findByRole("button", { name: "重启并安装" }));
     await waitFor(() => expect(update.mock.calls).toEqual([[{ action: "download", version: "0.1.7" }], [{ action: "install", version: "0.1.7" }]]));
+  });
+
+  it("recovers a failed update status read and shows an official release for manual download", async () => {
+    const api = new DigitalLifeApi("", true);
+    mockOperations(api);
+    const releaseUrl = "https://github.com/LChJo/Joi/releases/tag/v0.1.7";
+    vi.spyOn(api, "desktopUpdate").mockRejectedValueOnce(new Error("offline")).mockResolvedValue({
+      currentVersion: "0.1.6", latestVersion: "0.1.7", mode: "manual", phase: "available", releaseUrl,
+    });
+    const update = vi.spyOn(api, "updateDesktop").mockRejectedValue(new Error("offline"));
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("未能获取更新状态");
+    fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
+    expect(await screen.findByRole("link", { name: "发布说明" })).toHaveAttribute("href", releaseUrl);
+    expect(screen.getByText("此版本没有适用于当前系统与架构的安装包。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载更新" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("未能获取更新状态");
+    expect(update).toHaveBeenCalledWith({ action: "check" });
+  });
+
+  it("polls a Mac download and offers the verified disk image when ready", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = new DigitalLifeApi("", true);
+      mockOperations(api);
+      const release = { currentVersion: "0.1.6", latestVersion: "0.1.7", mode: "open" } as const;
+      vi.spyOn(api, "desktopUpdate")
+        .mockResolvedValueOnce({ ...release, phase: "downloading", progress: { bytes: 32 } })
+        .mockResolvedValueOnce({ ...release, phase: "downloading", progress: { bytes: 48, totalBytes: 128 } })
+        .mockResolvedValue({ ...release, phase: "ready" });
+      const view = render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+      fireEvent.click(screen.getByRole("tab", { name: "版本" }));
+
+      await act(() => vi.advanceTimersByTimeAsync(0));
+      expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
+      await act(() => vi.advanceTimersByTimeAsync(750));
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "48");
+      await act(() => vi.advanceTimersByTimeAsync(750));
+      expect(screen.getByRole("button", { name: "打开磁盘镜像" })).toBeEnabled();
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      view.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it.each<{ status: DesktopUpdateStatus; message: string; canCheck: boolean }>([
+    { status: { currentVersion: "0.1.6", mode: "disabled", phase: "idle" }, message: "请使用已安装的 Joi 桌面版检查更新。", canCheck: false },
+    { status: { currentVersion: "0.1.6", mode: "restart", phase: "current" }, message: "当前已是最新版本。", canCheck: true },
+    { status: { currentVersion: "0.1.6", mode: "restart", phase: "unpublished" }, message: "GitHub 暂无稳定版发布。", canCheck: true },
+  ])("shows update state $status.phase and its supported actions", async ({ status, message, canCheck }) => {
+    const api = new DigitalLifeApi("", true);
+    mockOperations(api);
+    vi.spyOn(api, "desktopUpdate").mockResolvedValue(status);
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(screen.getByRole("tab", { name: "版本" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载更新" })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole("button", { name: "检查更新" })).toHaveLength(canCheck ? 1 : 0);
   });
 
   it("configures native relay access, generates a QR code and revokes paired phones", async () => {

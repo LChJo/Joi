@@ -4598,6 +4598,20 @@
         "startLine": 1,
         "endLine": 77
       }
+    },
+    {
+      "id": "6834d606-c582-489b-ad78-241902cef814",
+      "kind": "source-code",
+      "claim": "AC-UPD-01 verifies Version settings keep backup and restore beside updates, recover from status errors, link the official manual release, and display Mac download progress and installer readiness.",
+      "location": {
+        "path": "tests/renderer/settings-panel.test.tsx"
+      },
+      "hash": "a5fd5369ee2dacfc83898b2467c73cb8442beb0214d31922fb1bea0de935d442",
+      "observedAt": "2026-11-21T11:41:39.134Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 539
+      }
     }
   ]
 }
