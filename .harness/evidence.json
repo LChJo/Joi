@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "052322aed6547b7b32f3f8ae4ba44fb9e26be4b47c7862f66332f9ed933c284b",
-      "observedAt": "2026-11-20T12:54:05.746Z",
+      "hash": "3d13bf329bcc6e69e1469a8ba3736a67ae41336cc6e4294a5f1efccbcd5b3bea",
+      "observedAt": "2026-11-21T13:19:33.581Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "7372412b22722288b98f812ac0cc8126d052b0e526f104faa53a58402ff4b410",
-      "observedAt": "2026-11-20T12:54:05.756Z",
+      "hash": "614a03702144c448936793982bb88eb0b9f3306af0615f81ad0568d2661d28ff",
+      "observedAt": "2026-11-21T13:19:33.583Z",
       "range": {
         "startLine": 1,
         "endLine": 14193
