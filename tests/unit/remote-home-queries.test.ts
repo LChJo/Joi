@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteHomeQueryService } from "../../src/main/application/remote/remote-home-queries.js";
 import { RemoteCommandService } from "../../src/main/application/remote/remote-command-service.js";
 import { isRemoteCommand } from "../../src/main/infrastructure/remote/remote-access-host.js";
+import type { RemoteReadPage } from "../../src/shared/remote.js";
 
 function fixture() {
   const dependencies = {
@@ -18,6 +19,38 @@ function fixture() {
 }
 
 describe("remote home queries", () => {
+  it("reads the versioned goal map without exposing the enclosing detail projection", async () => {
+    const { dependencies } = fixture();
+    const harness = { detailRevision: 9, pathOrderRevision: 4, currentLayer: 33, paths: [{ pathId: "path", title: "token=secret" }] };
+    const loadGoalDetail = vi.fn().mockResolvedValue({ goalId: "g", fullTitle: "outside map", harness, nextOffset: 50 });
+    const queries = new RemoteHomeQueryService({ ...dependencies, homeFeed: { ...dependencies.homeFeed, loadGoalDetail } });
+    const service = new RemoteCommandService({ queries, inbox: { accept: vi.fn() }, homeFeed: dependencies.homeFeed });
+    const command = { kind: "goal.map" as const, requestId: "map", goalId: "g" };
+    expect(isRemoteCommand(command)).toBe(true);
+    expect(isRemoteCommand({ ...command, offset: 50 })).toBe(false);
+    const response = await service.handle(command, "phone");
+    const page = JSON.parse((response.result as RemoteReadPage).chunk) as { nextCursor: string };
+    expect(page).toMatchObject({ harness: { currentLayer: 33 } });
+    expect(typeof page.nextCursor).toBe("string");
+    expect(JSON.stringify(page)).not.toMatch(/outside map|token=secret/);
+    expect(loadGoalDetail).toHaveBeenLastCalledWith("g", { view: "map", offset: 0 });
+    expect((await service.handle({ ...command, cursor: page.nextCursor }, "phone")).error).toBeUndefined();
+    expect(loadGoalDetail).toHaveBeenLastCalledWith("g", { view: "map", offset: 50 });
+    loadGoalDetail.mockResolvedValue({ harness: { ...harness, detailRevision: 10 } });
+    expect((await service.handle({ ...command, cursor: page.nextCursor }, "phone")).error?.code).toBe("remote_cursor_expired");
+    expect((await service.handle({ ...command, goalId: "other", cursor: page.nextCursor }, "phone")).error?.code).toBe("remote_cursor_expired");
+    loadGoalDetail.mockResolvedValue(null);
+    expect((await service.handle(command, "phone")).error?.code).toBe("remote_goal_unavailable");
+  });
+
+  it.each([["message.archive", "archive"], ["message.unarchive", "unarchive"]] as const)("admits %s from a paired client", async (kind, operation) => {
+    const change = vi.fn().mockResolvedValue({ inputId: "g" });
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), [operation]: change } });
+    const command = { kind, requestId: "change-archive", inputId: "g" };
+    expect(isRemoteCommand(command)).toBe(true);
+    expect((await service.handle(command, "phone")).error).toBeUndefined();
+    expect(change).toHaveBeenCalledExactlyOnceWith({ inputId: "g" });
+  });
   it("returns only selectable catalog metadata and resolves goal scope before reading records", async () => {
     const { queries, dependencies } = fixture();
     expect(await queries.catalog()).toEqual({ workbenches: [{ workbenchId: "b", name: "Research" }], partners: [{ partnerId: "p", displayName: "Researcher" }] });

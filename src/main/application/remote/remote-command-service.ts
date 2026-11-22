@@ -11,7 +11,7 @@ import { isRemoteConversationCommand, isRemoteQuestionCommand } from "../../../s
 import type { UserQuestionService } from "../joi/user-question-service.js";
 
 export interface RemoteConversations {
-  service: Pick<ConversationService, "list" | "get" | "send" | "inheritance" | "page" | "events" | "stop" | "rename" | "archive" | "restore" | "delete" | "cancelChild"> & Partial<Pick<ConversationService, "answerQuestion" | "resumeQuestion">>;
+  service: Pick<ConversationService, "list" | "get" | "send" | "inheritance" | "page" | "events" | "stop" | "rename" | "archive" | "restore" | "delete" | "cancelChild"> & Partial<Pick<ConversationService, "answerQuestion" | "resumeQuestion" | "fork">>;
   catalog(): Promise<unknown>;
   skills(engine: string): unknown;
 }
@@ -20,6 +20,7 @@ export interface RemoteHomeQueries {
   catalog(): Promise<unknown>;
   goal(goalId: string): Promise<unknown>;
   results?(goalId: string, cursor?: string): Promise<unknown>;
+  map?(goalId: string, cursor?: string): Promise<unknown>;
   artifacts?(goalId: string, cursor?: string): Promise<unknown>;
   result?(goalId: string, resultId: string): Promise<unknown>;
   agents(goalId: string, cursor?: string): Promise<unknown>;
@@ -90,6 +91,7 @@ export class RemoteCommandService {
       }
       if (c.kind === "catalog.get" && queries !== undefined) return { ...base, result: this.#page(await queries.catalog(), scope) };
       if (c.kind === "goal.get" && queries !== undefined) return { ...base, result: this.#page(await queries.goal(c.goalId), scope) };
+      if (c.kind === "goal.map" && queries?.map !== undefined) return { ...base, result: this.#page(await queries.map(c.goalId, c.cursor), scope) };
       if (c.kind === "goal.results" && queries?.results !== undefined) return { ...base, result: this.#page(await queries.results(c.goalId, c.cursor), scope) };
       if (c.kind === "goal.artifacts" && queries?.artifacts !== undefined) return { ...base, result: this.#page(await queries.artifacts(c.goalId, c.cursor), scope) };
       if (c.kind === "goal.result" && queries?.result !== undefined) return { ...base, result: this.#page(await queries.result(c.goalId, c.resultId), scope) };
@@ -166,6 +168,9 @@ export class RemoteCommandService {
       case "conversation.events": return service.events(command.conversationId,command.cursor);
       case "conversation.inheritance": return service.inheritance(command.workbenchId,command.partnerId,command.networkId);
       case "conversation.send": return service.send(command.input);
+      case "conversation.fork":
+        if (service.fork === undefined) throw new DomainError("remote_upgrade_required", "Conversation forks are unavailable on this host.");
+        return service.fork(command.conversationId, command.turnId, command.targetId);
       case "conversation.rename": return service.rename(command.conversationId,command.title);
       case "conversation.stop": await service.stop(command.conversationId); return { stopped: true };
       case "conversation.archive": await service.archive(command.conversationId); return { changed: true };

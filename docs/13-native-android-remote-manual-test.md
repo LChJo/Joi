@@ -51,7 +51,7 @@
 需要以下产物和设备：
 
 - Windows 桌面端：`release-joi/win-unpacked/joi.exe`
-- Android 安装包：`release-joi-mobile/joi-android-0.1.0-arm64.apk`
+- Android 安装包：`release-joi-mobile/joi-android-<version>-arm64.apk`，版本取自根目录 `package.json`。
 - 一台 Windows 电脑和至少一台 arm64 Android 手机；多设备验收需要两台手机或两个独立 Android App 实例。
 - 可用的 Wi-Fi 和手机 5G 网络。
 - 默认中继：`https://remote.joilab.top`

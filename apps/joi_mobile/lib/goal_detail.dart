@@ -2,6 +2,8 @@ import 'i18n.dart';
 import 'result_reader.dart';
 import 'result_history.dart';
 import 'goal_artifacts.dart';
+import 'goal_route_map.dart';
+import 'i18n_messages.dart' show errorMessageKeys;
 import 'connection_diagnostics_view.dart';
 import 'composer_text_field.dart';
 import 'conversation_output.dart';
@@ -518,12 +520,14 @@ class GoalDetailPage extends StatefulWidget {
 
 class _GoalDetailPageState extends State<GoalDetailPage>
     with WidgetsBindingObserver {
+  static const _maxAgentPages = 4;
   late RemoteGoalCard _goal;
   String? _text;
   Object? _error;
   List<Map<String, dynamic>> _agents = [];
   Map<String, dynamic> _facts = {};
   String? _cursor;
+  int _agentPages = 1;
   bool _loading = false;
   bool _foreground = true;
   Timer? _timer;
@@ -558,47 +562,48 @@ class _GoalDetailPageState extends State<GoalDetailPage>
   }
 
   Future<void> _load({bool more = false}) async {
-    if (_loading) return;
+    if (_loading || (more && _cursor == null)) return;
     _loading = true;
     final generation = _generation;
     try {
-      final detail = more
-          ? null
-          : await widget.controller.read('goal.get', goalId: _goal.goalId);
-      final agents = await widget.controller.read(
-        'goal.agents',
-        goalId: _goal.goalId,
-        cursor: more ? _cursor : null,
-      );
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        if (detail != null) {
+      if (!more) {
+        final detail = await widget.controller.read(
+          'goal.get',
+          goalId: _goal.goalId,
+        );
+        if (!mounted || generation != _generation) return;
+        setState(() {
           _text = detail['text'] as String?;
           final value = detail['goal'] ?? detail['action'];
           if (value is Map<String, dynamic>) {
             _goal = RemoteGoalCard.fromJson(value);
             _facts = value;
           }
-        }
-        final next = (agents['items'] as List? ?? [])
-            .whereType<Map<String, dynamic>>()
-            .toList();
-        _agents = more
-            ? [
-                ..._agents,
-                ...next.where(
-                  (a) => !_agents.any((old) => old['agentId'] == a['agentId']),
-                ),
-              ]
-            : [
-                ...next,
-                ..._agents.where(
-                  (old) => !next.any((a) => a['agentId'] == old['agentId']),
-                ),
-              ];
-        if (more || _agents.length <= next.length) {
-          _cursor = agents['nextCursor'] as String?;
-        }
+        });
+      }
+      final rows = <Map<String, dynamic>>[if (more) ..._agents];
+      final ids = rows.map((row) => row['agentId']).toSet();
+      var pages = more ? _agentPages : 0;
+      var cursor = more ? _cursor : null;
+      do {
+        final agents = await widget.controller.read(
+          'goal.agents',
+          goalId: _goal.goalId,
+          cursor: cursor,
+        );
+        if (!mounted || generation != _generation) return;
+        rows.addAll(
+          (agents['items'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .where((row) => ids.add(row['agentId'])),
+        );
+        cursor = agents['nextCursor'] as String?;
+        pages++;
+      } while (!more && cursor != null && pages < _agentPages);
+      setState(() {
+        _agents = rows;
+        _agentPages = pages;
+        _cursor = pages < _maxAgentPages ? cursor : null;
         _error = null;
       });
     } catch (_) {
@@ -638,6 +643,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
           ),
           Text(goalStatusLabel(_goal)),
           Text(goalProgressLabel(_goal)),
+          if (goalRecoveryHint(_goal) case final String hint) Text(hint),
           if (_error != null) Text(noticeText(_error!)),
           if (_text == null && _error == null)
             const LinearProgressIndicator()
@@ -689,11 +695,16 @@ class _GoalDetailPageState extends State<GoalDetailPage>
                   ? tr(Msg.mobileTaskExecutionDidNotFinish)
                   : tr(Msg.mobileTaskExecutionHasNotStarted),
             ),
-            Text(switch (failure['suggestedAction']) {
-              'CHECK_MODEL_SOURCE' => tr(
+            if (errorMessageKeys[failure['reasonCode']] case final Msg reason)
+              Text(tr(reason)),
+            Text(switch (failure) {
+              {'reasonCode': final String reason}
+                  when reason.startsWith('goal_synthesis_') =>
+                tr(Msg.homeRetrySynthesisWithExistingWork),
+              {'suggestedAction': 'CHECK_MODEL_SOURCE'} => tr(
                 Msg.mobileCheckTheModelSourceAndConnectionSettingsOnThe,
               ),
-              'RESTART_OR_UPDATE' => tr(
+              {'suggestedAction': 'RESTART_OR_UPDATE'} => tr(
                 Msg.mobileRestartOrUpdateJoiOnTheDesktopThenTry,
               ),
               _ => tr(
@@ -714,6 +725,28 @@ class _GoalDetailPageState extends State<GoalDetailPage>
               }),
             ),
             if (harness['topFogNote'] case final String note) MessageBody(note),
+            ListenableBuilder(
+              listenable: widget.controller,
+              builder: (context, _) => widget.controller.state.supportsGoalMap
+                  ? TextButton.icon(
+                      onPressed:
+                          widget.controller.state.connection ==
+                              RemoteConnectionState.connected
+                          ? () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GoalRouteMapPage(
+                                  controller: widget.controller,
+                                  goalId: _goal.goalId,
+                                ),
+                              ),
+                            )
+                          : null,
+                      icon: const Icon(Icons.route_outlined),
+                      label: Text(tr(Msg.homeGoalRouteMap)),
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ],
           if ((_facts['artifacts'] as List? ?? []).isNotEmpty) ...[
             const Divider(height: 32),

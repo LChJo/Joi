@@ -56,6 +56,7 @@ export type RemoteConversationCommand =
   | { kind: "conversation.list"; requestId: string; archived?: boolean }
   | { kind: "conversation.inheritance"; requestId: string; workbenchId: string; partnerId: string; networkId: string }
   | { kind: "conversation.send"; requestId: string; input: SendConversationInput }
+  | { kind: "conversation.fork"; requestId: string; conversationId: string; turnId: string; targetId: string }
   | { kind: "conversation.get" | "conversation.stop" | "conversation.archive" | "conversation.restore" | "conversation.delete"; requestId: string; conversationId: string }
   | { kind: "conversation.history" | "conversation.events"; requestId: string; conversationId: string; cursor?: string }
   | { kind: "conversation.rename"; requestId: string; conversationId: string; title: string }
@@ -68,6 +69,7 @@ export type RemoteCommand = RemoteConversationCommand | RemoteQuestionCommand
   | { kind: "catalog.get"; requestId: string }
   | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
   | { kind: "goal.results"; requestId: string; goalId: string; cursor?: string }
+  | { kind: "goal.map"; requestId: string; goalId: string; cursor?: string }
   | { kind: "goal.artifacts"; requestId: string; goalId: string; cursor?: string }
   | { kind: "goal.result"; requestId: string; goalId: string; resultId: string }
   | { kind: "agent.conversation"; requestId: string; goalId: string; agentId: string; cursor?: string }
@@ -125,6 +127,8 @@ export function isRemoteConversationCommand(value: unknown): value is RemoteConv
     case "conversation.get": case "conversation.stop": case "conversation.archive": case "conversation.restore": case "conversation.delete": return string("conversationId");
     case "conversation.history": case "conversation.events": return string("conversationId") && (item.cursor === undefined || string("cursor",240));
     case "conversation.rename": return string("conversationId") && string("title",80);
+    case "conversation.fork": return string("conversationId") && string("turnId") && string("targetId")
+      && Object.keys(item).every(key => ["kind", "requestId", "conversationId", "turnId", "targetId"].includes(key));
     case "conversation.cancelChild": return string("conversationId") && string("childId");
     default: return false;
   }

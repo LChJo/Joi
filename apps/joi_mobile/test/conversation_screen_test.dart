@@ -15,7 +15,11 @@ import 'package:flutter/services.dart';
 class ChatPeer extends ChangeNotifier implements ConversationRemoteController {
   @override
   bool get supportsConversations => true;
+  @override
+  bool supportsConversationForks = false;
   bool refuseSend = false;
+  bool refuseFork = false;
+  final forks = <Map<String, Object?>>[];
   final inputs = <Map<String, dynamic>>[];
   Map<String, dynamic>? chat;
   Map<String, dynamic> historyPage = {'items': <Object>[], 'nextCursor': null};
@@ -106,6 +110,20 @@ class ChatPeer extends ChangeNotifier implements ConversationRemoteController {
         return chat!;
       case 'get':
         return chat!;
+      case 'fork':
+        forks.add(parameters);
+        if (refuseFork) {
+          refuseFork = false;
+          throw StateError('receipt_lost');
+        }
+        chat = {
+          'conversationId': parameters['targetId'],
+          'workbenchId': 'wb',
+          'title': 'Branch reply',
+          'initialConfig': {...config, 'networkId': 'fork-network'},
+          'turns': <Object>[],
+        };
+        return chat!;
       case 'history':
         return historyPage;
       case 'stop':
@@ -189,6 +207,60 @@ class PartnerHistoryPeer extends PlaceholderRemoteController {
 }
 
 void main() {
+  testWidgets(
+    'completed reply forks with a stable retry identity and selected configuration',
+    (tester) async {
+      final peer = ChatPeer();
+      addTearDown(peer.dispose);
+      peer.chat = {
+        'conversationId': 'source',
+        'workbenchId': 'wb',
+        'title': 'Source reply',
+        'turns': [
+          {
+            'turnId': 'selected',
+            'text': 'Initial request',
+            'status': 'COMPLETED',
+            'config': peer.config,
+            'entries': <Object>[],
+          },
+        ],
+      };
+      await tester.pumpWidget(
+        MaterialApp(home: ConversationScreen(controller: peer)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Source reply'));
+      await tester.pumpAndSettle();
+      final fork = find.byTooltip(tr(Msg.chatForkConversation));
+      expect(fork, findsNothing);
+      peer.supportsConversationForks = true;
+      peer.refuseFork = true;
+      peer.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(fork, findsOneWidget);
+      await tester.tap(fork);
+      await tester.pumpAndSettle();
+      expect(find.text('Source reply'), findsOneWidget);
+      await tester.tap(fork);
+      await tester.pumpAndSettle();
+      expect(peer.forks, hasLength(2));
+      expect(peer.forks.first, peer.forks.last);
+      expect(peer.forks.first, containsPair('turnId', 'selected'));
+      expect(find.text('Branch reply'), findsOneWidget);
+      expect(find.text('Initial request'), findsNothing);
+      expect(peer.inputs, isEmpty);
+      await tester.enterText(find.byType(TextField).last, 'Follow-up');
+    await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(peer.inputs.single['networkId'], 'fork-network');
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets(
     'conversation timeline retains active queued and answered questions and sends the active version',
     (tester) async {

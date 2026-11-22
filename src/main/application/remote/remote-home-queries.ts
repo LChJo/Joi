@@ -7,7 +7,7 @@ import { DomainError } from "../../domain/errors.js";
 
 export class RemoteHomeQueryService implements RemoteHomeQueries {
   constructor(private readonly dependencies: {
-    homeFeed: Pick<JoiHomeFeedService, "load"> & Partial<Pick<JoiHomeFeedService, "listGoalResults" | "getGoalResult" | "listGoalArtifacts">>;
+    homeFeed: Pick<JoiHomeFeedService, "load"> & Partial<Pick<JoiHomeFeedService, "listGoalResults" | "getGoalResult" | "listGoalArtifacts" | "loadGoalDetail">>;
     inputs: { readDisplayText(inputId: string): Promise<string | null> };
     agents: Pick<WorkbenchAgentService, "list" | "conversation">;
     workbenches: Pick<WorkbenchCatalog, "listSummaries">;
@@ -40,6 +40,28 @@ export class RemoteHomeQueryService implements RemoteHomeQueries {
     const page = await this.dependencies.homeFeed.listGoalResults?.(goalId, cursor === undefined ? {} : { cursor });
     if (page == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
     return page;
+  }
+
+  async map(goalId: string, cursor?: string) {
+    const prefix = `map:${goalId}:`;
+    const expired = () => new DomainError("remote_cursor_expired", "Refresh this route map.");
+    const position = cursor?.slice(prefix.length);
+    if (cursor !== undefined && (!cursor.startsWith(prefix) || !/^\d+:\d+:\d+$/u.test(position ?? ""))) throw expired();
+    const offset = position === undefined ? 0 : Number(position.split(":")[2]);
+    if (!Number.isSafeInteger(offset)) throw expired();
+    const page = await this.dependencies.homeFeed.loadGoalDetail?.(goalId, { view: "map", offset });
+    if (page == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
+    const harness = page.harness;
+    if (harness === undefined) {
+      if (cursor !== undefined) throw expired();
+      return { harness: null };
+    }
+    const version = [harness.detailRevision ?? harness.revision, harness.pathOrderRevision ?? harness.revision, ""].join(":");
+    if (position !== undefined && !position.startsWith(version)) throw expired();
+    return {
+      harness,
+      ...(page.nextOffset === undefined ? {} : { nextCursor: `${prefix}${version}${String(page.nextOffset)}` }),
+    };
   }
 
   async artifacts(goalId: string, cursor?: string) {

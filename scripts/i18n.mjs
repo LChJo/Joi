@@ -25,6 +25,17 @@ function parameters(message, contract) {
   return [...names].sort();
 }
 
+function flutterMessage(message) {
+  if (!message.includes("'")) return message;
+  const render = (nodes) => nodes.map((node) => {
+    if (node.type === TYPE.literal) return node.value.replaceAll("'", "''").replace(/[{}]+/gu, (braces) => `'${braces}'`);
+    if (node.type === TYPE.argument) return `{${node.value}}`;
+    const options = Object.entries(node.options).map(([key, option]) => `${key} {${render(option.value)}}`).join(" ");
+    return `{${node.value}, ${node.type === TYPE.plural ? "plural" : "select"}, ${options}}`;
+  }).join("");
+  return render(parse(message));
+}
+
 export async function loadCatalogs(base = directory) {
   const manifest = await json(path.join(base, "manifest.json"));
   if (manifest.source !== "en" || !manifest.languages.some((item) => item.code === "en" && item.enabled)) throw new Error("English must remain the enabled source language");
@@ -107,7 +118,7 @@ export function generatedFiles({ manifest, catalogs, definitions }) {
     const arb = { "@@locale": language.code.replaceAll("-", "_") };
     for (const [key, definition] of Object.entries(definitions)) {
       const name = identifier(key);
-      arb[name] = bundles[language.bundleCode ?? language.code][key];
+      arb[name] = flutterMessage(bundles[language.bundleCode ?? language.code][key]);
       if (language.code === manifest.source) arb[`@${name}`] = { description: definition.description ?? key, placeholders: Object.fromEntries(Object.entries(definition.placeholders ?? {}).map(([parameter, type]) => [parameter, { type: type === "number" ? "num" : "String" }])) };
     }
     output.set(`apps/joi_mobile/l10n/app_${language.code.replaceAll("-", "_")}.arb`, `${JSON.stringify(arb, null, 2)}\n`);

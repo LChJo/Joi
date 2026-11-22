@@ -41,6 +41,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   final _search = TextEditingController();
   final _scroll = ScrollController();
   final _scaffold = GlobalKey<ScaffoldState>();
+  final _forkIds = <(String, String), String>{};
   List<_Json> _workbenches = [],
       _networks = [],
       _partners = [],
@@ -57,7 +58,10 @@ class _ConversationScreenState extends State<ConversationScreen>
       _sending = false,
       _archived = false,
       _reading = false;
-  bool _foreground = true, _historyLoading = false, _selecting = false;
+  bool _foreground = true,
+      _historyLoading = false,
+      _selecting = false,
+      _forking = false;
   int _epoch = 0, _failures = 0;
   String? _notice;
   Map<String, Object?>? _pending;
@@ -73,6 +77,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   bool get _readOnly => _chat?['archivedAt'] != null;
   bool get _canSend =>
       !_sending &&
+      !_forking &&
       !_busy &&
       !_readOnly &&
       _workbench.isNotEmpty &&
@@ -235,27 +240,7 @@ class _ConversationScreenState extends State<ConversationScreen>
         'conversationId': item['conversationId'],
       });
       if (!mounted || epoch != _epoch) return;
-      final config = _items(chat['turns']).lastOrNull?['config'];
-      setState(() {
-        _chat = chat;
-        _id = _text(chat['conversationId']);
-        _workbench = _text(chat['workbenchId']);
-        if (config is Map) {
-          _partner = _text(config['partnerId']);
-          _network = _text(config['networkId']);
-          _selectedSkills = Set<String>.from(config['skills'] as List? ?? []);
-          _subagents = config['subagentsEnabled'] != false;
-          _extensions = Set<String>.from(config['piExtensions'] as List? ?? []);
-        }
-        _draft.clear();
-        _pending = null;
-        _notice = null;
-        _failures = 0;
-      });
-      _scaffold.currentState?.closeDrawer();
-      _toBottom();
-      _schedule();
-      unawaited(_loadSkills());
+      _open(chat);
     } catch (_) {
       if (mounted && epoch == _epoch) {
         setState(() => _notice = tr(Msg.chatError));
@@ -265,6 +250,68 @@ class _ConversationScreenState extends State<ConversationScreen>
         _selecting = false;
         _schedule();
       }
+    }
+  }
+
+  void _open(_Json chat) {
+    final config =
+        _items(chat['turns']).lastOrNull?['config'] ?? chat['initialConfig'];
+    setState(() {
+      _chat = chat;
+      _id = _text(chat['conversationId']);
+      _workbench = _text(chat['workbenchId']);
+      if (config is Map) {
+        _partner = _text(config['partnerId']);
+        _network = _text(config['networkId']);
+        _selectedSkills = Set<String>.from(config['skills'] as List? ?? []);
+        _subagents = config['subagentsEnabled'] != false;
+        _extensions = Set<String>.from(config['piExtensions'] as List? ?? []);
+      }
+      _draft.clear();
+      _pending = null;
+      _notice = null;
+      _failures = 0;
+    });
+    _scaffold.currentState?.closeDrawer();
+    _toBottom();
+    _schedule();
+    unawaited(_loadSkills());
+  }
+
+  Future<void> _fork(String turnId) async {
+    if (_forking ||
+        _sending ||
+        _selecting ||
+        !widget.controller.supportsConversationForks) {
+      return;
+    }
+    final sourceId = _id;
+    final epoch = _epoch;
+    final key = (sourceId, turnId);
+    final targetId = _forkIds.putIfAbsent(key, _identity);
+    setState(() {
+      _forking = true;
+      _notice = null;
+    });
+    try {
+      final chat = await _request('fork', {
+        'conversationId': sourceId,
+        'turnId': turnId,
+        'targetId': targetId,
+      });
+      if (!mounted) return;
+      _forkIds.remove(key);
+      if (epoch == _epoch) {
+        _epoch++;
+        _open(chat);
+      }
+      unawaited(_historyRefresh());
+    } catch (_) {
+      if (mounted && epoch == _epoch) {
+        setState(() => _notice = tr(Msg.chatError));
+      }
+    } finally {
+      if (mounted) setState(() => _forking = false);
     }
   }
 
@@ -810,6 +857,21 @@ class _ConversationScreenState extends State<ConversationScreen>
                       },
                 icon: const Icon(Icons.copy_outlined, size: 18),
               ),
+              if (turn['status'] == 'COMPLETED' &&
+                  _text(turn['turnId']).isNotEmpty)
+                ListenableBuilder(
+                  listenable: widget.controller,
+                  builder: (context, _) =>
+                      widget.controller.supportsConversationForks
+                      ? IconButton(
+                          tooltip: tr(Msg.chatForkConversation),
+                          onPressed: _forking || _sending || _selecting
+                              ? null
+                              : () => _fork(turn['turnId'] as String),
+                          icon: const Icon(Icons.call_split, size: 18),
+                        )
+                      : const SizedBox.shrink(),
+                ),
             ],
           ),
           if (turn['errorCode'] != null || turn['failure'] != null)

@@ -642,6 +642,9 @@ class NativeRemoteController extends ChangeNotifier
         !_state.supportsResultHistory) {
       throw StateError('remote_upgrade_required');
     }
+    if (kind == 'goal.map' && !_state.supportsGoalMap) {
+      throw StateError('remote_upgrade_required');
+    }
     final generation = _generation;
     final response = await _sendCommand({
       'kind': kind,
@@ -693,6 +696,12 @@ class NativeRemoteController extends ChangeNotifier
   bool _supportsConversations = false;
   @override
   bool get supportsConversations => _supportsConversations;
+  bool _supportsConversationForks = false;
+  @override
+  bool get supportsConversationForks =>
+      _supportsConversations &&
+      _supportsConversationForks &&
+      _state.connection == RemoteConnectionState.connected;
 
   @override
   Future<Map<String, dynamic>> conversation(
@@ -700,6 +709,9 @@ class NativeRemoteController extends ChangeNotifier
     Map<String, Object?> parameters = const {},
   }) async {
     if (!_supportsConversations) throw StateError('remote_upgrade_required');
+    if (operation == 'fork' && !supportsConversationForks) {
+      throw const RemoteActionFailure('remote_upgrade_required');
+    }
     if ((operation == 'answerQuestion' || operation == 'resumeQuestion') &&
         !_supportsQuestions) {
       throw const RemoteActionFailure('remote_upgrade_required');
@@ -1058,30 +1070,22 @@ class NativeRemoteController extends ChangeNotifier
       }
       if (generation != _generation || _disposed) return;
       _mode = 'resume';
-      _supportsQuestions =
-          value['capabilities'] is List &&
-          (value['capabilities'] as List).contains('questions.v1');
-      _supportsConversations =
-          value['capabilities'] is List &&
-          (value['capabilities'] as List).contains('conversations.v1');
+      final capabilities = value['capabilities'];
+      final supported = capabilities is List ? capabilities : const [];
+      _supportsQuestions = supported.contains('questions.v1');
+      _supportsConversations = supported.contains('conversations.v1');
+      _supportsConversationForks = supported.contains('conversation.fork.v1');
       _record(stage: ConnectionStage.sessionReady);
       _handshakeTimer?.cancel();
       _pairingTimer?.cancel();
       _setState(
         _state.copyWith(
           connection: RemoteConnectionState.connected,
-          supportsHome:
-              value['capabilities'] is List &&
-              (value['capabilities'] as List).contains('home.v2'),
-          supportsWorkbenchChoice:
-              value['capabilities'] is List &&
-              (value['capabilities'] as List).contains('workbench.choice.v1'),
-          supportsWorkbenchCreation:
-              value['capabilities'] is List &&
-              (value['capabilities'] as List).contains('workbench.create'),
-          supportsResultHistory:
-              value['capabilities'] is List &&
-              (value['capabilities'] as List).contains('goal.results.v1'),
+          supportsHome: supported.contains('home.v2'),
+          supportsWorkbenchChoice: supported.contains('workbench.choice.v1'),
+          supportsWorkbenchCreation: supported.contains('workbench.create'),
+          supportsResultHistory: supported.contains('goal.results.v1'),
+          supportsGoalMap: supported.contains('goal.map.v1'),
           sending: false,
           busyGoals: {},
         ),

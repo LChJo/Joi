@@ -438,12 +438,12 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output. CHAT-21 pins Pi 1.6.0 and requires canonical error results for skipped calls after a mid-batch abort.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output. CHAT-21 pins Pi 1.6.0 and requires canonical error results for skipped calls after a mid-batch abort. CHAT-48 includes Android with negotiated fork support and the same stable destination identity after a lost receipt.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "bf6cb18d20afe9d64ba255a10d2bdc346bff594f56d52cbbf55ec4cf443afbf1",
-      "observedAt": "2026-11-20T12:54:05.749Z",
+      "hash": "cc342229f1e84cd3082997dd8cea167cf561ef44910648fb199caaa3e58a8562",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
         "endLine": 53
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "99960ebcb798b3891f191d599bb6a24a7f365ec49c42e2da7aa56966b7c47134",
-      "observedAt": "2026-11-21T15:17:05.655Z",
+      "hash": "64aac17f173eaf299285cfdd37d007d97e35649c4c4f65ff60d47619d7d8b8dc",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 779
+        "endLine": 781
       }
     },
     {
@@ -1656,12 +1656,12 @@
     {
       "id": "c0f84140-afb3-44b8-8bb5-fde0e3339745",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The generated Flutter catalog includes the question history label.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The generated Flutter catalog includes the question history label. The generated ARB escapes the English desktop update text for Flutter while displaying its original apostrophe.",
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "576a4cf7f9e5e53288cb2151b05b8f9feb48dfd2ed974f56c50e47f9c60a367f",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "730dcf00738616420c91c3ca443dea0d7b4aa08251c6487fae940548fccc66e5",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
         "endLine": 10312
@@ -1670,15 +1670,15 @@
     {
       "id": "4b0b84e3-24d0-44f7-aac1-2c450c507e80",
       "kind": "source-code",
-      "claim": "The Android home offers a conversation destination; supported controllers open the native conversation screen and older hosts receive an upgrade notice. The home composer uses the shared keyboard submission behavior and connection guard.",
+      "claim": "The Android home offers a conversation destination; supported controllers open the native conversation screen and older hosts receive an upgrade notice. The home composer uses the shared keyboard submission behavior and connection guard. Goal cards display durable synthesis queue and retry state with localized timing.",
       "location": {
         "path": "apps/joi_mobile/lib/home_screen.dart"
       },
-      "hash": "90b312a61c8efc4e44ab98a623ac4c3a4acd3bac146c7f96fa3dd3c18e28e205",
-      "observedAt": "2026-11-18T01:06:44.931Z",
+      "hash": "2523640daa6b71bc67a27c3fabc7c3eff45c9c2265ab42a4e2254eb23c689586",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 691
+        "endLine": 708
       }
     },
     {
@@ -1698,29 +1698,29 @@
     {
       "id": "f8b6f0fa-14fe-4833-9554-150cfe6a6c38",
       "kind": "source-code",
-      "claim": "Native conversation RPC negotiates conversations.v1 and reuses serialized encrypted requests, deadlines, generation checks and bounded read.next assembly. Existing task operations remain available on older hosts. questions.v1 is negotiated separately and required for scoped question answers and explicit conversation recovery; responses keep generation checks and unsupported hosts fail locally.",
+      "claim": "Native conversation RPC negotiates conversations.v1 and reuses serialized encrypted requests, deadlines, generation checks and bounded read.next assembly. Existing task operations remain available on older hosts. questions.v1 is negotiated separately and required for scoped question answers and explicit conversation recovery; responses keep generation checks and unsupported hosts fail locally. Goal map and completed-turn fork RPCs require separately negotiated capabilities.",
       "location": {
         "path": "apps/joi_mobile/lib/native_remote_controller.dart"
       },
-      "hash": "23b4c8540918aca4d82efbe01ef166b4dbbc71488f9a60c77a6fe1fed7f257ff",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "62b8a238c5f1ae903017221f683c5e4be9cd8b57acc1ee5a141b2101abf2630e",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 1226
+        "endLine": 1230
       }
     },
     {
       "id": "4bf896c9-b798-4616-a9db-8da8c7e8980d",
       "kind": "source-code",
-      "claim": "Narrow optional conversation and question controller interfaces extend paired clients without changing existing task controllers. RemoteUserQuestion retains scoped identity/version, options, defaults, answer and delivery, and goal cards project question lists.",
+      "claim": "Narrow optional conversation and question controller interfaces extend paired clients without changing existing task controllers. RemoteUserQuestion retains scoped identity/version, options, defaults, answer and delivery, and goal cards project question lists. The card projection retains optional synthesis recovery facts. The remote view state carries the goal map capability.",
       "location": {
         "path": "apps/joi_mobile/lib/remote_controller.dart"
       },
-      "hash": "adeac564f61b4ef65aa24ef1b996b2efb9c4a5271820cc2189c34a01887b5f65",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "cb1ef9b6bad9e2d1124efa56197d5c3fdcffa8bc3d9694595d75c033d36dc86f",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 515
+        "endLine": 534
       }
     },
     {
@@ -1744,11 +1744,11 @@
       "location": {
         "path": "docs/13-native-android-remote-manual-test.md"
       },
-      "hash": "61d6a66669c6a440b9a4a122070a8bb2ad933fffe1d4bbe461ddf62661d27b9c",
-      "observedAt": "2026-11-14T11:23:51.963Z",
+      "hash": "d06d6d33c76ac7219303bac3dfc2f7038b7c0994623da5e8d8b92e2694ba4e5b",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 162
+        "endLine": 161
       }
     },
     {
@@ -1782,29 +1782,29 @@
     {
       "id": "a138a736-c367-4480-8655-8a70cd6b1091",
       "kind": "source-code",
-      "claim": "Paired commands reuse the conversation application service for safe reads, immutable idempotent sends, stop and metadata lifecycle. Existing device-scoped bounded pages carry complete history without introducing another execution chain. Validated scoped question answers delegate to UserQuestionService; conversation answer/recovery commands use ConversationService and unsupported hosts return upgrade-required.",
+      "claim": "Paired commands reuse the conversation application service for safe reads, immutable idempotent sends, stop and metadata lifecycle. Existing device-scoped bounded pages carry complete history without introducing another execution chain. Validated scoped question answers delegate to UserQuestionService; conversation answer/recovery commands use ConversationService and unsupported hosts return upgrade-required. Paired fork and goal map commands delegate to the canonical conversation and goal services.",
       "location": {
         "path": "src/main/application/remote/remote-command-service.ts"
       },
-      "hash": "60ce062bb8d78987d72e18f4411402243ffc49cd979055c5986653bd9b6e298a",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "9d39f54dd396bae300eecfcfeb26288fb0644b7820f893d3b7b5ecaa6eb46265",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 206
+        "endLine": 211
       }
     },
     {
       "id": "7248e4e7-328d-4d19-9d07-c7552695b8a5",
       "kind": "source-code",
-      "claim": "The authenticated encrypted host admits validated conversation and scoped question commands and advertises conversations.v1 plus questions.v1 while preserving existing pairing, replay protection, frame limits and connection-scoped page release.",
+      "claim": "The authenticated encrypted host admits validated conversation and scoped question commands and advertises conversations.v1 plus questions.v1 while preserving existing pairing, replay protection, frame limits and connection-scoped page release. The host advertises goal map and conversation fork capabilities and admits goal archive and restore commands.",
       "location": {
         "path": "src/main/infrastructure/remote/remote-access-host.ts"
       },
-      "hash": "f7a4925eb78bac9ef65f46b3320e02ec276ceaaeb4d51430bf05f2d3964d150e",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "81f1b092bcc4b925fc358b658063abe0b8a1fbd0b2feb17f015f3f4d986042e7",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 460
+        "endLine": 462
       }
     },
     {
@@ -1852,15 +1852,15 @@
     {
       "id": "eeed5019-b62d-454f-9699-f461331a8fde",
       "kind": "source-code",
-      "claim": "Versioned conversation commands have a closed operation and field schema, bounded strings/selections and validated static Pi extensions. Arbitrary model/workspace overrides are refused before application dispatch. The question command extension bounds scope/identity, positive version, answer length, option uniqueness and allowed answer fields; conversation recovery carries identity without an answer payload.",
+      "claim": "Versioned conversation commands have a closed operation and field schema, bounded strings/selections and validated static Pi extensions. Arbitrary model/workspace overrides are refused before application dispatch. The question command extension bounds scope/identity, positive version, answer length, option uniqueness and allowed answer fields; conversation recovery carries identity without an answer payload. The fork request permits only the original conversation and turn identities and a stable target identity.",
       "location": {
         "path": "src/shared/remote.ts"
       },
-      "hash": "a134b792229c6d40cc0ce613790daa2f3612b7333b357eb547975b99c89ddb76",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "9162a3cc885d7992694ee8347ab0dfbd9355f345f9e36a31cffda0c5de590b81",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 181
+        "endLine": 185
       }
     },
     {
@@ -1880,29 +1880,29 @@
     {
       "id": "5b5e2d23-0e65-499d-999d-976a1fbe3691",
       "kind": "source-code",
-      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions. Ordinary replies render shared compact tool groups, safe text and horizontally scrollable tables. Question cards retain active/queued/answered history and waitingForUser; versioned answers and explicit terminal-turn recovery require negotiated support and selection-safe refreshes. The conversation timeline opts into compact cards.",
+      "claim": "Capability-gated native conversation UI provides shared history and lifecycle, workbench/network/partner/Skill selection, stable unacknowledged send identities, progressive cursor reads, bounded backoff and foreground cancellation. Epoch and identity guards reject stale reads. Safe Markdown suppresses remote images. The send button, hardware Enter and soft keyboard Send share the same send conditions. Ordinary replies render shared compact tool groups, safe text and horizontally scrollable tables. Question cards retain active/queued/answered history and waitingForUser; versioned answers and explicit terminal-turn recovery require negotiated support and selection-safe refreshes. The conversation timeline opts into compact cards. A completed reply can fork with a stable retry identity and open an empty conversation with the selected configuration.",
       "location": {
         "path": "apps/joi_mobile/lib/conversation_screen.dart"
       },
-      "hash": "55e5b81a30b3182921b6c9796deb07fa30b3eb564ec79f3e2d2fc3c5870359ea",
-      "observedAt": "2026-11-19T12:32:02.921Z",
+      "hash": "6a95ce420dcf72536bb34602b8f60d6fea5a6ac3646d7dec7aa32bf1a6ef0aa8",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 1001
+        "endLine": 1063
       }
     },
     {
       "id": "00eddc89-bcf1-43bd-ab95-2532ceb7d32a",
       "kind": "source-code",
-      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit. Native regressions cover mixed tools, safe details, 320px tables, and expansion across partner history pages. The conversation timeline test retains active/queued/answered cards and submits only the active question identity and version. The timeline regression verifies that saved answer details are hidden until expanded.",
+      "claim": "Synthetic native widget tests cover the phone entry, retained failed drafts, stable retry identities, progressive prefixes, stop retention and keyboard-safe layout, with repository-font screenshots. Hardware Enter and soft keyboard Send reuse a failed draft; Shift+Enter and active composition do not submit. Native regressions cover mixed tools, safe details, 320px tables, and expansion across partner history pages. The conversation timeline test retains active/queued/answered cards and submits only the active question identity and version. The timeline regression verifies that saved answer details are hidden until expanded. The completed-reply fork regression covers capability negotiation, lost receipts, no automatic send and saved configuration.",
       "location": {
         "path": "apps/joi_mobile/test/conversation_screen_test.dart"
       },
-      "hash": "fc08f06809867ae8176f25d031ebef0a86920d356c6564bbf00dc4de24a30021",
-      "observedAt": "2026-11-19T12:32:02.921Z",
+      "hash": "969bd54dbc972057bd6f35011a339ad8a5e1339b43564a5bde41796888e6b839",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 546
+        "endLine": 618
       }
     },
     {
@@ -1964,15 +1964,15 @@
     {
       "id": "ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2",
       "kind": "source-code",
-      "claim": "Protocol and application regressions cover conversation operations, malformed/oversized selections, workspace overrides, refusal codes, bounded pages and cross-device cursor denial. Scoped question commands reject malformed answers at host and application boundaries and preserve answer provenance/delivery in receipt pages.",
+      "claim": "Protocol and application regressions cover conversation operations, malformed/oversized selections, workspace overrides, refusal codes, bounded pages and cross-device cursor denial. Scoped question commands reject malformed answers at host and application boundaries and preserve answer provenance/delivery in receipt pages. Remote fork validation requires explicit bounded identities and disallows extra fields.",
       "location": {
         "path": "tests/unit/remote-conversations.test.ts"
       },
-      "hash": "48fb96b5c80c8ae96cc10bf623340603a049be950ec92ba24a7f9db0fdb70ae1",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "fef5d47035117f756c62834a79945e68fabea0f659ca0efc4fbf2f03b9221731",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 128
+        "endLine": 140
       }
     },
     {
@@ -3714,15 +3714,15 @@
     {
       "id": "f38946e3-12db-45b8-898b-c8d8eb3bea6b",
       "kind": "source-code",
-      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls. Goal actions show compact pending cards, and the detail page puts resolved questions behind a history disclosure.",
+      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls. Goal actions show compact pending cards, and the detail page puts resolved questions behind a history disclosure. Goal details show synthesis recovery, delegate route map reads on demand and rebuild the loaded Agent prefix from fresh cursors.",
       "location": {
         "path": "apps/joi_mobile/lib/goal_detail.dart"
       },
-      "hash": "cbdac04b2ba7e3e0655b15a97888ee1ba440b7eef4f1cf2f03fab3ac6ac0c705",
-      "observedAt": "2026-11-19T12:43:34.997Z",
+      "hash": "e62569c3e157f7165b8104be9c420b6abcf8e4e788f1ba939ed8188612dd453a",
+      "observedAt": "2026-11-22T06:38:10.940Z",
       "range": {
         "startLine": 1,
-        "endLine": 976
+        "endLine": 1009
       }
     },
     {
@@ -4670,6 +4670,48 @@
       },
       "hash": "6940c5e23748b7c07116af80dc74c4f95366e2b7e5a4a9c4e7fbe1837021f0cd",
       "observedAt": "2026-11-21T15:17:05.663Z"
+    },
+    {
+      "id": "d0dbf0a2-2213-4b85-99c6-97ae49862b1e",
+      "kind": "source-code",
+      "claim": "Android renders bounded route map pages with the current layer, paths, decisions and fog. A stale cursor retains the visible page and can restart at the latest snapshot.",
+      "location": {
+        "path": "apps/joi_mobile/lib/goal_route_map.dart"
+      },
+      "hash": "03e8309bb55c46fb433b8ec9bb7a866bb5772f7ec4eb12569710243dbe19a071",
+      "observedAt": "2026-11-22T06:38:10.940Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 212
+      }
+    },
+    {
+      "id": "1f411793-be75-49a4-81c6-c58f99aa0488",
+      "kind": "source-code",
+      "claim": "Goal map reads use the existing scope-filtered read-worker projection and bind page cursors to the goal and map detail/order revisions.",
+      "location": {
+        "path": "src/main/application/remote/remote-home-queries.ts"
+      },
+      "hash": "5650cf757b8db3f5b9fb4af3e06362045711deab62db21277e7b574a090b153a",
+      "observedAt": "2026-11-22T06:38:10.940Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 84
+      }
+    },
+    {
+      "id": "f32e0182-90c9-477b-ac41-a648c10ebebf",
+      "kind": "source-code",
+      "claim": "Synthetic Android widget tests cover old-host compatibility, synthesis status, selected-layer paging, stale-cursor recovery and removal of stale Agent rows.",
+      "location": {
+        "path": "apps/joi_mobile/test/goal_desktop_sync_test.dart"
+      },
+      "hash": "780ff59f2c575fa490fe1369ad0c4a747287fadf0426145b88582c1ddf06091a",
+      "observedAt": "2026-11-22T06:38:10.940Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 186
+      }
     }
   ]
 }

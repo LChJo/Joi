@@ -56,6 +56,16 @@ describe("AC-I18N-01 catalog maintenance", () => {
     expect(JSON.parse(files.get("apps/joi_mobile/l10n/app_zh_CN.arb") ?? "{}")).toMatchObject({ commonCount: "{count} 项" });
     expect(files.get("apps/joi_mobile/lib/i18n_messages.dart")).toContain("parameters[\"count\"] as num");
   });
+  it("escapes literal apostrophes for Flutter without changing ICU arguments or web messages", () => {
+    const data = fixture();
+    const message = "{count, plural, one {You're holding one} other {You've got {count}}}";
+    data.catalogs.en = { ...data.catalogs.en, "common.count": message };
+    const files = generatedFiles(data);
+    expect(JSON.parse(files.get("apps/joi_mobile/l10n/app_en.arb") ?? "{}")).toMatchObject({
+      commonCount: "{count, plural, one {You''re holding one} other {You''ve got {count}}}",
+    });
+    expect(files.get("src/shared/i18n/generated.ts")).toContain(message);
+  });
   it("loads resource folders and refuses duplicate or unsafe locale registration", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "joi-catalog-"));
     try {

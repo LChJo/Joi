@@ -157,6 +157,8 @@ describe("native RemoteAccessHost", () => {
       });
       await vi.waitFor(() => expect(transport.sent.some((item) => item.connectionId === connectionId)).toBe(true));
       const ready = transport.sent.findLast((item) => item.connectionId === connectionId)!.frame as RemoteHandshakeReady;
+      expect(ready.capabilities).toContain("goal.map.v1");
+      expect(ready.capabilities).toContain("conversation.fork.v1");
       const key = deriveRemoteSessionKey(fields.secret!, clientNonce, ready.hostNonce);
       transport.emit({
         connectionId,

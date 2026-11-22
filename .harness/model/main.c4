@@ -86,11 +86,11 @@ metadata {
 remote = component "Paired remote commands" {
 metadata {
  harness_id "a3484361-8b3f-4bed-aabb-5034c3bc381c"
- brief "Validates and dispatches the paired normal conversation allowlist to existing application services. Safe catalogs and connection-scoped bounded pages reuse the current command protocol. Sends preserve application request identities and use the existing outbox; local filesystem, Git and arbitrary HTTP operations stay outside this interface. Scoped question answers and explicit conversation recovery reuse the same durable application services and bounded responses; unavailable hosts return an upgrade-required refusal."
+ brief "Validates and dispatches the paired normal conversation allowlist to existing application services. Safe catalogs and connection-scoped bounded pages reuse the current command protocol. Sends preserve application request identities and use the existing outbox; local filesystem, Git and arbitrary HTTP operations stay outside this interface. Scoped question answers and explicit conversation recovery reuse the same durable application services and bounded responses; unavailable hosts return an upgrade-required refusal. The host also negotiates scoped completed-reply forks and versioned read-only goal-map pages, and dispatches the existing task archive lifecycle."
  source "fact"
  status "verified"
- evidence "a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2"
- version "2"
+ evidence "a138a736-c367-4480-8655-8a70cd6b1091 eeed5019-b62d-454f-9699-f461331a8fde 7248e4e7-328d-4d19-9d07-c7552695b8a5 ffbbdd29-0a69-4db5-87ff-fcd20d74a1c2 1f411793-be75-49a4-81c6-c58f99aa0488"
+ version "3"
 }
 }
 questions = component "Durable user questions" {
@@ -247,11 +247,11 @@ metadata {
 mobile = component "Android client" {
 metadata {
  harness_id "9bdcf527-c117-4762-86ce-c7d2e01c6321"
- brief "Flutter remote controller views with pairing and home. Internal remote transport not audited. Normal conversation views and the native controller are reviewed for conversations.v1 negotiation, shared history, stable sends, incremental reads, stop and metadata actions. Background polling pauses and stale results are ignored. Real-device direct/relay behavior remains manual. Ordinary conversations, task messages and goal follow-ups share hardware Enter and soft keyboard Send with composition protection. Partner history and ordinary replies share Flutter Markdown and paired tool rows. Wide tables scroll locally, and the partner list builds rows lazily across the existing pages. Flutter question cards render active/queued/history states, scoped drafts, defaults and delivery receipts in conversations and goal details. Conversation questions use compact forms, with default-collapsed one-line receipts that expand to the full question, answer and delivery details. Home goal actions use the compact form for pending questions. Task details and the current result reader show resolved cards in a collapsed question history. Negotiated questions.v1 gates answers and explicit recovery; older/disconnected hosts cannot submit. Saved-answer and displayed-default recovery remain distinct. Physical-device question behavior is not established by synthetic widget/encrypted-peer coverage."
+ brief "Flutter remote controller views with pairing and home. Internal remote transport not audited. Normal conversation views and the native controller are reviewed for conversations.v1 negotiation, shared history, stable sends, incremental reads, stop and metadata actions. Background polling pauses and stale results are ignored. Real-device direct/relay behavior remains manual. Ordinary conversations, task messages and goal follow-ups share hardware Enter and soft keyboard Send with composition protection. Partner history and ordinary replies share Flutter Markdown and paired tool rows. Wide tables scroll locally, and the partner list builds rows lazily across the existing pages. Flutter question cards render active/queued/history states, scoped drafts, defaults and delivery receipts in conversations and goal details. Conversation questions use compact forms, with default-collapsed one-line receipts that expand to the full question, answer and delivery details. Home goal actions use the compact form for pending questions. Task details and the current result reader show resolved cards in a collapsed question history. Negotiated questions.v1 gates answers and explicit recovery; older/disconnected hosts cannot submit. Saved-answer and displayed-default recovery remain distinct. Physical-device question behavior is not established by synthetic widget/encrypted-peer coverage. Goal cards show queued/retrying synthesis, and task details refresh a bounded prefix of Agent records. Capability-gated Android route map pages consume the shared read projection and recover expired cursors. Completed reply forks use the canonical service, retry with the same destination and open the saved configuration."
  source "fact"
  status "verified"
- evidence "9eb5b925-3b08-4116-94d5-c22547df6564 4b0b84e3-24d0-44f7-aac1-2c450c507e80 5b5e2d23-0e65-499d-999d-976a1fbe3691 f8b6f0fa-14fe-4833-9554-150cfe6a6c38 4bf896c9-b798-4616-a9db-8da8c7e8980d 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659 9e0456ed-9c75-4153-962d-c8d52b36a7b0 a0a831e5-a22b-4ab2-8275-4719a02a488a f38946e3-12db-45b8-898b-c8d8eb3bea6b 6ceede77-3a86-45a8-82fc-595a0b99b66a 37ab43f3-e18f-4b25-a291-fd5a5be547eb 5cc8dd07-5b08-4c9e-a9da-fc71b178abaa"
- version "6"
+ evidence "9eb5b925-3b08-4116-94d5-c22547df6564 4b0b84e3-24d0-44f7-aac1-2c450c507e80 5b5e2d23-0e65-499d-999d-976a1fbe3691 f8b6f0fa-14fe-4833-9554-150cfe6a6c38 4bf896c9-b798-4616-a9db-8da8c7e8980d 00eddc89-bcf1-43bd-ab95-2532ceb7d32a baccc11b-b811-475c-8ccc-299ecea71659 9e0456ed-9c75-4153-962d-c8d52b36a7b0 a0a831e5-a22b-4ab2-8275-4719a02a488a f38946e3-12db-45b8-898b-c8d8eb3bea6b 6ceede77-3a86-45a8-82fc-595a0b99b66a 37ab43f3-e18f-4b25-a291-fd5a5be547eb 5cc8dd07-5b08-4c9e-a9da-fc71b178abaa d0dbf0a2-2213-4b85-99c6-97ae49862b1e f32e0182-90c9-477b-ac41-a648c10ebebf"
+ version "7"
 }
 }
 native = component "Native remote core" {
@@ -535,14 +535,24 @@ metadata {
  version "1"
 }
 }
+app.mobile -[calls]-> app.application.remote "Negotiates authenticated goal and conversation commands" {
+metadata {
+ harness_id "bd7a1e04-124c-427a-b212-c6e39640724e"
+ brief "The paired Android client reads goal map pages and creates completed-reply forks through the versioned application command surface."
+ source "fact"
+ status "verified"
+ evidence "1f411793-be75-49a4-81c6-c58f99aa0488 d0dbf0a2-2213-4b85-99c6-97ae49862b1e 5b5e2d23-0e65-499d-999d-976a1fbe3691"
+ version "1"
+}
+}
 app.application.remote -[calls]-> app.application.conversations "Reuses normal conversation services" {
 metadata {
  harness_id "2faa444c-a197-4a6c-874e-8ebab8b786fc"
- brief "Remote reads and lifecycle commands reuse the existing safe conversation service and durable send identities. Validated conversation question answers and explicit recovery use the same service rather than another execution chain."
+ brief "Remote reads and lifecycle commands reuse the existing safe conversation service and durable send identities. Validated conversation question answers and explicit recovery use the same service rather than another execution chain. Completed-turn forks use the same durable service and run only once the user sends in the branch."
  source "fact"
  status "verified"
  evidence "a138a736-c367-4480-8655-8a70cd6b1091"
- version "2"
+ version "3"
 }
 }
 app.application.remote -[calls]-> app.shared "Validates versioned conversation commands" {

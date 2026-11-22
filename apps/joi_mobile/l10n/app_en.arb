@@ -8434,7 +8434,7 @@
     "description": "Settings: update unpublished",
     "placeholders": {}
   },
-  "settingsUpdateUpToDate": "You're up to date.",
+  "settingsUpdateUpToDate": "You''re up to date.",
   "@settingsUpdateUpToDate": {
     "description": "Settings: update up to date",
     "placeholders": {}

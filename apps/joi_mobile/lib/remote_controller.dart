@@ -172,6 +172,7 @@ class RemoteGoalCard {
     this.resourceWaitingWork,
     this.waitingReasons = const [],
     this.questions = const [],
+    this.recovery,
   });
 
   final int activeWork;
@@ -183,6 +184,7 @@ class RemoteGoalCard {
   final int? resourceWaitingWork;
   final List<String> waitingReasons;
   final List<RemoteUserQuestion> questions;
+  final ({String phase, int attempts, DateTime? retryAt})? recovery;
   final String goalId;
   final String workbenchId;
   final String workbenchName;
@@ -226,6 +228,7 @@ class RemoteGoalCard {
     resourceWaitingWork: resourceWaitingWork,
     waitingReasons: waitingReasons,
     questions: questions,
+    recovery: recovery,
   );
   final String? summary;
   final String? resultId;
@@ -261,6 +264,7 @@ class RemoteGoalCard {
     final work = json['work'] as Map<String, dynamic>? ?? {};
     final bench = json['workbench'] as Map<String, dynamic>? ?? {};
     final question = json['clarification'] as Map<String, dynamic>? ?? {};
+    final recovery = json['recovery'];
     return RemoteGoalCard(
       goalId: json['goalId'] as String? ?? json['inputId'] as String? ?? '',
       title: json['title'] as String? ?? json['textPreview'] as String? ?? '',
@@ -284,6 +288,16 @@ class RemoteGoalCard {
             .toSet(),
       ),
       questions: RemoteUserQuestion.list(json['questions']),
+      recovery: switch (recovery) {
+        {'phase': final String phase, 'attempts': final int attempts} => (
+          phase: phase,
+          attempts: attempts,
+          retryAt: recovery['retryAt'] is String
+              ? DateTime.tryParse(recovery['retryAt'] as String)
+              : null,
+        ),
+        _ => null,
+      },
       agentCount: json['agentCount'] as int? ?? 0,
       canArchive: json['canArchive'] == true,
       canDelete: json['canDelete'] == true,
@@ -342,6 +356,7 @@ class RemoteViewState {
     this.supportsWorkbenchCreation = false,
     this.supportsWorkbenchChoice = false,
     this.supportsResultHistory = false,
+    this.supportsGoalMap = false,
     this.workbenches = const [],
     this.partners = const [],
     this.busyGoals = const {},
@@ -362,6 +377,7 @@ class RemoteViewState {
   final bool supportsWorkbenchCreation;
   final bool supportsWorkbenchChoice;
   final bool supportsResultHistory;
+  final bool supportsGoalMap;
   final List<RemoteChoice> workbenches;
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
@@ -378,6 +394,7 @@ class RemoteViewState {
     bool? supportsWorkbenchCreation,
     bool? supportsWorkbenchChoice,
     bool? supportsResultHistory,
+    bool? supportsGoalMap,
     List<RemoteChoice>? workbenches,
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
@@ -397,6 +414,7 @@ class RemoteViewState {
     supportsWorkbenchChoice:
         supportsWorkbenchChoice ?? this.supportsWorkbenchChoice,
     supportsResultHistory: supportsResultHistory ?? this.supportsResultHistory,
+    supportsGoalMap: supportsGoalMap ?? this.supportsGoalMap,
     workbenches: workbenches ?? this.workbenches,
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
@@ -453,6 +471,7 @@ abstract interface class RemoteController implements Listenable {
 
 abstract interface class ConversationRemoteController implements Listenable {
   bool get supportsConversations;
+  bool get supportsConversationForks;
   Future<Map<String, dynamic>> conversation(
     String operation, {
     Map<String, Object?> parameters = const {},

@@ -17,11 +17,27 @@ String goalWorkbenchName(RemoteGoalCard goal) => goal.workbenchName.isEmpty
 String goalTitle(RemoteGoalCard goal) =>
     goal.title.isEmpty ? tr(Msg.commonInputAwaitingConfirmation) : goal.title;
 
-String goalStatusLabel(RemoteGoalCard goal) =>
-    goal.status == 'NEEDS_ATTENTION' &&
-        goal.reasonCode == 'harness_review_unrecoverable'
-    ? tr(Msg.homeReviewInterrupted)
-    : statusLabel(goal.status);
+String goalStatusLabel(RemoteGoalCard goal) {
+  if (goal.status == 'NEEDS_ATTENTION' &&
+      goal.reasonCode == 'harness_review_unrecoverable') {
+    return tr(Msg.homeReviewInterrupted);
+  }
+  return switch (goal.recovery?.phase) {
+    'QUEUED' => tr(Msg.homeSynthesisQueued),
+    'WAITING_RETRY' => tr(Msg.homeSynthesisRetryWaiting),
+    _ => statusLabel(goal.status),
+  };
+}
+
+String? goalRecoveryHint(RemoteGoalCard goal) => switch (goal.recovery) {
+  (phase: 'QUEUED', attempts: _, retryAt: _) => tr(Msg.homeSynthesisQueuedHint),
+  (phase: 'WAITING_RETRY', :final attempts, retryAt: final DateTime retryAt) =>
+    tr(Msg.homeSynthesisRetryScheduled, {
+      'attempts': attempts,
+      'time': formatUiDate(retryAt),
+    }),
+  _ => null,
+};
 
 String statusLabel(String value) =>
     {
@@ -189,6 +205,7 @@ class GoalCardBody extends StatelessWidget {
       ),
       const SizedBox(height: 8),
       Text(goalProgressLabel(goal)),
+      if (goalRecoveryHint(goal) case final String hint) Text(hint),
       if (goal.summary != null &&
           (!supportsHome || !goal.needsContinuationDecision))
         Padding(

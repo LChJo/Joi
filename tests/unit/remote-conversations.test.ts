@@ -38,6 +38,18 @@ it.each(commands)("admits and maps the remote operation $kind", async command =>
   if (command.kind === "conversation.rename") expect(operation).toHaveBeenCalledWith("chat","Renamed");
 });
 
+it("opens a completed-turn fork through the restricted remote contract", async () => {
+  const fork = vi.fn().mockResolvedValue({ conversationId: "branch", turns: [] });
+  const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn() }, conversations: { service: { fork } } } as never);
+  const command = { kind: "conversation.fork", requestId: "fork", conversationId: "source", turnId: "turn", targetId: "branch" };
+  expect(isRemoteCommand(command)).toBe(true);
+  expect(isRemoteCommand({ ...command, targetId: "" })).toBe(false);
+  expect(isRemoteCommand({ ...command, cwd: "/private" })).toBe(false);
+  const response = await service.handle(command, "phone");
+  expect(JSON.parse((response.result as RemoteReadPage).chunk)).toEqual({ conversationId: "branch", turns: [] });
+  expect(fork).toHaveBeenCalledExactlyOnceWith("source", "turn", "branch");
+});
+
 it.each([
   null,[],{}, { kind: "conversation.catalog",requestId: "" },
   { kind: "conversation.skills",requestId: "x",engine: "unknown" },

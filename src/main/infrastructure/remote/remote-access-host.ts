@@ -95,6 +95,8 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
     && (item.bindInputId === undefined || item.bindInputId === item.inputId)
     && (item.questionVersion === undefined || typeof item.questionVersion === "number" && Number.isInteger(item.questionVersion) && item.questionVersion >= 1);
   if (item.kind === "read.next") return string("cursor", 240);
+  if (item.kind === "goal.map") return string("goalId") && string("cursor", 240, true)
+    && Object.keys(item).every(key => ["kind", "requestId", "goalId", "cursor"].includes(key));
   if (item.kind === "goal.results" || item.kind === "goal.artifacts") return string("goalId") && string("cursor", 240, true);
   if (item.kind === "goal.result") return string("goalId") && string("resultId");
   if (item.kind === "goal.get" || item.kind === "goal.agents" || item.kind === "agent.conversation") {
@@ -102,7 +104,7 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
   }
   if (item.kind === "message.send") return string("idempotencyKey", 240) && string("text", 32_000) && string("workbenchId", 160, true);
   if (!string("inputId")) return false;
-  if (["message.cancel", "message.dismiss", "message.closeHistoricalReview"].includes(String(item.kind))) return true;
+  if (["message.cancel", "message.dismiss", "message.archive", "message.unarchive", "message.closeHistoricalReview"].includes(String(item.kind))) return true;
   if (item.kind === "message.retry") return item.text === undefined || typeof item.text === "string" && item.text.length <= 8_000;
   if (item.kind === "message.clarify") return string("text", 8_000, true) && string("workbenchId", 160, true)
     && string("partnerId", 160, true) && string("questionId", 160, true)
@@ -399,7 +401,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       await this.#touchDevice(value.deviceId);
     }
     await this.#send(session.connectionId, {
-      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1", "conversations.v1", "questions.v1"],
+      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1", "conversations.v1", "questions.v1", "goal.map.v1", "conversation.fork.v1"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),
