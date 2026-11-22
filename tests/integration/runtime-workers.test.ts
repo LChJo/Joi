@@ -100,121 +100,139 @@ describe("runtime Workers (AC-PERF-01)", () => {
     }
   });
 
-  it("serves a large goal and its history over HTTP during concurrent status writes", async () => {
-    const fixture = await createRuntimeFixture();
-    const reader = new WorkerHomeFeedRepository(path.join(fixture.root, "runtime.sqlite"), readWorkerUrl);
-    const listeners = await startRuntimeListeners({ loopbackPort: 0, handler: createApiHandler({
-      ...fixture,
-      workbenchAgents: new WorkbenchAgentService({ clock: fixture.clock, repository: new SqliteWorkbenchAgentRepository(fixture.database), listRepository: reader }),
-      joiHomeFeed: new JoiHomeFeedService({ clock: fixture.clock, repository: reader }),
-    }) });
-    const origin = listeners.loopback.url;
-    const healthAgent = new Agent({ keepAlive: true });
-    let writer: ReturnType<typeof setInterval> | undefined;
-    try {
-      const bench = await seedLargeGoal(fixture);
-      async function authenticate() {
-        const bootstrap = await fixture.auth.issueDesktopBootstrap();
-        const response = await fetch(`${origin}/api/v1/auth/bootstrap`, {
-          method: "POST", headers: { "content-type": "application/json", origin: "null" }, body: JSON.stringify({ nonce: bootstrap.nonce }),
-        });
-        expect(response.status).toBe(200);
-        const cookie = response.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
-        return { cookie };
-      }
-      const clientA = await authenticate();
-      const clientB = await authenticate();
-      const agentsUrl = `${origin}/api/v1/workbenches/${bench}/agents?goalId=target`;
-      const detailUrl = `${origin}/api/v1/joi/goals/target/detail`;
-      interface AgentPage { items: WorkbenchAgentCardDto[]; nextCursor?: string }
-      const readAgents = async (headers: { cookie: string }, cursor?: string, limit = 100) => {
-        const url = `${agentsUrl}&limit=${String(limit)}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
-        const received = await fetch(url, { headers });
-        expect(received.status).toBe(200);
-        return await received.json() as AgentPage;
-      };
-      function readHealth(): Promise<number | undefined> {
-        return new Promise((resolve, reject) => {
-          get(`${origin}/api/v1/health`, { agent: healthAgent }, response => {
-            response.on("error", reject);
-            response.once("end", () => resolve(response.statusCode));
-            response.resume();
-          }).on("error", reject);
-        });
-      }
-      const readSummary = async () => {
-        const response = await fetch(`${detailUrl}?view=summary`, { headers: clientB });
-        expect(response.status).toBe(200);
-        const detail = await response.json() as JoiGoalDetailDto;
-        expect(detail.harness?.paths).toEqual([]);
-        expect(detail.harness?.progress?.work.total).toBe(LARGE_GOAL_SIZE);
-      };
-      // Measure steady-state server latency across concurrent requests. Give the health probe
-      // its own keep-alive connection so it does not use the larger responses' client pool.
-      const [healthStatus] = await Promise.all([readHealth(), readAgents(clientA), readAgents(clientB), readSummary()]);
-      expect(healthStatus).toBe(200);
-      let writes = 0;
-      writer = setInterval(() => {
-        fixture.database.transaction(db => db.prepare("UPDATE work_items SET status=? WHERE work_id='work-00001'")
-          .run(writes++ % 2 === 0 ? "RUNNING" : "COMPLETED"));
-      }, 25);
-      const agentTimes: number[] = [];
-      const healthTimes: number[] = [];
-      for (let sample = 0; sample < 40; sample++) {
-        const load = async (headers: { cookie: string }) => {
-          const started = performance.now();
-          const page = await readAgents(headers);
-          agentTimes.push(performance.now() - started);
-          return page.items.map(item => item.agentId);
-        };
-        const health = async () => {
-          const started = performance.now();
-          const status = await readHealth();
-          healthTimes.push(performance.now() - started);
-          expect(status).toBe(200);
-        };
-        const [left, right] = await Promise.all([load(clientA), load(clientB), health(), readSummary()]);
-        expect(left).toHaveLength(100);
-        expect(right).toEqual(left);
-      }
-      const agentP95 = p95(agentTimes);
-      const healthP95 = p95(healthTimes);
-      console.info(`Large-goal HTTP P95: Agent page ${agentP95.toFixed(1)} ms, health ${healthP95.toFixed(1)} ms`);
-      expect(agentP95, "Agent first-page HTTP p95").toBeLessThanOrEqual(500);
-      expect(healthP95, "health HTTP p95").toBeLessThanOrEqual(100);
-      expect(writes).toBeGreaterThan(0);
+  describe("with a populated goal and historical Agents", () => {
+    let fixture: Awaited<ReturnType<typeof createRuntimeFixture>> | undefined;
+    let bench: string;
 
-      const agents = new Set<string>();
-      let cursor: string | undefined;
-      do {
-        const page = await readAgents(clientA, cursor, 40);
-        for (const item of page.items) {
-          expect(agents.has(item.agentId)).toBe(false);
-          agents.add(item.agentId);
-        }
-        cursor = page.nextCursor;
-      } while (cursor !== undefined && agents.size <= LARGE_GOAL_SIZE);
-      expect(agents.size).toBe(100);
+    beforeAll(async () => {
+      fixture = await createRuntimeFixture();
+      bench = await seedLargeGoal(fixture);
+    }, 30_000);
 
-      const paths = new Set<string>();
-      const layers = new Set<number>();
-      let offset: number | undefined = 0;
-      do {
-        const response = await fetch(`${detailUrl}?view=map&limit=100&offset=${String(offset)}`, { headers: clientB });
-        expect(response.status).toBe(200);
-        const page = await response.json() as JoiGoalDetailDto;
-        for (const item of page.harness?.paths ?? []) {
-          expect(paths.has(item.pathId)).toBe(false);
-          paths.add(item.pathId);
-          layers.add(item.layer);
+    afterAll(async () => { await fixture?.close(); }, 30_000);
+
+    it("serves a large goal and its history over HTTP during concurrent status writes", async () => {
+      if (fixture === undefined) throw new Error("The large goal fixture is unavailable.");
+      const runtime = fixture;
+      const reader = new WorkerHomeFeedRepository(path.join(runtime.root, "runtime.sqlite"), readWorkerUrl);
+      const listeners = await startRuntimeListeners({ loopbackPort: 0, handler: createApiHandler({
+        ...runtime,
+        workbenchAgents: new WorkbenchAgentService({ clock: runtime.clock, repository: new SqliteWorkbenchAgentRepository(runtime.database), listRepository: reader }),
+        joiHomeFeed: new JoiHomeFeedService({ clock: runtime.clock, repository: reader }),
+      }) });
+      const origin = listeners.loopback.url;
+      const request = (url: string, init?: RequestInit) => fetch(url, { ...init, signal: AbortSignal.timeout(5_000) });
+      const healthAgent = new Agent({ keepAlive: true });
+      let writer: ReturnType<typeof setInterval> | undefined;
+      try {
+        async function authenticate() {
+          const bootstrap = await runtime.auth.issueDesktopBootstrap();
+          const response = await request(`${origin}/api/v1/auth/bootstrap`, {
+            method: "POST", headers: { "content-type": "application/json", origin: "null" }, body: JSON.stringify({ nonce: bootstrap.nonce }),
+          });
+          expect(response.status).toBe(200);
+          const cookie = response.headers.get("set-cookie")?.split(";", 1)[0] ?? "";
+          return { cookie };
         }
-        offset = page.nextOffset;
-      } while (offset !== undefined && offset < LARGE_GOAL_SIZE);
-      expect([...layers]).toEqual(Array.from({ length: 100 }, (_, index) => MAP_LAYERS - index));
-      expect(paths.size).toBe(Array.from({ length: LARGE_GOAL_SIZE }, (_, index) => (index + 1) % MAP_LAYERS + 1)
-        .filter(layer => layer > MAP_LAYERS - 100).length);
-    } finally { clearInterval(writer); healthAgent.destroy(); await listeners.close(); await reader.close(); await fixture.close(); }
-  }, 30_000);
+        const clientA = await authenticate();
+        const clientB = await authenticate();
+        const agentsUrl = `${origin}/api/v1/workbenches/${bench}/agents?goalId=target`;
+        const detailUrl = `${origin}/api/v1/joi/goals/target/detail`;
+        interface AgentPage { items: WorkbenchAgentCardDto[]; nextCursor?: string }
+        const readAgents = async (headers: { cookie: string }, cursor?: string, limit = 100) => {
+          const url = `${agentsUrl}&limit=${String(limit)}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
+          const received = await request(url, { headers });
+          expect(received.status).toBe(200);
+          return await received.json() as AgentPage;
+        };
+        function readHealth(): Promise<number | undefined> {
+          return new Promise((resolve, reject) => {
+            get(`${origin}/api/v1/health`, { agent: healthAgent, signal: AbortSignal.timeout(5_000) }, response => {
+              response.on("error", reject);
+              response.once("end", () => resolve(response.statusCode));
+              response.resume();
+            }).on("error", reject);
+          });
+        }
+        const readSummary = async () => {
+          const response = await request(`${detailUrl}?view=summary`, { headers: clientB });
+          expect(response.status).toBe(200);
+          const detail = await response.json() as JoiGoalDetailDto;
+          expect(detail.harness?.paths).toEqual([]);
+          expect(detail.harness?.progress?.work.total).toBe(LARGE_GOAL_SIZE);
+        };
+        // Measure steady-state server latency across concurrent requests. Give the health probe
+        // its own keep-alive connection so it does not use the larger responses' client pool.
+        const [healthStatus] = await Promise.all([readHealth(), readAgents(clientA), readAgents(clientB), readSummary()]);
+        expect(healthStatus).toBe(200);
+        let writes = 0;
+        writer = setInterval(() => {
+          runtime.database.transaction(db => db.prepare("UPDATE work_items SET status=? WHERE work_id='work-00001'")
+            .run(writes++ % 2 === 0 ? "RUNNING" : "COMPLETED"));
+        }, 25);
+        const agentTimes: number[] = [];
+        const healthTimes: number[] = [];
+        for (let sample = 0; sample < 40; sample++) {
+          const load = async (headers: { cookie: string }) => {
+            const started = performance.now();
+            const page = await readAgents(headers);
+            agentTimes.push(performance.now() - started);
+            return page.items.map(item => item.agentId);
+          };
+          const health = async () => {
+            const started = performance.now();
+            const status = await readHealth();
+            healthTimes.push(performance.now() - started);
+            expect(status).toBe(200);
+          };
+          const [left, right] = await Promise.all([load(clientA), load(clientB), health(), readSummary()]);
+          expect(left).toHaveLength(100);
+          expect(right).toEqual(left);
+        }
+        const agentP95 = p95(agentTimes);
+        const healthP95 = p95(healthTimes);
+        console.info(`Large-goal HTTP P95: Agent page ${agentP95.toFixed(1)} ms, health ${healthP95.toFixed(1)} ms`);
+        expect(agentP95, "Agent first-page HTTP p95").toBeLessThanOrEqual(500);
+        expect(healthP95, "health HTTP p95").toBeLessThanOrEqual(100);
+        expect(writes).toBeGreaterThan(0);
+
+        const agents = new Set<string>();
+        let cursor: string | undefined;
+        do {
+          const page = await readAgents(clientA, cursor, 40);
+          for (const item of page.items) {
+            expect(agents.has(item.agentId)).toBe(false);
+            agents.add(item.agentId);
+          }
+          cursor = page.nextCursor;
+        } while (cursor !== undefined && agents.size <= LARGE_GOAL_SIZE);
+        expect(agents.size).toBe(100);
+
+        const paths = new Set<string>();
+        const layers = new Set<number>();
+        let offset: number | undefined = 0;
+        do {
+          const response = await request(`${detailUrl}?view=map&limit=100&offset=${String(offset)}`, { headers: clientB });
+          expect(response.status).toBe(200);
+          const page = await response.json() as JoiGoalDetailDto;
+          for (const item of page.harness?.paths ?? []) {
+            expect(paths.has(item.pathId)).toBe(false);
+            paths.add(item.pathId);
+            layers.add(item.layer);
+          }
+          offset = page.nextOffset;
+        } while (offset !== undefined && offset < LARGE_GOAL_SIZE);
+        expect([...layers]).toEqual(Array.from({ length: 100 }, (_, index) => MAP_LAYERS - index));
+        expect(paths.size).toBe(Array.from({ length: LARGE_GOAL_SIZE }, (_, index) => (index + 1) % MAP_LAYERS + 1)
+          .filter(layer => layer > MAP_LAYERS - 100).length);
+      } finally {
+        clearInterval(writer);
+        healthAgent.destroy();
+        await listeners.close();
+        await reader.close();
+      }
+    }, 30_000);
+  });
 
   it("coalesces identical Agent page reads and sees only committed session changes", async () => {
     const fixture = await createRuntimeFixture();

@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "64aac17f173eaf299285cfdd37d007d97e35649c4c4f65ff60d47619d7d8b8dc",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "dc7beba90d03481317ae7d2f389252ee29d2d7a6742bb2b7ebf3a5fe02209baa",
+      "observedAt": "2026-11-22T11:57:49.132Z",
       "range": {
         "startLine": 1,
         "endLine": 781
@@ -2160,12 +2160,12 @@
     {
       "id": "f36cf665-bf68-4d61-bae9-8995b49dff4b",
       "kind": "document",
-      "claim": "Local validation selects tests and checks from the actual diff and affected boundaries; desktop/native tests, coverage, builds and package checks have explicit triggers. Passing results and current build artifacts are reused. Full CI and release gates remain separate.",
+      "claim": "Local validation selects tests and checks from the actual diff and affected boundaries; desktop/native tests, coverage, builds and package checks have explicit triggers. Passing results and current build artifacts are reused. Full CI and release gates remain separate. The large-goal HTTP benchmark uses bounded database fixture hooks and its own 30-second sample and pagination case.",
       "location": {
         "path": ".agent/commands/verify.md"
       },
-      "hash": "245d2aa5a49cff95bd91b651c94d546dad836f2044f9f4923cad40fb5dab149a",
-      "observedAt": "2026-11-16T05:38:53.928Z",
+      "hash": "64ef0b75ba451f67dcc26b4cf06b57964c68b7c765201c3e1d2d9f97cb8820a2",
+      "observedAt": "2026-11-22T11:57:49.135Z",
       "range": {
         "startLine": 1,
         "endLine": 107
@@ -4272,12 +4272,12 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across the latest 100 populated layers out of 128 layers and 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across the latest 100 populated layers out of 128 layers and 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits. The bulk database fixture and cleanup have separate bounded hooks, while the original test deadline and per-request HTTP deadlines bound the live reads.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "2c1cd42d4ab942b5acfd97cd211de2749027472eab3a62225a9ece2a30fbcd30",
-      "observedAt": "2026-11-21T15:17:05.663Z"
+      "hash": "b8ac0af6b33bb16cb22b2b249049fcbdaeb2c0492b0360ffaadc6b95aa6853a6",
+      "observedAt": "2026-11-22T11:58:37.935Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",
