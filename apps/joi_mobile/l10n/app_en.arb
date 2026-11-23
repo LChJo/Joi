@@ -1910,6 +1910,30 @@
       }
     }
   },
+  "chatFilePreviewUnavailable": "This file is unavailable for preview here. Open it with a system app.",
+  "@chatFilePreviewUnavailable": {
+    "description": "chat.filePreviewUnavailable",
+    "placeholders": {}
+  },
+  "chatFileActions": "File actions for {name}",
+  "@chatFileActions": {
+    "description": "chat.fileActions",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatOpenFile": "Open file",
+  "@chatOpenFile": {
+    "description": "chat.openFile",
+    "placeholders": {}
+  },
+  "chatRevealFile": "Show in folder",
+  "@chatRevealFile": {
+    "description": "chat.revealFile",
+    "placeholders": {}
+  },
   "commonLanguage": "Language",
   "@commonLanguage": {
     "description": "Language preference heading",
@@ -2137,6 +2161,16 @@
   "commonNextPage": "Next page",
   "@commonNextPage": {
     "description": "common.nextPage",
+    "placeholders": {}
+  },
+  "errorsWorkspaceFileNotFound": "The file is no longer available in this workspace.",
+  "@errorsWorkspaceFileNotFound": {
+    "description": "errors.workspaceFileNotFound",
+    "placeholders": {}
+  },
+  "errorsWorkspaceFileOpenFailed": "The system could not open the selected file.",
+  "@errorsWorkspaceFileOpenFailed": {
+    "description": "errors.workspaceFileOpenFailed",
     "placeholders": {}
   },
   "errorsGoalSynthesisCorrectionExhausted": "The final report failed evidence or format validation",

@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint. An idempotent fork request targets a completed reply and returns the new conversation. Scoped question answers and explicit conversation recovery use the same authenticated request layer. The existing goal detail endpoint accepts optional summary and map page views. Desktop-only update reads and versioned writes use the same authenticated HTTP client.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure. The shared HTTP API exposes a conversation attachment capability; paired adapters can disable unsupported uploads while LAN browser APIs retain the existing authenticated transport. The transcript client can request a message-only page through the existing authenticated endpoint. An idempotent fork request targets a completed reply and returns the new conversation. Scoped question answers and explicit conversation recovery use the same authenticated request layer. The existing goal detail endpoint accepts optional summary and map page views. Desktop-only update reads and versioned writes use the same authenticated HTTP client. A desktop file action posts a relative selection and an open or reveal mode through this client.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "c0ede67d9853178a811cb0961af05c570f3d0c621d71eee2359fb1db801ead21",
-      "observedAt": "2026-11-21T11:14:01.531Z",
+      "hash": "0f01ae019be1400dde1917bc5e4f8fa4029d34c0f1262411b5e1bd86b6bc42c4",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 630
+        "endLine": 631
       }
     },
     {
@@ -326,29 +326,29 @@
     {
       "id": "4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30",
       "kind": "source-code",
-      "claim": "Desktop Git controls, safe parsed diff views, bounded workspace file previews and sandboxed explicit HTTP(S) browser frames.",
+      "claim": "Desktop Git controls, safe parsed diff views, bounded workspace file previews and sandboxed explicit HTTP(S) browser frames. Binary and oversized previews offer system file actions, and reported changes have a keyboard-accessible open/reveal menu.",
       "location": {
         "path": "src/renderer/ConversationWorkspace.tsx"
       },
-      "hash": "cca18a9ca2187de1b3d5adb3b068ea90a48a9bab60a9bba1809912f3ac8a4058",
-      "observedAt": "2026-11-17T05:58:49.978Z",
+      "hash": "0e6cda5938b0354c153d0dc8e7a939f8c5d7c5aa1831fdb983b9176e7a3f5d31",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 116
+        "endLine": 203
       }
     },
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Ordinary conversations bind turns to execution segments and treat current user intent as the task. Startup restores trustworthy Pi results by stable turn and segment identity without dispatching. Fork creation persists a selected-turn handoff without dispatching. The first submitted turn creates a fresh execution segment from that seed. Scoped question answers, stop/child cancellation and committed question observations reuse the durable service. Cold boot marks unconsumed cards interrupted. Explicit recovery uses one stable request per parent turn and complete private original-request/answer context, without fabricating tool results or replaying unknown effects. Only the selected unanswered interrupted card adopts its displayed default; other unanswered cards remain explicit requests to ask again, and cleanup is question-specific. Graceful host shutdown preserves INTERRUPTED rather than user-canceled ownership. Legacy pending-question text appends without replacing preceding output. Recovery retries use the prior attempt identity and preserve the original answer until successful settlement. Completed recovery updates include the original card projection for SSE readers.",
+      "claim": "Ordinary conversations bind turns to execution segments and treat current user intent as the task. Startup restores trustworthy Pi results by stable turn and segment identity without dispatching. Fork creation persists a selected-turn handoff without dispatching. The first submitted turn creates a fresh execution segment from that seed. Scoped question answers, stop/child cancellation and committed question observations reuse the durable service. Cold boot marks unconsumed cards interrupted. Explicit recovery uses one stable request per parent turn and complete private original-request/answer context, without fabricating tool results or replaying unknown effects. Only the selected unanswered interrupted card adopts its displayed default; other unanswered cards remain explicit requests to ask again, and cleanup is question-specific. Graceful host shutdown preserves INTERRUPTED rather than user-canceled ownership. Legacy pending-question text appends without replacing preceding output. Recovery retries use the prior attempt identity and preserve the original answer until successful settlement. Completed recovery updates include the original card projection for SSE readers. Workspace-derived files preserve validated relative locations without projecting the private artifact reference.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "9f2cb02f7fe0d4f56dbb996f93dc729c32384b4490eacb4977bdfed71c1223a4",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "4d63a21ceb430f60e3ba8a513b1a6b4615fae662958ca723969863ec11bc9cd2",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 442
+        "endLine": 447
       }
     },
     {
@@ -368,57 +368,57 @@
     {
       "id": "1cb47532-3623-40ae-88b1-bd52b81947e5",
       "kind": "source-code",
-      "claim": "simple-git wraps installed Git with allowlisted commands and server-owned roots; path validation, staged-only commits, non-force sync and redacted text previews.",
+      "claim": "simple-git wraps installed Git with allowlisted commands and server-owned roots; path validation, staged-only commits, non-force sync and redacted text previews. Unsupported previews return an actionable result; system open and reveal use the same resolved workspace boundary and require a current regular file.",
       "location": {
         "path": "src/main/infrastructure/workspace/git-workspace-adapter.ts"
       },
-      "hash": "0adc02c50190a9b5970cdf2d25f3f5e5c25e90f3336954f21ad60dae5b741a9c",
-      "observedAt": "2026-11-11T06:25:48.982Z",
-      "range": {
-        "startLine": 1,
-        "endLine": 97
-      }
-    },
-    {
-      "id": "3a9f444d-04a7-43d1-9a57-0212eeda58ca",
-      "kind": "source-code",
-      "claim": "Authenticated CSRF-protected conversation routes accept only fixed unique Pi extension IDs and reject model/workspace overrides. Authenticated write protection also covers idempotent title-only PUT requests with a required string title. The authenticated read surface includes the conversation SSE endpoint. An authenticated write route accepts a source conversation, completed turn and stable target identity for forks. Conversation/goal question answers validate version and answer fields; explicit conversation recovery is a protected write and delegates to the existing service.",
-      "location": {
-        "path": "src/main/interfaces/http/routes/conversation-routes.ts"
-      },
-      "hash": "5b14a3b847241597cbb7e7edf0257dc0154f939395f20b2715f32c1be6a4e916",
-      "observedAt": "2026-11-19T11:54:37.020Z",
-      "range": {
-        "startLine": 1,
-        "endLine": 134
-      }
-    },
-    {
-      "id": "0928551c-008e-4486-b324-fdd3cc15e717",
-      "kind": "source-code",
-      "claim": "Conversations inherit a bounded owned Workbench projection and currently active learned method. Handoffs, settled recovery and child identities keep their private scopes. The same question service is injected into ConversationService and Pi; child requests use the child Work identity for durable question ownership. Graceful close supplies an explicit host-shutdown reason to children instead of treating shutdown as user cancellation.",
-      "location": {
-        "path": "src/main/composition/wire-conversations.ts"
-      },
-      "hash": "f09f2c692b6ab81bec41db107ff71f3eb1db9cfcabb6a3d614e99f8be3d09ddf",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "783c2d03d9894cc4203d298c182c536e9686e3b727dd2b4e970a69caee1dbc51",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
         "endLine": 118
       }
     },
     {
+      "id": "3a9f444d-04a7-43d1-9a57-0212eeda58ca",
+      "kind": "source-code",
+      "claim": "Authenticated CSRF-protected conversation routes accept only fixed unique Pi extension IDs and reject model/workspace overrides. Authenticated write protection also covers idempotent title-only PUT requests with a required string title. The authenticated read surface includes the conversation SSE endpoint. An authenticated write route accepts a source conversation, completed turn and stable target identity for forks. Conversation/goal question answers validate version and answer fields; explicit conversation recovery is a protected write and delegates to the existing service. The file action route permits open and reveal for desktop sessions with the usual origin and CSRF checks.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/conversation-routes.ts"
+      },
+      "hash": "5092cf3cf10c48856c899cf45ebad6a8f4a787aa5a80db95163e5c2ab7066a48",
+      "observedAt": "2026-11-23T05:39:35.585Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 141
+      }
+    },
+    {
+      "id": "0928551c-008e-4486-b324-fdd3cc15e717",
+      "kind": "source-code",
+      "claim": "Conversations inherit a bounded owned Workbench projection and currently active learned method. Handoffs, settled recovery and child identities keep their private scopes. The same question service is injected into ConversationService and Pi; child requests use the child Work identity for durable question ownership. Graceful close supplies an explicit host-shutdown reason to children instead of treating shutdown as user cancellation. Workspace file actions use the existing desktop artifact opener.",
+      "location": {
+        "path": "src/main/composition/wire-conversations.ts"
+      },
+      "hash": "82e7e856bf331cf91971eb918cd69905dd6cecafc2b699bdb86fc25997c6810d",
+      "observedAt": "2026-11-23T05:39:35.585Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 119
+      }
+    },
+    {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Shared conversation DTOs expose safe committed turn updates, scoped history, timing and explicitly public provider summaries. An empty fork exposes only its initial configuration, with the private seed kept server-side. Turns optionally carry sanitized questions and waitingForUser without changing terminal state enums. A conversation update can carry the related original turn whose recovery receipts changed.",
+      "claim": "Shared conversation DTOs expose safe committed turn updates, scoped history, timing and explicitly public provider summaries. An empty fork exposes only its initial configuration, with the private seed kept server-side. Turns optionally carry sanitized questions and waitingForUser without changing terminal state enums. A conversation update can carry the related original turn whose recovery receipts changed. Reported workspace artifacts can carry a relative path and unsupported text previews include a reason.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "690d0665738be824f24a10759fda915dfddd3e2840046c10227c0147cdc48fe2",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "32bb7ef24246d2c1a3744dfa0818af77006a0a721896a7f7e46d14730a549640",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 124
+        "endLine": 131
       }
     },
     {
@@ -438,12 +438,12 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output. CHAT-21 pins Pi 1.6.0 and requires canonical error results for skipped calls after a mid-batch abort. CHAT-48 includes Android with negotiated fork support and the same stable destination identity after a lost receipt.",
+      "claim": "CHAT acceptance now distinguishes business turns and engine segments, official compaction, scoped canonical history and preserved native/remote UI contracts. Acceptance includes keyboard and IME behavior, accessible running indicators and the simplified completed footer. CHAT-47 covers partner transcript presentation, authorized local details, mobile lazy rows and scrollable tables. CHAT-48 specifies compact copy and fork controls, selected-turn cutoffs, independent execution and durable handoff. CHAT-49 specifies local sidebar group and row ordering, keyboard interaction and ownership invariants. CHAT-20 documents the provider capacity guard and preservation of canonical history. The ASK-01-12 link defines inline FIFO questions, ACTIVE-only defaults, original Pi call replies, delivery acknowledgement and explicit interrupted recovery; waitingForUser preserves RUNNING and question changes enter durable cursors without replacing output. CHAT-21 pins Pi 1.6.0 and requires canonical error results for skipped calls after a mid-batch abort. CHAT-48 includes Android with negotiated fork support and the same stable destination identity after a lost receipt. CHAT-08 and CHAT-09 define direct system open and reveal from reported changes and unavailable previews.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "cc342229f1e84cd3082997dd8cea167cf561ef44910648fb199caaa3e58a8562",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "a57c1d26dd3bc2c53f1de342a36d2b016c94f8a899b55a92f8782ab83fe00522",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
         "endLine": 53
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy and fork actions center 14px glyphs within adjacent 24px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px. Sidebar reorder feedback uses grab cursors, dimmed sources and an insertion line.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy and fork actions center 14px glyphs within adjacent 24px buttons. Responsive conversation layouts retain a zero-minimum center, dismissible phone history overlay, bounded composer/popovers and safe-area padding. The legacy paired browser gains conversation/archive layouts without desktop workspace controls. Running tool icons and stop rings rotate, and the turn status dot pulses. Reduced motion presents the same states statically. Shared compact tool disclosures constrain long names and parameter summaries at narrow widths. Ordinary and partner transcript prose share a 13px base, and dispatched task bubbles use 12px. Sidebar reorder feedback uses grab cursors, dimmed sources and an insertion line. Reported file rows reserve space for a menu, and preview actions wrap on narrow panels.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "26572983547975bbe206d54951b7fffe872eb56e96896e4669de402e110da8f5",
-      "observedAt": "2026-11-18T09:09:34.871Z",
+      "hash": "955551242d7c814568eb210c4ee89d23d768df848264a0e7bb62e8f73e73f17e",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 338
+        "endLine": 343
       }
     },
     {
@@ -732,12 +732,12 @@
     {
       "id": "793588d4-9226-45ea-bcb5-58e60334355c",
       "kind": "source-code",
-      "claim": "Capability-scoped inspection guidance supplements official tool rules, with read fallback only when official metadata is absent; it does not introduce tool-level lease or scheduling policy. When available, the history tool is the route to indexed Workbench sources. Shell file searches use narrow paths and ignore rules.",
+      "claim": "Capability-scoped guidance sends Workbench history questions to the evidence tool, with source discovery, exact references and result pagination. File inspection guidance uses bounded paths and official rules.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
       },
-      "hash": "54788284903a953f2c97099acd12feab890f772a3b201c74351a70c0eb9f6735",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "hash": "fc26d763362e8e404b87b1c6b171b77e4e2b0d6db15a3690665093086a91a1ea",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
         "endLine": 15
@@ -900,15 +900,15 @@
     {
       "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
       "kind": "source-code",
-      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied. The exclusive desktop writer awaits Turn and dispatch claim reconciliation before its first outbox dispatch and actor tick. One SQLite-backed question service wires conversation/Pi and HTTP/paired answers, starts deadline/reconciliation processing and invokes goal inbox answer projection. Graceful shutdown first closes conversation/child execution with its shutdown reason, then closes the question service before draining the remaining runtime, preserving pending cards for recovery. Startup marks interrupted conversation questions before enabling the default-answer timer. Agent card list reads use the independent WAL snapshot Worker. The authenticated HTTP handler receives a desktop update control backed by worker RPC.",
+      "claim": "Runtime host coordinates owned worker lifecycle and stops numeric reconciliation during emergency shutdown; no real userData is read in tests. Both normal and recovery listeners use the configured development loopback port when supplied. The exclusive desktop writer awaits Turn and dispatch claim reconciliation before its first outbox dispatch and actor tick. One SQLite-backed question service wires conversation/Pi and HTTP/paired answers, starts deadline/reconciliation processing and invokes goal inbox answer projection. Graceful shutdown first closes conversation/child execution with its shutdown reason, then closes the question service before draining the remaining runtime, preserving pending cards for recovery. Startup marks interrupted conversation questions before enabling the default-answer timer. Agent card list reads use the independent WAL snapshot Worker. The authenticated HTTP handler receives a desktop update control backed by worker RPC. Conversation workspace file actions share the desktop artifact open capability over worker RPC.",
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "0257a19f17a6105b32c65f014c3d35053a5244fae22d6118a10c0410bef5bc31",
-      "observedAt": "2026-11-21T11:14:01.531Z",
+      "hash": "e19479e110cb97436e59964f9236843cff9ca81e8ee1cbb9adbcb946dc8aab94",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 390
+        "endLine": 391
       }
     },
     {
@@ -1460,43 +1460,43 @@
     {
       "id": "44b4de62-537a-42f1-8a5c-40d72900430b",
       "kind": "source-code",
-      "claim": "Disposable SQLite integration covers safe conversation progress, segments and repeatable recovery of trusted Pi result state without redispatch. Fork integration verifies duplicate requests, no outbox write, durable seed use after restart and exclusion of later turns. Question regressions retain earlier output and verify explicit private saved-answer recovery with an idempotent new turn rather than immediate redispatch. ASK-06/10 verify that failed recovery retains a saved explicit default, retries are idempotent per attempt, and successful recovery publishes the original receipt.",
+      "claim": "Disposable SQLite integration covers safe conversation progress, segments and repeatable recovery of trusted Pi result state without redispatch. Fork integration verifies duplicate requests, no outbox write, durable seed use after restart and exclusion of later turns. Question regressions retain earlier output and verify explicit private saved-answer recovery with an idempotent new turn rather than immediate redispatch. ASK-06/10 verify that failed recovery retains a saved explicit default, retries are idempotent per attempt, and successful recovery publishes the original receipt. Persisted conversation artifacts retain their workspace-relative location.",
       "location": {
         "path": "tests/integration/normal-conversation-execution.test.ts"
       },
-      "hash": "692b9242d0ed3d047e4311ac34f3786377d5c80b2c6dfb0dfca9ef5173ba7697",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "b33ee04fcfa385cdc8603c8910320d4f5e4386fedf540f3e42931b345aea8c7a",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 750
+        "endLine": 751
       }
     },
     {
       "id": "2cf215ea-bf39-4ead-a1d5-70c2133ae170",
       "kind": "source-code",
-      "claim": "Authenticated HTTP regressions read separate live prefixes before completion and verify subscription release after completion, client disconnect and session revocation. Fork HTTP coverage verifies CSRF and origin protection, validates the target and checks the created response.",
+      "claim": "Authenticated HTTP regressions read separate live prefixes before completion and verify subscription release after completion, client disconnect and session revocation. Fork HTTP coverage verifies CSRF and origin protection, validates the target and checks the created response. File action requests require desktop authentication, CSRF and an allowed mode.",
       "location": {
         "path": "tests/contract/conversation-http.test.ts"
       },
-      "hash": "4db2f9b0590fcc9475ba6befc6d4b952ac28825a18bb4809443f43dcb2d243d0",
-      "observedAt": "2026-11-18T07:26:20.269Z",
+      "hash": "fdc23419f51327bd7ee472defe7eb846e33652a3c2bdd50d505af0faec0a2efd",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 119
+        "endLine": 129
       }
     },
     {
       "id": "25d2574d-1c15-4d09-85d8-982d6df10500",
       "kind": "source-code",
-      "claim": "The golden route manifest includes authenticated conversation SSE, fork, question answer and question resume, and the authenticated goal question answer endpoint. Desktop update reads and writes are included in the route manifest.",
+      "claim": "The golden route manifest includes authenticated conversation SSE, fork, question answer and question resume, and the authenticated goal question answer endpoint. Desktop update reads and writes are included in the route manifest. The desktop workspace file open route is part of the protected write manifest.",
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "84537c7ac53b62319986504a6060e8d6de1df36f2e9edb13e97f4d6d0693113d",
-      "observedAt": "2026-11-21T11:14:01.531Z",
+      "hash": "88e6099a962c25e6a6c1e4dae8304d1b4a744fca46bdd7d2e47b6fe5e0be942e",
+      "observedAt": "2026-11-23T05:39:35.585Z",
       "range": {
         "startLine": 1,
-        "endLine": 175
+        "endLine": 176
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover Work-backed map adoption, explicit map creation, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction. Synthetic old maps verify advancing from layer 32 on review or follow-up, stable Work grouping across scans, automatic review replay and explicit grants.",
+      "claim": "Disposable SQLite tests cover Work-backed maps, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction. They verify full and bare source references, recent source discovery and paginated accepted reports in chat.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "ca65504e52e97dca21bf210cf2e69b0ff94836dda486dc5a4ee3207e6f35676b",
-      "observedAt": "2026-11-21T15:17:05.660Z",
+      "hash": "56af9dade05af563c069f66f63cb41f0d3069c47e261d51ba1fec2a9c22ae1d0",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
-        "endLine": 2401
+        "endLine": 2440
       }
     },
     {
@@ -3367,12 +3367,12 @@
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity. The provider prompt steers Workbench history to its source tool and guides repository searches to bounded paths, patterns and limits.",
-      "hash": "abd309f291f5651795b87b6805fa48bc72e4a193222eb49f28dbec1d7d161b28",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "claim": "Pi contracts verify Workbench source discovery and scoped reads in ordinary chat, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
+      "hash": "f95ebe9d39f535c53012832f57b466aa207237409173d616c95e5d257c9876f4",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
-        "endLine": 816
+        "endLine": 822
       }
     },
     {
@@ -3882,12 +3882,12 @@
     {
       "id": "4b18689f-6b0f-410b-a946-5b7479e53b33",
       "kind": "document",
-      "claim": "Historical memory admits completed Workbench conclusions, scoped Partner experience and explicit preferences from eligible settlements. Direct replies stay in the input result record.",
+      "claim": "Historical memory admits completed Workbench conclusions, scoped Partner experience and explicit preferences from eligible settlements. Chat can discover recent sources and read the saved result by full reference or bare digest under bounded pagination.",
       "location": {
         "path": "docs/historical-context-policy-spec.md"
       },
-      "hash": "068d7865303c37c0a130e95f4a7973e64f3a5fa7bf408153e25716708937c2c1",
-      "observedAt": "2026-11-21T09:59:50.128Z",
+      "hash": "b65a42a343d70be7a721139c4334569df5415b6bddbd82c2e22bce850966c3ca",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
         "endLine": 109
@@ -3924,15 +3924,15 @@
     {
       "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
       "kind": "source-code",
-      "claim": "New memory settlements are scoped to Workbench conclusions and authoritative Partner results. Existing direct-answer history remains readable with source and version checks.",
+      "claim": "New memory settlements are scoped to Workbench conclusions and authoritative Partner results. Existing direct-answer history remains readable. Full references and bare source digests both require a current source in the authorized Workbench.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
       },
-      "hash": "93cd78aad333bc895480ab03534262e11eea16c5f6523b91043140dfda8c6a96",
-      "observedAt": "2026-11-21T09:59:50.128Z",
+      "hash": "83a9e98efa9a6399fa288f7c343f298871434f773275887140ddb91c7d3fcf3f",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
-        "endLine": 211
+        "endLine": 212
       }
     },
     {
@@ -3952,15 +3952,15 @@
     {
       "id": "e870d27a-37da-4a69-b130-82041cd4c549",
       "kind": "source-code",
-      "claim": "Pi contracts verify scoped history, full latest handoff facts past the soft trigger, complete legacy summary import and guarded model capacity. The provider prompt steers Workbench history to its source tool and guides repository searches to bounded paths, patterns and limits.",
+      "claim": "Pi contracts verify Workbench source discovery and scoped reads in ordinary chat, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "hash": "abd309f291f5651795b87b6805fa48bc72e4a193222eb49f28dbec1d7d161b28",
-      "observedAt": "2026-11-20T04:09:09.785Z",
+      "hash": "f95ebe9d39f535c53012832f57b466aa207237409173d616c95e5d257c9876f4",
+      "observedAt": "2026-11-23T05:14:33.397Z",
       "range": {
         "startLine": 1,
-        "endLine": 816
+        "endLine": 822
       }
     },
     {

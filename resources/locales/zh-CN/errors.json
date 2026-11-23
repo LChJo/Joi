@@ -1,4 +1,6 @@
 {
+  "workspaceFileNotFound": "此文件已不在当前工作区。",
+  "workspaceFileOpenFailed": "系统无法打开所选文件。",
   "goalSynthesisCorrectionExhausted": "最终汇报未通过证据或格式校验",
   "goalSynthesisReferenceInvalid": "最终汇报引用了无法核实的结果或需求",
   "goalSynthesisStateInvalid": "模型提交的最终汇报格式无效",

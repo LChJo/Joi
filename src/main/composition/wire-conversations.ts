@@ -7,6 +7,7 @@ import type { ModelSourceBundle } from "./wire-model-sources.js";
 import type { WorkbenchBundle } from "./wire-workbenches.js";
 import type { MethodLearningService } from "../application/evolution/method-learning-service.js";
 import type { JoiAttachmentPort } from "../application/ports/managed-file-ports.js";
+import type { WorkbenchArtifactOpener } from "../application/ports/workbench-artifacts.js";
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ConversationService } from "../application/joi/conversation-service.js";
 import { ConversationSubagentService } from "../application/joi/conversation-subagent-service.js";
@@ -23,7 +24,7 @@ import { renderHistoricalContext } from "../domain/work/historical-context.js";
 export function wireConversations(input: {
   clock: Clock; ids: IdGenerator; database: RuntimeDatabase; persistence: PersistenceBundle; partnerStack: PartnerBundle;
   modelSourceStack: ModelSourceBundle; workbenchStack: WorkbenchBundle; evolution: MethodLearningService;
-  attachments: JoiAttachmentPort; userDataDirectory: string; questions: UserQuestionService;
+  attachments: JoiAttachmentPort; userDataDirectory: string; questions: UserQuestionService; artifactOpener?: WorkbenchArtifactOpener;
 }) {
   const { clock,ids,database,persistence,partnerStack,modelSourceStack } = input;
   partnerStack.piRuntime.setUserQuestions(input.questions);
@@ -54,7 +55,7 @@ export function wireConversations(input: {
       WHERE b.workbench_id=? AND b.status='READY' AND w.status='ACTIVE'`).get(workbenchId));
     if (typeof row?.root_path !== "string") throw new DomainError("workbench_workspace_not_ready", "Workspace is not available.");
     return Promise.resolve(row.root_path);
-  } });
+  } },input.artifactOpener);
   let defaultPartner: Promise<Awaited<ReturnType<typeof persistence.partnerRegistryRepository.getActive>>> | undefined;
   const conversations = new ConversationService({ clock,ids,store: persistence.conversations,workbenches: persistence.workbenches,subagents,questions: input.questions,
     handoffs: new ConversationHandoff(partnerStack.nativeSessions),

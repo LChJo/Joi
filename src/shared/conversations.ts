@@ -58,7 +58,7 @@ export interface ConversationTurnDto {
   entries: ConversationEntryDto[];
   questions?: UserQuestionDto[];
   waitingForUser?: boolean;
-  artifacts: { name: string; size: number; mimeType?: string }[];
+  artifacts: { name: string; size: number; mimeType?: string; relativePath?: string }[];
   errorCode?: string;
   failure?: ConversationFailureDto;
 }
@@ -108,6 +108,13 @@ export interface SendConversationInput {
   requestId: string;
 }
 export interface GitFileDto { path: string; index: string; workingTree: string; }
+export type ConversationWorkspaceOpenMode = "OPEN" | "REVEAL";
+export interface ConversationWorkspaceFileDto {
+  text: string;
+  truncated: boolean;
+  unavailable?: "BINARY" | "TOO_LARGE";
+}
+
 export interface GitWorkspaceDto {
   available: boolean;
   reasonCode?: string;

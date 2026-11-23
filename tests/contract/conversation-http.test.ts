@@ -54,13 +54,14 @@ it("CHAT-09/44/48 protects conversation mutations, rejects model overrides and c
   const chat: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "Hello",updatedAt: "2026-11-11",turns: [] };
   const send = vi.fn(() => Promise.resolve(chat));
   const execute = vi.fn(() => Promise.resolve());
+  const open = vi.fn(() => Promise.resolve());
   const list = vi.fn(() => Promise.resolve({ items: [chat] }));
   const archive = vi.fn(() => Promise.resolve()),restore = vi.fn(() => Promise.resolve()),remove = vi.fn(() => Promise.resolve());
   const rename = vi.fn((_id: string,title: string) => Promise.resolve({ ...chat,title }));
   const fork = vi.fn(() => Promise.resolve({ ...chat,conversationId: "new-branch" }));
   const listeners = await startRuntimeListeners({ loopbackPort: 0,handler: createApiHandler({ ...f,
     conversations: { list,get: () => Promise.resolve(chat),send,rename,fork,archive,restore,delete: remove,stop: () => Promise.resolve(),inheritance: () => Promise.resolve({ memoryCount: 0,evolutionRevisionId: null }) },
-    conversationWorkspace: { status: () => Promise.resolve({ available: false,branch: "",branches: [],ahead: 0,behind: 0,files: [],history: [] }),diff: () => Promise.resolve({ patch: "",truncated: false }),files: () => Promise.resolve({ items: [] }),file: () => Promise.resolve({ text: "",truncated: false }),execute },
+    conversationWorkspace: { status: () => Promise.resolve({ available: false,branch: "",branches: [],ahead: 0,behind: 0,files: [],history: [] }),diff: () => Promise.resolve({ patch: "",truncated: false }),files: () => Promise.resolve({ items: [] }),file: () => Promise.resolve({ text: "",truncated: false }),execute,open },
   }) });
   const base = listeners.loopback.url;
   try {
@@ -109,11 +110,20 @@ it("CHAT-09/44/48 protects conversation mutations, rejects model overrides and c
     expect(await forked.json()).toEqual({ ...chat,conversationId: "new-branch" });
     expect(fork).toHaveBeenCalledExactlyOnceWith("chat","selected","new-branch");
     expect((await fetch(`${base}/api/v1/conversation-workspaces/wb/git`,{ headers })).status).toBe(200);
+    const openUrl = `${base}/api/v1/conversation-workspaces/wb/open`,openBody = JSON.stringify({ path: "reports/周报.png",mode: "REVEAL" });
+    expect((await fetch(openUrl,{ method: "POST",headers: { cookie,"content-type": "application/json" },body: openBody })).status).toBe(403);
+    expect((await fetch(openUrl,{ method: "POST",headers,body: JSON.stringify({ path: "report.png",mode: "RUN" }) })).status).toBe(400);
+    expect(open).not.toHaveBeenCalled();
+    expect((await fetch(openUrl,{ method: "POST",headers,body: openBody })).status).toBe(200);
+    expect(open).toHaveBeenCalledExactlyOnceWith("wb","reports/周报.png","REVEAL");
     expect((await fetch(`${base}/api/v1/auth/setup`,{ method: "POST",headers: { ...headers,origin: "null" },body: JSON.stringify({ password: "conversation fixture password" }) })).status).toBe(204);
     const login = await fetch(`${base}/api/v1/auth/login`,{ method: "POST",headers: { origin: base,"content-type": "application/json" },body: JSON.stringify({ password: "conversation fixture password" }) });
     const lanCookie = login.headers.get("set-cookie")?.split(";")[0] ?? "";
+    const lanGrant = await login.json() as { csrfToken: string };
     expect((await fetch(`${base}/api/v1/conversations`,{ headers: { cookie: lanCookie } })).status).toBe(200);
     for (const view of ["git","diff","files","file"]) expect((await fetch(`${base}/api/v1/conversation-workspaces/wb/${view}`,{ headers: { cookie: lanCookie } })).status).toBe(403);
+    expect((await fetch(openUrl,{ method: "POST",headers: { ...headers,cookie: lanCookie,"x-csrf-token": lanGrant.csrfToken },body: openBody })).status).toBe(403);
+    expect(open).toHaveBeenCalledTimes(1);
     expect(execute).not.toHaveBeenCalled();
   } finally { await listeners.close();await f.close(); }
 });

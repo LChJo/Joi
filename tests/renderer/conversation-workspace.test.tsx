@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DigitalLifeApi } from "../../src/renderer/api";
 import { ConversationWorkspace } from "../../src/renderer/ConversationWorkspace";
-import type { GitWorkspaceDto } from "../../src/shared/conversations";
+import type { ConversationDto, GitWorkspaceDto } from "../../src/shared/conversations";
 
 function setup() {
   const api = new DigitalLifeApi("",true);
@@ -11,10 +11,10 @@ function setup() {
     history: [{ hash: "abcdef12345",message: "A commit",date: "2026-11-11" }] };
   const gitStatus = vi.spyOn(api,"conversationGit").mockResolvedValue(state);
   const fileListing = vi.spyOn(api,"conversationFiles").mockResolvedValue({ items: [{ path: "src",directory: true },{ path: "README.md",directory: false }] });
-  vi.spyOn(api,"conversationFile").mockResolvedValue({ text: "<script>unsafe()</script>",truncated: false });
+  const fileRead = vi.spyOn(api,"conversationFile").mockResolvedValue({ text: "<script>unsafe()</script>",truncated: false });
   vi.spyOn(api,"conversationDiff").mockResolvedValue({ patch: "diff --git a/file.txt b/file.txt\n--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+<script>unsafe()</script>\n",truncated: false });
   const run = vi.spyOn(api,"runConversationGit").mockResolvedValue({ commandId: "cmd",status: "COMPLETED" });
-  return { api,state,run,fileListing,gitStatus };
+  return { api,state,run,fileListing,fileRead,gitStatus };
 }
 it("CHAT-07 chooses individual/all staging, commits only staged changes and exposes branch/sync/history controls", async () => {
   const { api,run } = setup();render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
@@ -39,6 +39,41 @@ it("CHAT-08 renders escaped diffs in both views and reads selected workspace fil
   fireEvent.click(screen.getByRole("button",{ name: "返回" }));fireEvent.click(await screen.findByRole("button",{ name: "README.md" }));
   expect(await screen.findByText("<script>unsafe()</script>")).toBeInTheDocument();expect(container.querySelector("script")).toBeNull();
   fireEvent.click(screen.getByRole("button",{ name: "返回" }));expect(await screen.findByRole("button",{ name: "README.md" })).toBeInTheDocument();
+});
+it("CHAT-08 offers a system open action for a workspace file outside the text preview limits", async () => {
+  const { api,fileListing,fileRead,gitStatus } = setup();
+  fileListing.mockResolvedValue({ items: [{ path: "周报.png",directory: false }] });
+  fileRead.mockResolvedValue({ text: "",truncated: false,unavailable: "TOO_LARGE" });
+  const request = vi.spyOn(api,"request").mockResolvedValue({ opened: true });
+  render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
+  await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button",{ name: "文件" }));
+  fireEvent.click(await screen.findByRole("button",{ name: "周报.png" }));
+  fireEvent.click(await screen.findByRole("button",{ name: "直接打开" }));
+  expect(request).toHaveBeenCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "周报.png",mode: "OPEN" } });
+  expect(screen.queryByText("请求未完成，请重试。")).not.toBeInTheDocument();
+});
+it("CHAT-08/09 opens or reveals reported files from a desktop menu, including older root-level records", () => {
+  const { api } = setup();
+  const request = vi.spyOn(api,"request").mockResolvedValue({ opened: true });
+  const conversation: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "Report",updatedAt: "2026-11-11",turns: [{
+    turnId: "turn",text: "Report",createdAt: "2026-11-11",status: "COMPLETED",entries: [],
+    config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "Network",modelName: "model",skills: [],attachmentIds: [] },
+    artifacts: [{ name: "周报.png",size: 20,relativePath: "reports/周报.png" },{ name: "旧周报.png",size: 20 }],
+  }] };
+  const view = render(<ConversationWorkspace api={api} conversation={conversation} workbenchId="wb" workbenchName="Project" />);
+  const trigger = screen.getByRole("button",{ name: /^周报\.png.*操作/u });
+  fireEvent.click(trigger);
+  expect(screen.getByRole("menuitem",{ name: "直接打开" })).toHaveFocus();
+  fireEvent.keyDown(screen.getByRole("menuitem",{ name: "直接打开" }),{ key: "ArrowDown" });
+  expect(screen.getByRole("menuitem",{ name: "转到目录" })).toHaveFocus();
+  fireEvent.click(screen.getByRole("menuitem",{ name: "转到目录" }));
+  expect(request).toHaveBeenLastCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "reports/周报.png",mode: "REVEAL" } });
+  fireEvent.click(screen.getByRole("button",{ name: /^旧周报\.png.*操作/u }));
+  fireEvent.click(screen.getByRole("menuitem",{ name: "直接打开" }));
+  expect(request).toHaveBeenLastCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "旧周报.png",mode: "OPEN" } });
+  view.rerender(<ConversationWorkspace api={new DigitalLifeApi("")} conversation={conversation} workbenchId="wb" workbenchName="Project" />);
+  expect(screen.queryByRole("button",{ name: /周报\.png.*操作/u })).not.toBeInTheDocument();
 });
 it("CHAT-08/09 restricts browser schemes and embeds explicit URLs in a sandbox while keeping local files desktop-only", () => {
   const { api } = setup();const view = render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);

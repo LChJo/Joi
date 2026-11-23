@@ -30,6 +30,7 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/conversation-inheritance/:workbenchId",
   "POST /api/v1/conversation-workbenches",
   "GET /api/v1/conversation-workspaces/:workbenchId/:view",
+  "POST /api/v1/conversation-workspaces/:workbenchId/open",
   "POST /api/v1/conversation-workspaces/:workbenchId/git",
   "GET /api/v1/conversation-git-commands/:id",
   "GET /api/v1/statistics",

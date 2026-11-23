@@ -1,12 +1,28 @@
 import { BrowserWindow, session, shell } from "electron";
-import { mkdir, readFile, writeFile, lstat, realpath, unlink, link } from "node:fs/promises";
+import { createReadStream, type BigIntStats } from "node:fs";
+import { mkdir, readFile, writeFile, lstat, realpath, unlink, link, open, rename } from "node:fs/promises";
 import path from "node:path";
 import { exportSlices } from "../../../shared/result-export.js";
 import type { ExportRecord } from "../persistence/sqlite-result-exports.js";
 import { resultExportHtml } from "./result-export-html.js";
 
-/** Stage by durable ID, publish using exclusive hard links, and recover only
- * links to those same staged files. User files are never overwritten. */
+// Windows can report EISDIR for hard links on exFAT even when both paths name files.
+const COPY_FALLBACK_CODES = new Set(['EISDIR', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV']);
+
+function fileErrorCode(error: unknown): string {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : '';
+}
+
+async function entryStat(file: string): Promise<BigIntStats | undefined> {
+  try { return await lstat(file, { bigint: true }); }
+  catch (error) { if (fileErrorCode(error) !== 'ENOENT') throw error; return undefined; }
+}
+
+function fileIdentity(stat: BigIntStats): string {
+  return [stat.dev, stat.ino, stat.birthtimeNs].join(':');
+}
+
+/** Stage by durable ID and publish exclusively. Recovery can resume only files owned by the export. */
 export class ElectronResultExporter {
   constructor(private readonly deps: { jobs: {
     record(id: string): ExportRecord | null | Promise<ExportRecord | null>;
@@ -19,26 +35,60 @@ export class ElectronResultExporter {
     const root = path.join(this.deps.downloads, 'Joi');
     const staging = path.join(root, `.pending-${job.exportId}`);
     let win: BrowserWindow | undefined;
-    const created: string[] = [];
+    const created = new Set<string>();
+    const published = new Map<string, string>();
+    const copyStaged = async (source: string, target: string, targetStat: BigIntStats | undefined) => {
+      const receipt = `${source}.owner`;
+      const pendingReceipt = `${receipt}.tmp`;
+      let previousIdentity: string | undefined;
+      if (targetStat) {
+        if (!targetStat.isFile() || !(await entryStat(receipt))?.isFile()) throw new Error('export_collision');
+        previousIdentity = await readFile(receipt, 'utf8');
+        if (previousIdentity !== fileIdentity(targetStat)) throw new Error('export_collision');
+      }
+      const file = await open(target, targetStat ? 'r+' : 'wx');
+      try {
+        const identity = fileIdentity(await file.stat({ bigint: true }));
+        if (previousIdentity !== undefined && identity !== previousIdentity) throw new Error('export_collision');
+        published.set(target, identity);
+        created.add(receipt);
+        if (previousIdentity === undefined) {
+          created.add(pendingReceipt);
+          await unlink(pendingReceipt).catch((error: unknown) => { if (fileErrorCode(error) !== 'ENOENT') throw error; });
+          await writeFile(pendingReceipt, identity, { flag: 'wx', flush: true });
+          await rename(pendingReceipt, receipt);
+        }
+        // Persist ownership before copying so an interrupted copy can safely restart.
+        await file.truncate(0);
+        await file.writeFile(createReadStream(source));
+        await file.sync();
+      } finally { await file.close(); }
+    };
     const publish = async (names: string[]) => {
       for (const name of names) {
         if (path.basename(name) !== name || !name.startsWith(job.basename) || !/\.(pdf|png)$/.test(name)) throw new Error('unsafe');
         const source = path.join(staging, name); const target = path.join(root, name);
-        const sourceStat = await lstat(source);
-        if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) throw new Error('unsafe');
-        if (!created.includes(source)) created.push(source);
+        const sourceStat = await lstat(source, { bigint: true });
+        if (!sourceStat.isFile()) throw new Error('unsafe');
+        created.add(source);
+        const identity = fileIdentity(sourceStat);
         try { await link(source, target); }
-        catch {
-          const targetStat = await lstat(target);
-          if (targetStat.isSymbolicLink() || sourceStat.ino !== targetStat.ino || sourceStat.dev !== targetStat.dev) throw new Error('export_collision');
+        catch (error) {
+          const targetStat = await entryStat(target);
+          if (!(targetStat?.isFile() && fileIdentity(targetStat) === identity)) {
+            if (!targetStat && !COPY_FALLBACK_CODES.has(fileErrorCode(error))) throw error;
+            await copyStaged(source, target, targetStat);
+            continue;
+          }
         }
+        published.set(target, identity);
       }
     };
     const writeStaged = async (name: string, bytes: Uint8Array) => {
       const file = path.join(staging, name);
       try { if ((await lstat(file)).isSymbolicLink()) throw new Error('unsafe'); }
-      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; }
-      created.push(file);
+      catch (error) { if (fileErrorCode(error) !== 'ENOENT') throw error; }
+      created.add(file);
       await writeFile(file, bytes);
     };
     try {
@@ -89,14 +139,13 @@ export class ElectronResultExporter {
       await publish(names);
       await this.deps.jobs.update(id, 'completed', names);
     } catch {
-      for (const file of created) {
-        const target = path.join(root, path.basename(file));
+      for (const [target, identity] of published) {
         try {
-          const sourceStat = await lstat(file); const targetStat = await lstat(target);
-          if (!targetStat.isSymbolicLink() && sourceStat.ino === targetStat.ino && sourceStat.dev === targetStat.dev) await unlink(target);
+          const targetStat = await entryStat(target);
+          if (targetStat?.isFile() && fileIdentity(targetStat) === identity) await unlink(target);
         } catch { /* No published file owned by this task. */ }
-        await unlink(file).catch(() => undefined);
       }
+      for (const file of created) await unlink(file).catch(() => undefined);
       await unlink(path.join(staging, 'manifest.json')).catch(() => undefined);
       await this.deps.jobs.update(id, 'failed', [], 'export_save_failed');
     } finally { win?.destroy(); }

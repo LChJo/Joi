@@ -1,13 +1,60 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwiseIcon, ArrowLeftIcon, ArrowSquareOutIcon, FileTextIcon, FolderIcon, GitBranchIcon, GitCommitIcon, MinusIcon, PlusIcon } from "@phosphor-icons/react";
+import { createPortal } from "react-dom";
+import { ArrowClockwiseIcon, ArrowLeftIcon, ArrowSquareOutIcon, DotsThreeIcon, FileTextIcon, FolderIcon, FolderOpenIcon, GitBranchIcon, GitCommitIcon, MinusIcon, PlusIcon } from "@phosphor-icons/react";
 import { parse } from "diff2html";
 import { LineType } from "diff2html/lib/types";
-import type { ConversationDto, GitCommandDto, GitCommandInput, GitWorkspaceDto, GitFileDto } from "../shared/conversations";
+import type { ConversationDto, ConversationWorkspaceFileDto, ConversationWorkspaceOpenMode, GitCommandDto, GitCommandInput, GitWorkspaceDto, GitFileDto } from "../shared/conversations";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { t, useI18n } from "./i18n";
 import { randomUuid } from "./random-uuid";
 
 type Tab = "changes" | "git" | "browser" | "files";
+
+function WorkspaceFileMenu({ name,path,onAction }: { name: string;path: string;onAction: (path: string,mode: ConversationWorkspaceOpenMode) => Promise<void> }) {
+  const [position,setPosition] = useState<{ left: number;top: number } | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null),menu = useRef<HTMLDivElement>(null);
+  const label = t("chat.fileActions",{ name });
+  const close = () => { setPosition(null);trigger.current?.focus(); };
+  useEffect(() => {
+    if (position === null) return;
+    menu.current?.querySelector("button")?.focus();
+    const dismiss = () => setPosition(null);
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !trigger.current?.contains(event.target) && !menu.current?.contains(event.target)) dismiss();
+    };
+    document.addEventListener("pointerdown",outside);
+    window.addEventListener("resize",dismiss);
+    window.addEventListener("scroll",dismiss,true);
+    return () => {
+      document.removeEventListener("pointerdown",outside);
+      window.removeEventListener("resize",dismiss);
+      window.removeEventListener("scroll",dismiss,true);
+    };
+  },[position]);
+  return <>
+    <button aria-label={label} aria-haspopup="menu" aria-expanded={position !== null} className="icon-button chat-file-actions" ref={trigger} type="button" onClick={event => {
+      const box = event.currentTarget.getBoundingClientRect();
+      setPosition(position === null ? {
+        left: Math.max(8,Math.min(box.right - 180,window.innerWidth - 188)),
+        top: Math.max(8,box.bottom + 90 <= window.innerHeight ? box.bottom + 4 : box.top - 86),
+      } : null);
+    }}><DotsThreeIcon aria-hidden weight="bold" /></button>
+    {position === null ? null : createPortal(<div className="chat-history-menu" role="menu" aria-label={label} ref={menu} style={position}
+      onBlur={event => { if (event.relatedTarget !== trigger.current && !event.currentTarget.contains(event.relatedTarget)) setPosition(null); }}
+      onKeyDown={event => {
+        if (event.key === "Escape") { event.preventDefault();event.stopPropagation();close(); }
+        else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const items = [...event.currentTarget.querySelectorAll("button")];
+          items.find(item => item !== document.activeElement)?.focus();
+        }
+      }}>
+      <button role="menuitem" type="button" onClick={() => { close();void onAction(path,"OPEN"); }}><ArrowSquareOutIcon aria-hidden />{t("chat.openFile")}</button>
+      <button role="menuitem" type="button" onClick={() => { close();void onAction(path,"REVEAL"); }}><FolderOpenIcon aria-hidden />{t("chat.revealFile")}</button>
+    </div>,document.body)}
+  </>;
+}
+
 function GitFileGroup({ files,staged,disabled,onDiff,onRun }: { files: GitFileDto[];staged: boolean;disabled: boolean;onDiff: (path: string,staged: boolean) => Promise<void>;onRun: (input: Omit<GitCommandInput,"requestId">) => Promise<void> }) {
   const selected = files.filter(f => staged ? f.index.trim() !== "" && f.index !== "?" : f.workingTree.trim() !== "" || f.index === "?");
   if (selected.length === 0) return null;
@@ -31,15 +78,16 @@ export function ConversationWorkspace({ api,conversation,workbenchId,workbenchNa
   const [sideBySide,setSideBySide] = useState(false);
   const [directory,setDirectory] = useState("");
   const [files,setFiles] = useState<{ path: string;directory: boolean }[]>([]);
-  const [file,setFile] = useState<{ path: string;text: string;truncated: boolean } | null>(null);
+  const [file,setFile] = useState<(ConversationWorkspaceFileDto & { path: string }) | null>(null);
   const [urlDraft,setUrlDraft] = useState("http://localhost:5173");
   const [url,setUrl] = useState("");
   const epoch = useRef(0);
+  const fileRequest = useRef(0);
   const loading = useRef(false);
   const running = command?.status === "QUEUED" || command?.status === "RUNNING";
   const commandId = command?.commandId;
   const artifacts = conversation?.turns.flatMap(turn => turn.artifacts) ?? [];
-  const changed = [...new Map(artifacts.map(a => [a.name,a])).values()];
+  const changed = [...new Map(artifacts.map(a => [a.relativePath ?? a.name,a])).entries()];
   const fail = useCallback((error: unknown) => setNotice(error instanceof ApiError ? error.displayMessage : t("chat.error")),[]);
   const refresh = useCallback(async () => {
     if (!api.desktop || workbenchId === "" || loading.current) return;
@@ -56,7 +104,7 @@ export function ConversationWorkspace({ api,conversation,workbenchId,workbenchNa
   useEffect(() => {
     if (!api.desktop || workbenchId === "" || tab !== "files") return;
     let current = true;
-    void api.conversationFiles(workbenchId,directory).then(page => { if (current) setFiles(page.items); }).catch(fail);
+    void api.conversationFiles(workbenchId,directory).then(page => { if (current) setFiles(page.items); }).catch((error: unknown) => { if (current) fail(error); });
     return () => { current = false; };
   },[api,workbenchId,directory,tab,fail]);
   useEffect(() => {
@@ -83,23 +131,62 @@ export function ConversationWorkspace({ api,conversation,workbenchId,workbenchNa
     try { const result = await api.conversationDiff(workbenchId,path,staged);if (token === epoch.current) setDiff({ path,...result }); }
     catch (error) { fail(error); }
   },[api,workbenchId,fail]);
-  const openFile = async (path: string) => {
-    const token = epoch.current;
-    try { const result = await api.conversationFile(workbenchId,path);if (token === epoch.current) setFile({ path,...result }); }
-    catch (error) { fail(error); }
+  const previewFile = async (path: string) => {
+    const token = epoch.current,request = ++fileRequest.current;
+    setNotice(null);
+    try {
+      const result = await api.conversationFile(workbenchId,path);
+      if (token === epoch.current && request === fileRequest.current) setFile({ path,...result });
+    } catch (error) { if (token === epoch.current && request === fileRequest.current) fail(error); }
   };
+  const openFile = useCallback(async (path: string,mode: ConversationWorkspaceOpenMode) => {
+    const token = epoch.current;
+    setNotice(null);
+    try { await api.openConversationFile(workbenchId,path,mode); }
+    catch (error) { if (token === epoch.current) fail(error); }
+  },[api,workbenchId,fail]);
   const openBrowser = () => {
     try { const value = new URL(urlDraft);if (!["http:","https:"].includes(value.protocol) || value.username !== "" || value.password !== "") throw new Error("invalid_url");setUrl(value.toString());setNotice(null); }
     catch { setNotice(t("chat.invalidUrl")); }
   };
   return <aside className="conversation-workspace" id="conversation-workspace"><header><FolderIcon /><strong>{t("chat.workspace")}</strong><small>{workbenchName}</small><button aria-label={t("chat.refresh")} className="icon-button" onClick={() => void refresh()} type="button"><ArrowClockwiseIcon /></button></header>
-    <nav aria-label={t("chat.workspace")}>{(["changes","git","browser","files"] as const).map(key => <button aria-current={tab === key ? "page" : undefined} key={key} onClick={() => { setTab(key);setDiff(null);setFile(null); }} type="button">{key === "changes" ? t("chat.changes") : key === "git" ? t("chat.git") : key === "browser" ? t("chat.browser") : t("chat.files")}{key === "changes" && changed.length > 0 ? <small>{changed.length}</small> : null}</button>)}</nav>
+    <nav aria-label={t("chat.workspace")}>{(["changes","git","browser","files"] as const).map(key => <button aria-current={tab === key ? "page" : undefined} key={key} onClick={() => { fileRequest.current++;setTab(key);setDiff(null);setFile(null);setNotice(null); }} type="button">{key === "changes" ? t("chat.changes") : key === "git" ? t("chat.git") : key === "browser" ? t("chat.browser") : t("chat.files")}{key === "changes" && changed.length > 0 ? <small>{changed.length}</small> : null}</button>)}</nav>
     {notice === null ? null : <p className="chat-workspace-notice" role="status">{notice}</p>}
     <div className="chat-workspace-body">{diff !== null ? <><button className="chat-back" onClick={() => setDiff(null)} type="button"><ArrowLeftIcon />{t("chat.back")}</button><h3>{diff.path}</h3><div className="chat-view-switch"><button aria-pressed={!sideBySide} onClick={() => setSideBySide(false)} type="button">{t("chat.unified")}</button><button aria-pressed={sideBySide} onClick={() => setSideBySide(true)} type="button">{t("chat.sideBySide")}</button></div>{diff.truncated ? <p>{t("chat.truncated")}</p> : null}<DiffView patch={diff.patch} sideBySide={sideBySide} /></>
-      : tab === "changes" ? <><p className="chat-workspace-caption">{t("chat.attributed")}</p>{changed.length === 0 ? <div className="chat-workspace-empty"><FileTextIcon /><p>{t("chat.noChanges")}</p></div> : changed.map(a => <div className="chat-change-file" key={a.name}><FileTextIcon /><span>{a.name}<small>{a.size.toLocaleString()} B</small></span></div>)}<button className="chat-link-button" onClick={() => { setTab("git");void refresh(); }} type="button"><GitBranchIcon />{t("chat.repository")}</button></>
+      : tab === "changes" ? <>
+        <p className="chat-workspace-caption">{t("chat.attributed")}</p>
+        {changed.length === 0 ? <div className="chat-workspace-empty"><FileTextIcon /><p>{t("chat.noChanges")}</p></div>
+          : changed.map(([path,artifact]) => <div className="chat-change-file" key={path}>
+            <FileTextIcon />
+            <span>{artifact.name}<small>{artifact.size.toLocaleString()} B</small></span>
+            {api.desktop && conversation?.workbenchId === workbenchId ? <WorkspaceFileMenu name={artifact.name} path={path} onAction={openFile} /> : null}
+          </div>)}
+        <button className="chat-link-button" onClick={() => { setTab("git");void refresh(); }} type="button"><GitBranchIcon />{t("chat.repository")}</button>
+      </>
       : tab === "browser" ? <><form className="chat-browser-form" onSubmit={e => { e.preventDefault();openBrowser(); }}><input aria-label={t("chat.browserUrl")} onChange={e => setUrlDraft(e.target.value)} type="url" value={urlDraft} /><button aria-label={t("chat.open")} type="submit"><ArrowSquareOutIcon /></button></form><p className="chat-workspace-caption">{t("chat.browserHint")}</p>{url === "" ? <div className="chat-workspace-empty"><ArrowSquareOutIcon /></div> : <iframe className="chat-browser-frame" referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms" src={url} title={t("chat.browser")} />}</>
       : !api.desktop ? <p className="chat-empty-note">{t("chat.desktopOnly")}</p>
-        : tab === "files" ? <><button className="chat-back" disabled={directory === "" && file === null} onClick={() => { if (file !== null) setFile(null);else setDirectory(directory.split("/").slice(0,-1).join("/")); }} type="button"><ArrowLeftIcon />{t("chat.back")}</button><small>{directory || t("chat.root")}</small>{file === null ? <div className="chat-file-tree">{files.length === 0 ? <p>{t("chat.emptyFiles")}</p> : files.map(f => <button key={f.path} onClick={() => f.directory ? setDirectory(f.path) : void openFile(f.path)} type="button">{f.directory ? <FolderIcon /> : <FileTextIcon />}<span>{f.path.split("/").at(-1)}</span></button>)}</div> : <><h3>{file.path}</h3><pre className="chat-file-preview">{file.text}</pre></>}</>
+        : tab === "files" ? <>
+          <button className="chat-back" disabled={directory === "" && file === null} onClick={() => {
+            fileRequest.current++;
+            setNotice(null);
+            if (file !== null) setFile(null); else setDirectory(directory.split("/").slice(0,-1).join("/"));
+          }} type="button"><ArrowLeftIcon />{t("chat.back")}</button>
+          <small>{directory || t("chat.root")}</small>
+          {file === null ? <div className="chat-file-tree">
+            {files.length === 0 ? <p>{t("chat.emptyFiles")}</p> : files.map(f => <button key={f.path} onClick={() => {
+              if (f.directory) { fileRequest.current++;setDirectory(f.path); } else void previewFile(f.path);
+            }} type="button">{f.directory ? <FolderIcon /> : <FileTextIcon />}<span>{f.path.split("/").at(-1)}</span></button>)}
+          </div> : <>
+            <h3>{file.path}</h3>
+            {file.unavailable === undefined ? <pre className="chat-file-preview">{file.text}</pre> : <>
+              <p className="chat-workspace-caption">{t("chat.filePreviewUnavailable")}</p>
+              <div className="chat-file-open-buttons">
+                <button className="chat-link-button" type="button" onClick={() => void openFile(file.path,"OPEN")}><ArrowSquareOutIcon aria-hidden />{t("chat.openFile")}</button>
+                <button className="chat-link-button" type="button" onClick={() => void openFile(file.path,"REVEAL")}><FolderOpenIcon aria-hidden />{t("chat.revealFile")}</button>
+              </div>
+            </>}
+          </>}
+        </>
           : git?.available !== true ? <p className="chat-empty-note">{t("chat.gitUnavailable")}</p> : <>
             <p className="chat-workspace-caption">{t("chat.repository")}</p>
             <label className="chat-branch-label"><GitBranchIcon /><select aria-label={t("chat.branch")} disabled={running} onChange={e => void run({ action: "SWITCH",branch: e.target.value })} value={git.branch}>{git.branches.includes(git.branch) ? null : <option value={git.branch}>{git.branch || "HEAD"}</option>}{git.branches.map(b => <option key={b} value={b}>{b}</option>)}</select><small>↑{git.ahead} ↓{git.behind}</small></label>

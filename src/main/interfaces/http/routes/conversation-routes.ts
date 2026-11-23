@@ -116,6 +116,13 @@ export const CONVERSATION_ROUTES: RouteDefinition[] = [
     const port = workspace(ctx);
     sendJson(ctx.response,200,view === "git" ? await port.status(wb) : view === "diff" ? await port.diff(wb,p,ctx.url.searchParams.get("staged") === "true") : view === "file" ? await port.file(wb,p) : await port.files(wb,p));
   } },
+  { auth: "write",id: "POST /api/v1/conversation-workspaces/:workbenchId/open",match: pattern("POST",/^\/api\/v1\/conversation-workspaces\/([^/]+)\/open$/),handle: async (ctx,match) => {
+    await desktop(ctx);
+    const body = await readJson(ctx.request);
+    if (body.mode !== "OPEN" && body.mode !== "REVEAL") throw new HttpError("workspace_file_action_invalid","Choose a supported file action.",400);
+    await workspace(ctx).open(decodeURIComponent((match as RegExpExecArray)[1] ?? ""),stringField(body,"path"),body.mode);
+    sendJson(ctx.response,200,{ opened: true });
+  } },
   { auth: "write",id: "POST /api/v1/conversation-workspaces/:workbenchId/git",match: pattern("POST",/^\/api\/v1\/conversation-workspaces\/([^/]+)\/git$/),handle: async (ctx,match) => {
     await desktop(ctx);
     if (ctx.dependencies.conversationGit === undefined) throw new HttpError("conversation_git_unavailable","Git unavailable.",503);

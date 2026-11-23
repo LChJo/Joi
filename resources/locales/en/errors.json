@@ -1,4 +1,6 @@
 {
+  "workspaceFileNotFound": { "message": "The file is no longer available in this workspace.", "errorCode": "workspace_file_not_found" },
+  "workspaceFileOpenFailed": { "message": "The system could not open the selected file.", "errorCode": "workbench_artifact_open_failed" },
   "goalSynthesisCorrectionExhausted": { "message": "The final report failed evidence or format validation", "errorCode": "goal_synthesis_correction_exhausted" },
   "goalSynthesisReferenceInvalid": { "message": "The final report cites results or requirements that could not be verified", "errorCode": "goal_synthesis_reference_invalid" },
   "goalSynthesisStateInvalid": { "message": "The model submitted the final report in an invalid format", "errorCode": "goal_synthesis_state_invalid" },

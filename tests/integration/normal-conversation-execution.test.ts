@@ -110,7 +110,7 @@ describe("normal conversation execution", () => {
       await call.session?.save({ engine: call.revision.engine, messages: [...(call.session.state?.messages ?? []),
         { role: "user",content: `Private journal for ${call.request.taskProjection}`,timestamp: 1 }] });
       return { actionId: call.request.actionId,workId: call.request.workId,externalRunId: "fixture",status: "COMPLETED",
-        body: `Answer to ${call.request.taskProjection}`,artifacts: [{ name: "retained.txt",size: 10 }] };
+        body: `Answer to ${call.request.taskProjection}`,artifacts: [{ name: "retained.txt",size: 10,artifactRef: "workspace:reports/retained.txt" }] };
     });
     const { f,service,input,store,dependencies } = await setup(run);
     try {
@@ -122,6 +122,7 @@ describe("normal conversation execution", () => {
       if (later === undefined) throw new Error("Missing later turn");
       await service.deliver(later.turnId);
       const original = await service.get("chat");
+      expect(original.turns[0]?.artifacts).toEqual([{ name: "retained.txt",size: 10,relativePath: "reports/retained.txt" }]);
       const outboxCount = f.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox").get()?.n);
       const [branch,duplicate] = await Promise.all([service.fork("chat",selected.turnId,"branch"),service.fork("chat",selected.turnId,"branch")]);
       expect(branch).toEqual(duplicate);

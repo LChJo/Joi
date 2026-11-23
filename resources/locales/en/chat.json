@@ -233,5 +233,9 @@
   "thinkingCompleted": "Thinking complete",
   "thinkingInterrupted": "Thinking interrupted",
   "thinkingSummaryTruncated": "Part of the summary was omitted",
-  "thinkingDuration": { "message": "{seconds} s", "placeholders": { "seconds": "number" } }
+  "thinkingDuration": { "message": "{seconds} s", "placeholders": { "seconds": "number" } },
+  "filePreviewUnavailable": "This file is unavailable for preview here. Open it with a system app.",
+  "fileActions": { "message": "File actions for {name}", "placeholders": { "name": "string" } },
+  "openFile": "Open file",
+  "revealFile": "Show in folder"
 }

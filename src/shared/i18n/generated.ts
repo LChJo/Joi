@@ -382,6 +382,10 @@ export interface MessageParameters {
   "chat.thinkingInterrupted": undefined;
   "chat.thinkingSummaryTruncated": undefined;
   "chat.thinkingDuration": { "seconds": number };
+  "chat.filePreviewUnavailable": undefined;
+  "chat.fileActions": { "name": string };
+  "chat.openFile": undefined;
+  "chat.revealFile": undefined;
   "common.language": undefined;
   "common.system": undefined;
   "common.languageSaveFailed": undefined;
@@ -427,6 +431,8 @@ export interface MessageParameters {
   "common.inputAwaitingConfirmation": undefined;
   "common.previousPage": undefined;
   "common.nextPage": undefined;
+  "errors.workspaceFileNotFound": undefined;
+  "errors.workspaceFileOpenFailed": undefined;
   "errors.goalSynthesisCorrectionExhausted": undefined;
   "errors.goalSynthesisReferenceInvalid": undefined;
   "errors.goalSynthesisStateInvalid": undefined;
@@ -2281,6 +2287,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.thinkingInterrupted": "Thinking interrupted",
     "chat.thinkingSummaryTruncated": "Part of the summary was omitted",
     "chat.thinkingDuration": "{seconds} s",
+    "chat.filePreviewUnavailable": "This file is unavailable for preview here. Open it with a system app.",
+    "chat.fileActions": "File actions for {name}",
+    "chat.openFile": "Open file",
+    "chat.revealFile": "Show in folder",
     "common.language": "Language",
     "common.system": "Follow system",
     "common.languageSaveFailed": "Language changed for this session, but could not be saved. Try again.",
@@ -2326,6 +2336,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "Input awaiting confirmation",
     "common.previousPage": "Previous page",
     "common.nextPage": "Next page",
+    "errors.workspaceFileNotFound": "The file is no longer available in this workspace.",
+    "errors.workspaceFileOpenFailed": "The system could not open the selected file.",
     "errors.goalSynthesisCorrectionExhausted": "The final report failed evidence or format validation",
     "errors.goalSynthesisReferenceInvalid": "The final report cites results or requirements that could not be verified",
     "errors.goalSynthesisStateInvalid": "The model submitted the final report in an invalid format",
@@ -4178,6 +4190,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.thinkingInterrupted": "思考已中断",
     "chat.thinkingSummaryTruncated": "摘要已省略部分内容",
     "chat.thinkingDuration": "{seconds} 秒",
+    "chat.filePreviewUnavailable": "此文件无法在侧栏预览，可用系统应用打开。",
+    "chat.fileActions": "{name} 文件操作",
+    "chat.openFile": "直接打开",
+    "chat.revealFile": "转到目录",
     "common.language": "语言",
     "common.system": "跟随系统",
     "common.languageSaveFailed": "语言已在本次会话切换，但未能保存，请重试。",
@@ -4223,6 +4239,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "待确认的输入",
     "common.previousPage": "上一页",
     "common.nextPage": "下一页",
+    "errors.workspaceFileNotFound": "此文件已不在当前工作区。",
+    "errors.workspaceFileOpenFailed": "系统无法打开所选文件。",
     "errors.goalSynthesisCorrectionExhausted": "最终汇报未通过证据或格式校验",
     "errors.goalSynthesisReferenceInvalid": "最终汇报引用了无法核实的结果或需求",
     "errors.goalSynthesisStateInvalid": "模型提交的最终汇报格式无效",
@@ -6412,6 +6430,12 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "思考已中断": "chat.thinkingInterrupted",
   "Part of the summary was omitted": "chat.thinkingSummaryTruncated",
   "摘要已省略部分内容": "chat.thinkingSummaryTruncated",
+  "This file is unavailable for preview here. Open it with a system app.": "chat.filePreviewUnavailable",
+  "此文件无法在侧栏预览，可用系统应用打开。": "chat.filePreviewUnavailable",
+  "Open file": "chat.openFile",
+  "直接打开": "chat.openFile",
+  "Show in folder": "chat.revealFile",
+  "转到目录": "chat.revealFile",
   "Language": "common.language",
   "语言": "common.language",
   "Follow system": "common.system",
@@ -6492,6 +6516,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "上一页": "common.previousPage",
   "Next page": "common.nextPage",
   "下一页": "common.nextPage",
+  "The file is no longer available in this workspace.": "errors.workspaceFileNotFound",
+  "此文件已不在当前工作区。": "errors.workspaceFileNotFound",
+  "The system could not open the selected file.": "errors.workspaceFileOpenFailed",
+  "系统无法打开所选文件。": "errors.workspaceFileOpenFailed",
   "The final report failed evidence or format validation": "errors.goalSynthesisCorrectionExhausted",
   "最终汇报未通过证据或格式校验": "errors.goalSynthesisCorrectionExhausted",
   "The final report cites results or requirements that could not be verified": "errors.goalSynthesisReferenceInvalid",
@@ -9137,6 +9165,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
 export const errorKeys: Readonly<Record<string, MessageKey>> = {
   "conversation_busy": "chat.stopBeforeArchive",
   "conversation_archived": "chat.restoreFirst",
+  "workspace_file_not_found": "errors.workspaceFileNotFound",
+  "workbench_artifact_open_failed": "errors.workspaceFileOpenFailed",
   "goal_synthesis_correction_exhausted": "errors.goalSynthesisCorrectionExhausted",
   "goal_synthesis_reference_invalid": "errors.goalSynthesisReferenceInvalid",
   "goal_synthesis_state_invalid": "errors.goalSynthesisStateInvalid",

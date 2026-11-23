@@ -256,14 +256,20 @@ it("HIST-03/06 starts a distinct Work on a resident partner without replaying it
 
 it("HIST-07 reads Workbench raw evidence on request and omits it from the next conversation turn", async () => {
   const { faux,runtime } = partnerRuntime("workbench-evidence-boundary", undefined, { memory: {
-    entries: () => [],readEvidence: (_workbench,source) => source === "history:fixture" ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
+    entries: () => [{ section: "sources",text: "Finished report",source: "history:fixture" }],
+    readEvidence: (_workbench,source) => source === "history:fixture" ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
   } });
   const sent: string[] = [];
   let historyPrompt = "";
   faux.setResponses([
     context => {
       historyPrompt = getCurrentSystemPrompt(context.messages);
-      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture" })],{ stopReason: "toolUse" });
+      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{})],{ stopReason: "toolUse" });
+    },
+    context => {
+      const list = context.messages.findLast(message => message.role === "toolResult");
+      expect(list?.content).toEqual([{ type: "text",text: JSON.stringify({ sources: [{ source: "history:fixture",description: "Finished report" }] }) }]);
+      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture",part: "conclusion" })],{ stopReason: "toolUse" });
     },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("Evidence checked"); },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("New response"); },

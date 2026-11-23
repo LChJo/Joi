@@ -28,7 +28,7 @@ import type { CodexLoginDto, CodexLoginMethod } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
 import type { UserQuestionScope, UserQuestionDto, AnswerUserQuestionInput } from "../shared/user-questions";
-import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto,ConversationUpdateDto } from "../shared/conversations";
+import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, ConversationWorkspaceFileDto, ConversationWorkspaceOpenMode, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto,ConversationUpdateDto } from "../shared/conversations";
 
 export class ApiError extends Error {
   get userMessage() { return errorNotice(this.code, this.message); }
@@ -162,7 +162,8 @@ export class DigitalLifeApi {
   conversationGit(workbenchId: string) { return this.request<GitWorkspaceDto>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/git`); }
   conversationDiff(workbenchId: string,path: string,staged: boolean) { return this.request<{ patch: string; truncated: boolean }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/diff?${new URLSearchParams({ path,staged: String(staged) }).toString()}`); }
   conversationFiles(workbenchId: string,path = "") { return this.request<{ items: { path: string; directory: boolean }[] }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/files?${new URLSearchParams({ path }).toString()}`); }
-  conversationFile(workbenchId: string,path: string) { return this.request<{ text: string; truncated: boolean }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/file?${new URLSearchParams({ path }).toString()}`); }
+  conversationFile(workbenchId: string,path: string) { return this.request<ConversationWorkspaceFileDto>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/file?${new URLSearchParams({ path }).toString()}`); }
+  openConversationFile(workbenchId: string,path: string,mode: ConversationWorkspaceOpenMode) { return this.request<{ opened: true }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/open`,{ method: "POST",body: { path,mode } }); }
   runConversationGit(workbenchId: string,body: GitCommandInput) { return this.request<GitCommandDto>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/git`,{ body: { ...body },method: "POST",idempotencyKey: body.requestId }); }
   getConversationGitCommand(id: string) { return this.request<GitCommandDto>(`/api/v1/conversation-git-commands/${encodeURIComponent(id)}`); }
   statistics(query: StatisticsQuery) {

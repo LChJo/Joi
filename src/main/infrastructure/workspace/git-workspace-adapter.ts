@@ -1,10 +1,14 @@
 import { simpleGit } from "simple-git";
+import { isUtf8 } from "node:buffer";
 import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { DomainError } from "../../domain/errors.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { ConversationWorkspacePort } from "../../application/ports/conversation-workspace.js";
-import type { GitCommandInput, GitWorkspaceDto } from "../../../shared/conversations.js";
+import type { WorkbenchArtifactOpener } from "../../application/ports/workbench-artifacts.js";
+import type { ConversationWorkspaceFileDto, ConversationWorkspaceOpenMode, GitCommandInput, GitWorkspaceDto } from "../../../shared/conversations.js";
+
+const MAX_TEXT_PREVIEW_BYTES = 512_000;
 
 function safePreview(value: string): string {
   return sanitizeAgentConversationText(value)
@@ -14,7 +18,7 @@ function safePreview(value: string): string {
 }
 
 export class GitWorkspaceAdapter implements ConversationWorkspacePort {
-  constructor(private readonly roots: { root(workbenchId: string): Promise<string> }) {}
+  constructor(private readonly roots: { root(workbenchId: string): Promise<string> }, private readonly opener?: WorkbenchArtifactOpener) {}
   async #git(workbenchId: string,signal?: AbortSignal) {
     const root = await realpath(await this.roots.root(workbenchId));
     return simpleGit({ baseDir: root,maxConcurrentProcesses: 1,timeout: { block: 60_000 },...(signal === undefined ? {} : { abort: signal }) });
@@ -25,8 +29,21 @@ export class GitWorkspaceAdapter implements ConversationWorkspacePort {
     const root = await realpath(await this.roots.root(workbenchId));
     const target = path.resolve(root,relative || ".");
     const resolved = await realpath(target).catch(async () => path.join(await realpath(path.dirname(target)),path.basename(target)));
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) throw new DomainError("workspace_path_invalid", "The file resolves outside this workspace.");
+    const resolvedRelative = path.relative(root,resolved);
+    if (path.isAbsolute(resolvedRelative) || resolvedRelative.split(path.sep).some(segment => segment === ".." || segment.toLowerCase() === ".git")) {
+      throw new DomainError("workspace_path_invalid", "Choose a file within this workspace.");
+    }
     return resolved;
+  }
+  async #workspaceFile(workbenchId: string, relativePath: string) {
+    try {
+      const targetPath = await this.#path(workbenchId,relativePath);
+      const info = await lstat(targetPath);
+      if (info.isFile()) return { targetPath,size: info.size };
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR"))) throw error;
+    }
+    throw new DomainError("workspace_file_not_found", "The file is no longer available in this workspace.");
   }
   async status(workbenchId: string): Promise<GitWorkspaceDto> {
     try {
@@ -61,13 +78,18 @@ export class GitWorkspaceAdapter implements ConversationWorkspacePort {
     return { items: entries.filter(e => e.name !== ".git" && !e.isSymbolicLink()).sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name)).slice(0,500)
       .map(e => ({ path: path.relative(root,path.join(target,e.name)).split(path.sep).join("/"),directory: e.isDirectory() })) };
   }
-  async file(workbenchId: string, relativePath: string) {
-    const target = await this.#path(workbenchId,relativePath);
-    const meta = await lstat(target);
-    if (!meta.isFile() || meta.size > 512_000) throw new DomainError("workspace_file_too_large", "Preview supports text files up to 512 KB.");
-    const body = await readFile(target,"utf8");
-    if (body.includes("\0")) throw new DomainError("workspace_file_binary", "Binary files cannot be previewed as text.");
-    return { text: safePreview(body),truncated: false };
+  async file(workbenchId: string, relativePath: string): Promise<ConversationWorkspaceFileDto> {
+    const { targetPath,size } = await this.#workspaceFile(workbenchId,relativePath);
+    if (size > MAX_TEXT_PREVIEW_BYTES) return { text: "",truncated: false,unavailable: "TOO_LARGE" };
+    const bytes = await readFile(targetPath);
+    if (bytes.length > MAX_TEXT_PREVIEW_BYTES) return { text: "",truncated: false,unavailable: "TOO_LARGE" };
+    if (bytes.includes(0) || !isUtf8(bytes)) return { text: "",truncated: false,unavailable: "BINARY" };
+    return { text: safePreview(bytes.toString("utf8")),truncated: false };
+  }
+  async open(workbenchId: string, relativePath: string, mode: ConversationWorkspaceOpenMode): Promise<void> {
+    if (this.opener === undefined) throw new DomainError("conversation_workspace_unavailable", "Workspace unavailable.");
+    const { targetPath } = await this.#workspaceFile(workbenchId,relativePath);
+    await this.opener.open({ kind: "FILE",mode,targetPath });
   }
   async execute(workbenchId: string, input: GitCommandInput,signal?: AbortSignal): Promise<void> {
     const git = await this.#git(workbenchId,signal);

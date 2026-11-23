@@ -1,6 +1,6 @@
 /* Async workspace doubles implement Promise-returning application ports. */
 /* eslint-disable @typescript-eslint/require-await */
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { simpleGit } from "simple-git";
@@ -13,6 +13,29 @@ import { DomainError } from "../../src/main/domain/errors";
 import type { WorkbenchWorkspaceRepository } from "../../src/main/application/ports/workbench-context";
 
 describe("conversation Git workspace", () => {
+  it("CHAT-08 recognizes preview limits and opens existing workspace files via the native port", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const root = path.join(fixture.root,"workspace"), outside = path.join(fixture.root,"outside");
+      await Promise.all([mkdir(path.join(root,"reports"),{ recursive: true }),mkdir(outside)]);
+      const file = path.join(root,"reports","周报.png");
+      await Promise.all([writeFile(file,Buffer.alloc(2_295_869)),writeFile(path.join(root,"small.png"),Buffer.from([0x89,0x50,0,0])),writeFile(path.join(outside,"other.txt"),"outside")]);
+      await symlink(outside,path.join(root,"escape"),"junction");
+      const open = vi.fn(() => Promise.resolve());
+      const workspace = new GitWorkspaceAdapter({ root: async () => root },{ open });
+      expect(await workspace.file("wb","reports/周报.png")).toMatchObject({ unavailable: "TOO_LARGE" });
+      expect(await workspace.file("wb","small.png")).toMatchObject({ unavailable: "BINARY" });
+      await workspace.open("wb","reports/周报.png","OPEN");
+      await workspace.open("wb","reports/周报.png","REVEAL");
+      const targetPath = await realpath(file);
+      expect(open.mock.calls).toEqual([[{ kind: "FILE",mode: "OPEN",targetPath }],[{ kind: "FILE",mode: "REVEAL",targetPath }]]);
+      await expect(workspace.open("wb","escape/other.txt","OPEN")).rejects.toMatchObject({ code: "workspace_path_invalid" });
+      await expect(workspace.open("wb","../outside/other.txt","REVEAL")).rejects.toMatchObject({ code: "workspace_path_invalid" });
+      await expect(workspace.open("wb","missing.png","OPEN")).rejects.toMatchObject({ code: "workspace_file_not_found" });
+      expect(open).toHaveBeenCalledTimes(2);
+    } finally { await fixture.close(); }
+  });
+
   it("CHAT-07 queues Git mutations once and does not replay an interrupted write", async () => {
     const f = await createRuntimeFixture();
     try {

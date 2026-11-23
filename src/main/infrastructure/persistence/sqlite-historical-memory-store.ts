@@ -124,7 +124,8 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
 
   readEvidence(workbenchId: string, sourceId: string, offset: number, limit: number, part: "input" | "conclusion" = "input"): { text: string; total: number } | null {
     return this.database.transaction(db => {
-      const source = sourceById(db,sourceId);
+      const source = sourceById(db,sourceId) ?? (/^[a-f0-9]{64}$/iu.test(sourceId)
+        ? sourceById(db,`history:${sourceId.toLowerCase()}`) : undefined);
       if (source?.workbench_id !== workbenchId || source.kind === "partner" || current(db,source) === undefined) return null;
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit <= 0) return null;
       const lookup = part === "input" ? "SELECT body FROM joi_inbox_messages WHERE input_id=?"

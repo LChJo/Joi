@@ -165,7 +165,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     const userQuestions = new UserQuestionService({ store: persistence.userQuestionStore,clock,
       onAnswered: async question => { if (question.scope.kind === "GOAL") await persistence.joiInboxRepository.applyAnsweredGoalQuestion(question.questionId); } });
     const conversationStack = wireConversations({ clock,ids,database,persistence,partnerStack,modelSourceStack,workbenchStack,
-      evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions });
+      evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory,questions: userQuestions,
+      artifactOpener: { open: (input) => desktop.artifactOpen(input) } });
     await conversationStack.recover();
     exportJobs = runtimeStack.exportJobs;
     drainRuntime = async () => { await modelSourceStack.codexLogin.close(); await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };

@@ -9,6 +9,7 @@ import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
 import type { PartnerInstanceManager } from "../partners/partner-instance-manager.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import { normalizeAgentConversationEntries, sanitizeAgentConversationText, type AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
+import { workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import type { ConversationContextDto,ConversationTurnDto,ConversationUpdateDto } from "../../../shared/conversations.js";
 import type { ConversationSubagentPort } from "../ports/conversation-subagents.js";
 import { ConversationActivity } from "./conversation-activity.js";
@@ -52,7 +53,11 @@ function projectDrafts(conversationId: string,turn: ConversationTurnDto,drafts: 
 }
 
 function projectArtifacts(artifacts: PartnerRunOutput["artifacts"]): ConversationTurnDto["artifacts"] {
-  return artifacts.map(a => ({ name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }) }));
+  return artifacts.map(a => {
+    const relativePath = workspaceArtifactRelativePath(a.artifactRef);
+    return { name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }),
+      ...(relativePath === undefined || sanitizeAgentConversationText(relativePath) !== relativePath ? {} : { relativePath }) };
+  });
 }
 
 export class ConversationService {
