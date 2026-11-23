@@ -1,6 +1,5 @@
 import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { Agent, get } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -20,6 +19,7 @@ import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js"
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import type { JoiGoalDetailDto, WorkbenchAgentCardDto } from "../../src/shared/joi.js";
 import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
+import type { GoalHttpSample } from "../support/runtime-http-sampler.js";
 
 const LARGE_GOAL_SIZE = 1_001;
 const MAP_LAYERS = 128;
@@ -71,12 +71,14 @@ describe("runtime Workers (AC-PERF-01)", () => {
   let directory: string;
   let readWorkerUrl: URL;
   let rpcUrl: URL;
+  let samplerUrl: URL;
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "joi-worker-test-"));
-    [readWorkerUrl, rpcUrl] = await compileWorkerFixture(path.join(directory, "modules"), [
+    [readWorkerUrl, rpcUrl, samplerUrl] = await compileWorkerFixture(path.join(directory, "modules"), [
       "src/main/infrastructure/persistence/home-feed-read-worker.ts",
       "src/main/infrastructure/runtime/worker-rpc.ts",
-    ]) as [URL, URL];
+      "tests/support/runtime-http-sampler.ts",
+    ]) as [URL, URL, URL];
   });
   afterAll(async () => { await rm(directory, { recursive: true, force: true }); });
 
@@ -122,8 +124,9 @@ describe("runtime Workers (AC-PERF-01)", () => {
       }) });
       const origin = listeners.loopback.url;
       const request = (url: string, init?: RequestInit) => fetch(url, { ...init, signal: AbortSignal.timeout(5_000) });
-      const healthAgent = new Agent({ keepAlive: true });
       let writer: ReturnType<typeof setInterval> | undefined;
+      let sampler: Worker | undefined;
+      let samplerRpc: WorkerRpc | undefined;
       try {
         async function authenticate() {
           const bootstrap = await runtime.auth.issueDesktopBootstrap();
@@ -145,52 +148,30 @@ describe("runtime Workers (AC-PERF-01)", () => {
           expect(received.status).toBe(200);
           return await received.json() as AgentPage;
         };
-        function readHealth(): Promise<number | undefined> {
-          return new Promise((resolve, reject) => {
-            get(`${origin}/api/v1/health`, { agent: healthAgent, signal: AbortSignal.timeout(5_000) }, response => {
-              response.on("error", reject);
-              response.once("end", () => resolve(response.statusCode));
-              response.resume();
-            }).on("error", reject);
-          });
-        }
-        const readSummary = async () => {
-          const response = await request(`${detailUrl}?view=summary`, { headers: clientB });
-          expect(response.status).toBe(200);
-          const detail = await response.json() as JoiGoalDetailDto;
-          expect(detail.harness?.paths).toEqual([]);
-          expect(detail.harness?.progress?.work.total).toBe(LARGE_GOAL_SIZE);
+        // A separate client event loop keeps response parsing and test assertions off the HTTP server thread.
+        const { port1,port2 } = new MessageChannel();
+        samplerRpc = new WorkerRpc(port1);
+        sampler = new Worker(samplerUrl,{ workerData: { port: port2,agentsUrl,detailUrl,healthUrl: `${origin}/api/v1/health`,clients: [clientA,clientB] },transferList: [port2] });
+        const checkSample = ({ agents,health,summary }: GoalHttpSample) => {
+          expect(health.status).toBe(200);
+          expect(summary).toEqual({ status: 200,pathCount: 0,totalWorks: LARGE_GOAL_SIZE });
+          expect(agents.map(agent => agent.status)).toEqual([200,200]);
+          expect(agents[0]?.ids).toHaveLength(100);
+          expect(agents[1]?.ids).toEqual(agents[0]?.ids);
         };
-        // Measure steady-state server latency across concurrent requests. Give the health probe
-        // its own keep-alive connection so it does not use the larger responses' client pool.
-        const [healthStatus] = await Promise.all([readHealth(), readAgents(clientA), readAgents(clientB), readSummary()]);
-        expect(healthStatus).toBe(200);
+        const warmup = await samplerRpc.callWithTimeout<GoalHttpSample[]>("sample",8_000,1);
+        expect(warmup).toHaveLength(1);
+        warmup.forEach(checkSample);
         let writes = 0;
         writer = setInterval(() => {
           runtime.database.transaction(db => db.prepare("UPDATE work_items SET status=? WHERE work_id='work-00001'")
             .run(writes++ % 2 === 0 ? "RUNNING" : "COMPLETED"));
         }, 25);
-        const agentTimes: number[] = [];
-        const healthTimes: number[] = [];
-        for (let sample = 0; sample < 40; sample++) {
-          const load = async (headers: { cookie: string }) => {
-            const started = performance.now();
-            const page = await readAgents(headers);
-            agentTimes.push(performance.now() - started);
-            return page.items.map(item => item.agentId);
-          };
-          const health = async () => {
-            const started = performance.now();
-            const status = await readHealth();
-            healthTimes.push(performance.now() - started);
-            expect(status).toBe(200);
-          };
-          const [left, right] = await Promise.all([load(clientA), load(clientB), health(), readSummary()]);
-          expect(left).toHaveLength(100);
-          expect(right).toEqual(left);
-        }
-        const agentP95 = p95(agentTimes);
-        const healthP95 = p95(healthTimes);
+        const samples = await samplerRpc.callWithTimeout<GoalHttpSample[]>("sample",25_000,40);
+        expect(samples).toHaveLength(40);
+        samples.forEach(checkSample);
+        const agentP95 = p95(samples.flatMap(sample => sample.agents.map(agent => agent.elapsedMs)));
+        const healthP95 = p95(samples.map(sample => sample.health.elapsedMs));
         console.info(`Large-goal HTTP P95: Agent page ${agentP95.toFixed(1)} ms, health ${healthP95.toFixed(1)} ms`);
         expect(agentP95, "Agent first-page HTTP p95").toBeLessThanOrEqual(500);
         expect(healthP95, "health HTTP p95").toBeLessThanOrEqual(100);
@@ -227,7 +208,8 @@ describe("runtime Workers (AC-PERF-01)", () => {
           .filter(layer => layer > MAP_LAYERS - 100).length);
       } finally {
         clearInterval(writer);
-        healthAgent.destroy();
+        samplerRpc?.close();
+        await sampler?.terminate();
         await listeners.close();
         await reader.close();
       }

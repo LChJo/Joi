@@ -4272,12 +4272,12 @@
     {
       "id": "8ab8a550-f16e-4150-a15a-3e2b881ca7c4",
       "kind": "source-code",
-      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across the latest 100 populated layers out of 128 layers and 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, with a dedicated keep-alive health transport and the same P95 limits. The bulk database fixture and cleanup have separate bounded hooks, while the original test deadline and per-request HTTP deadlines bound the live reads.",
+      "claim": "A disposable SQLite WAL fixture checks two HTTP sessions, concurrent Work updates, paging within the latest 100 of 1,001 goal Agents and across the latest 100 populated layers out of 128 layers and 1,001 paths with 50,000 newer historical Agents, and list and health P95 gates. The real read Worker acknowledges SQLite close and leaves termination to the owner. The latency benchmark uses 40 concurrent samples after warming connections, from a separate HTTP client event loop, with a dedicated keep-alive health connection and the same P95 limits. The bulk database fixture and cleanup have separate bounded hooks, while the original test deadline and per-request HTTP deadlines bound the live reads.",
       "location": {
         "path": "tests/integration/runtime-workers.test.ts"
       },
-      "hash": "b8ac0af6b33bb16cb22b2b249049fcbdaeb2c0492b0360ffaadc6b95aa6853a6",
-      "observedAt": "2026-11-22T11:58:37.935Z"
+      "hash": "7edf5fc24814fc8f6d0c0c05d463f0d506569f3f291a94b3c4ea049f1fe7e8c4",
+      "observedAt": "2026-11-23T06:13:05.620Z"
     },
     {
       "id": "30fe893b-d2e3-4b80-b68f-7f61274be3d1",

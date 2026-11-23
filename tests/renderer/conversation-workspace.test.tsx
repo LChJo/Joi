@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { DigitalLifeApi } from "../../src/renderer/api";
+import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { ConversationWorkspace } from "../../src/renderer/ConversationWorkspace";
 import type { ConversationDto, GitWorkspaceDto } from "../../src/shared/conversations";
 
@@ -44,13 +44,18 @@ it("CHAT-08 offers a system open action for a workspace file outside the text pr
   const { api,fileListing,fileRead,gitStatus } = setup();
   fileListing.mockResolvedValue({ items: [{ path: "周报.png",directory: false }] });
   fileRead.mockResolvedValue({ text: "",truncated: false,unavailable: "TOO_LARGE" });
-  const request = vi.spyOn(api,"request").mockResolvedValue({ opened: true });
+  const request = vi.spyOn(api,"request").mockResolvedValue({ opened: true })
+    .mockRejectedValueOnce(new ApiError("workbench_artifact_open_failed","Fixture",500));
   render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
   await waitFor(() => expect(gitStatus).toHaveBeenCalled());
   fireEvent.click(screen.getByRole("button",{ name: "文件" }));
   fireEvent.click(await screen.findByRole("button",{ name: "周报.png" }));
   fireEvent.click(await screen.findByRole("button",{ name: "直接打开" }));
   expect(request).toHaveBeenCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "周报.png",mode: "OPEN" } });
+  expect(await screen.findByRole("status")).toHaveTextContent("系统无法打开所选文件。");
+  fireEvent.click(screen.getByRole("button",{ name: "转到目录" }));
+  expect(request).toHaveBeenLastCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "周报.png",mode: "REVEAL" } });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.queryByText("请求未完成，请重试。")).not.toBeInTheDocument();
 });
 it("CHAT-08/09 opens or reveals reported files from a desktop menu, including older root-level records", () => {
@@ -63,6 +68,27 @@ it("CHAT-08/09 opens or reveals reported files from a desktop menu, including ol
   }] };
   const view = render(<ConversationWorkspace api={api} conversation={conversation} workbenchId="wb" workbenchName="Project" />);
   const trigger = screen.getByRole("button",{ name: /^周报\.png.*操作/u });
+  vi.spyOn(trigger,"getBoundingClientRect").mockReturnValue(new DOMRect(200,window.innerHeight - 40,30,30));
+  fireEvent.click(trigger);
+  expect(screen.getByRole("menu")).toHaveStyle({ top: `${String(window.innerHeight - 126)}px` });
+  fireEvent.keyDown(screen.getByRole("menuitem",{ name: "直接打开" }),{ key: "Escape" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+  fireEvent.click(trigger);
+  fireEvent.pointerDown(screen.getByRole("menuitem",{ name: "直接打开" }));
+  expect(screen.getByRole("menu")).toBeInTheDocument();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.scroll(window);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.click(trigger);
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  fireEvent.click(trigger);
+  fireEvent.blur(screen.getByRole("menuitem",{ name: "直接打开" }),{ relatedTarget: screen.getByRole("button",{ name: "文件" }) });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  expect(request).not.toHaveBeenCalled();
   fireEvent.click(trigger);
   expect(screen.getByRole("menuitem",{ name: "直接打开" })).toHaveFocus();
   fireEvent.keyDown(screen.getByRole("menuitem",{ name: "直接打开" }),{ key: "ArrowDown" });
@@ -74,6 +100,41 @@ it("CHAT-08/09 opens or reveals reported files from a desktop menu, including ol
   expect(request).toHaveBeenLastCalledWith("/api/v1/conversation-workspaces/wb/open",{ method: "POST",body: { path: "旧周报.png",mode: "OPEN" } });
   view.rerender(<ConversationWorkspace api={new DigitalLifeApi("")} conversation={conversation} workbenchId="wb" workbenchName="Project" />);
   expect(screen.queryByRole("button",{ name: /周报\.png.*操作/u })).not.toBeInTheDocument();
+});
+it("CHAT-08 reports a removed file and ignores an older preview after selecting another file", async () => {
+  const { api,fileListing,fileRead,gitStatus } = setup();
+  const older = Promise.withResolvers<{ text: string; truncated: boolean }>();
+  fileListing.mockResolvedValue({ items: [{ path: "old.txt",directory: false },{ path: "current.txt",directory: false }] });
+  fileRead.mockRejectedValueOnce(new ApiError("workspace_file_not_found","Fixture",404))
+    .mockReturnValueOnce(older.promise).mockResolvedValueOnce({ text: "Current preview",truncated: false });
+  render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
+  await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole("button",{ name: "文件" }));
+  const oldFile = await screen.findByRole("button",{ name: "old.txt" });
+  fireEvent.click(oldFile);
+  expect(await screen.findByRole("status")).toHaveTextContent("此文件已不在当前工作区。");
+  fireEvent.click(oldFile);
+  fireEvent.click(screen.getByRole("button",{ name: "current.txt" }));
+  await screen.findByText("Current preview");
+  await act(async () => { older.resolve({ text: "Older preview",truncated: false });await older.promise; });
+  expect(screen.queryByText("Older preview")).not.toBeInTheDocument();
+  expect(screen.getByText("Current preview")).toBeInTheDocument();
+});
+it("CHAT-08 shows a current folder error and discards a delayed error after leaving Files", async () => {
+  const { api,fileListing,gitStatus } = setup();
+  const later = Promise.withResolvers<{ items: { path: string; directory: boolean }[] }>();
+  fileListing.mockRejectedValueOnce(new ApiError("workspace_file_not_found","Fixture",404)).mockReturnValueOnce(later.promise);
+  render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
+  await waitFor(() => expect(gitStatus).toHaveBeenCalled());
+  const files = screen.getByRole("button",{ name: "文件" });
+  const changes = screen.getByRole("button",{ name: "变更" });
+  fireEvent.click(files);
+  expect(await screen.findByRole("status")).toHaveTextContent("此文件已不在当前工作区。");
+  fireEvent.click(changes);
+  fireEvent.click(files);
+  fireEvent.click(changes);
+  await act(async () => { later.reject(new ApiError("workspace_file_not_found","Fixture",404));await later.promise.catch(() => undefined); });
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
 it("CHAT-08/09 restricts browser schemes and embeds explicit URLs in a sandbox while keeping local files desktop-only", () => {
   const { api } = setup();const view = render(<ConversationWorkspace api={api} conversation={null} workbenchId="wb" workbenchName="Project" />);
