@@ -144,7 +144,7 @@ describe("JOI-01 non-destructive migration", () => {
             "104_historical_memory.sql","105_historical_preference_order.sql","106_goal_evidence_reads.sql",
             "107_user_questions.sql","108_question_recovery_lifecycle.sql","109_large_goal_reads.sql",
             "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql","112_codex_subscription_model_source.sql",
-            "113_goal_route_depth.sql",
+            "113_goal_route_depth.sql","114_workbench_result_history.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });
@@ -156,6 +156,37 @@ describe("JOI-01 non-destructive migration", () => {
         });
       } finally { upgraded.close(); }
     } finally { await rm(root,{ recursive:true,force:true }); }
+  });
+
+  it("HIST-07 finds published results that predate the historical memory tables", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(),"joi-published-history-upgrade-"));
+    const previousMigrations = path.join(root,"migrations"),databasePath = path.join(root,"runtime.sqlite");
+    try {
+      await copyMigrationsThrough(previousMigrations,103);
+      const previous = await openRuntimeDatabase({ databasePath,migrationsDirectory: previousMigrations });
+      try {
+        previous.transaction(db => db.exec(`INSERT INTO workbenches
+          (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+          VALUES ('wb','W','p','','','','m','ACTIVE','2026-11-01','2026-11-01');
+          INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+          VALUES ('legacy','legacy','Older task','CONSUMED','wb','2026-11-01','2026-11-01');
+          INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES ('turn','legacy','wb','session','COMPLETED','2026-11-01','2026-11-01');
+          INSERT INTO joi_turn_completions (input_id,turn_id,outcome_kind,completion_summary,completed_at,updated_at)
+          VALUES ('legacy','turn','DIRECT_ANSWER','Saved legacy answer','2026-11-01','2026-11-01')`));
+      } finally { previous.close(); }
+
+      const upgraded = await openRuntimeDatabase({ databasePath,migrationsDirectory: path.resolve("resources/migrations") });
+      try {
+        const history = new SqliteHistoricalMemoryStore(upgraded);
+        expect(history.entries("workbench","wb")).toEqual([]);
+        const page = history.listPublishedResults("wb",20);
+        const result = page?.items[0];
+        expect(page?.items).toHaveLength(1);
+        expect(result).toMatchObject({ title: "Older task",completedAt: "2026-11-01",status: "COMPLETED" });
+        expect(history.readEvidence("wb",`result:${result?.resultId ?? ""}`,0,100,"conclusion")?.text).toBe("Saved legacy answer");
+      } finally { upgraded.close(); }
+    } finally { await rm(root,{ recursive: true,force: true }); }
   });
 
   it("HIST-04 preserves the preference order when upgrading existing historical memory", async () => {

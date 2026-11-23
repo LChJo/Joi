@@ -4,6 +4,7 @@ import { HISTORICAL_MEMORY_KIND, JOI_MEMORY_OWNER, type HistoricalMemoryCompacti
 import { historicalCharacters, renderHistoricalContext, type HistoricalEntry, type HistoricalScope } from "../../domain/work/historical-context.js";
 import { storageEngine } from "./partner-engine-storage.js";
 import type { RuntimeDatabase } from "./runtime-database.js";
+import { queryPublishedWorkbenchResults, readPublishedWorkbenchResult } from "./sqlite-goal-result-history.js";
 
 interface HistoricalSource {
   source_id: string;
@@ -122,16 +123,22 @@ export class SqliteHistoricalMemoryStore implements HistoricalMemoryStore {
     return this.database.transaction(db => readMemory(db,scope,ownerId).entries,"deferred");
   }
 
+  listPublishedResults(workbenchId: string, limit: number, cursor?: string) {
+    return this.database.transaction(db => queryPublishedWorkbenchResults(db,workbenchId,limit,cursor),"deferred");
+  }
+
   readEvidence(workbenchId: string, sourceId: string, offset: number, limit: number, part: "input" | "conclusion" = "input"): { text: string; total: number } | null {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit <= 0) return null;
+    const pageSize = Math.min(limit,4000);
     return this.database.transaction(db => {
+      if (sourceId.startsWith("result:")) return readPublishedWorkbenchResult(db,workbenchId,sourceId.slice("result:".length),offset,pageSize,part);
       const source = sourceById(db,sourceId) ?? (/^[a-f0-9]{64}$/iu.test(sourceId)
         ? sourceById(db,`history:${sourceId.toLowerCase()}`) : undefined);
       if (source?.workbench_id !== workbenchId || source.kind === "partner" || current(db,source) === undefined) return null;
-      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit <= 0) return null;
       const lookup = part === "input" ? "SELECT body FROM joi_inbox_messages WHERE input_id=?"
         : conclusionQuery(source);
       const row = db.prepare(`SELECT substr(body,? + 1,?) AS chunk,length(body) AS total FROM (${lookup})`)
-        .get(offset,Math.min(limit,4000),source.subject_id);
+        .get(offset,pageSize,source.subject_id);
       return typeof row?.chunk === "string" && typeof row.total === "number" ? { text: row.chunk,total: row.total } : null;
     },"deferred");
   }

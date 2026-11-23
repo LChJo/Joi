@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 114 indexes original goal inputs by Workbench for browsing published conclusions. It uses the existing immutable result journal and preserves stored results and their identifiers. See [Workbench history](../../docs/historical-context-policy-spec.md#23-工作台近期依据索引与按需查询).
+
 Migration 113 preserves the retired layer boundary for the desktop goal map, carries forward the consumed continuation allowance, and binds Work to the originating planning turn. Existing paths and their references are retained. See [goal route depth](../../docs/design/goal-route-depth-spec.md).
 
 Migration 110 numbers admitted Routine runs and associates their initiating Joi Turns. Migration 111 stores bounded historical-memory inputs with their settlement source. See [incremental knowledge and retention](../../docs/joi-incremental-knowledge-retention-spec.md).

@@ -23,6 +23,13 @@ async function completeHistorySource(fixture: RuntimeFixture, inputId: string, b
 
 async function settleHistoryGoal(fixture: RuntimeFixture, goalInputId: string, workbenchId: string, body: string,
   disposition: "COMPLETED" | "ACCEPTED_WITH_GAPS" = "COMPLETED") {
+  await publishHistoryGoal(fixture,goalInputId,workbenchId,body,disposition);
+  const harness = new SqliteJoiHarnessRepository(fixture.database);
+  expect(await harness.recordCompletionFeedback({ goalInputId,workbenchId,entry: body,now: fixture.clock.now().toISOString() })).toBe(true);
+}
+
+async function publishHistoryGoal(fixture: RuntimeFixture, goalInputId: string, workbenchId: string, body: string,
+  disposition: "COMPLETED" | "ACCEPTED_WITH_GAPS") {
   const harness = new SqliteJoiHarnessRepository(fixture.database);
   const now = fixture.clock.now().toISOString();
   await harness.createMap({ goalInputId, workbenchId, now });
@@ -33,7 +40,6 @@ async function settleHistoryGoal(fixture: RuntimeFixture, goalInputId: string, w
       .run(body,now,now,goalInputId);
   });
   forceMapCleared(fixture, goalInputId);
-  expect(await harness.recordCompletionFeedback({ goalInputId, workbenchId, entry: body, now })).toBe(true);
 }
 
 function historyJob(sourceId: string, scope: "joi" | "workbench") {
@@ -197,7 +203,71 @@ it("HIST-02/04/07 indexes completed Workbench conclusions and scopes reads to th
   } finally { await fixture.close(); }
 });
 
-it.each(["list", "read"] as const)("HIST-07 lets ordinary chat %s the finished report by its Workbench evidence source", async action => {
+it("HIST-07 lists the newest published Workbench conclusion before background history is organized", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const old = await completeHistorySource(fixture,"older-report","Older conclusion");
+    const { workbenchId } = old;
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    await new HistoricalMemoryService(history,{ organize: () => Promise.resolve([]) }).handle(historyJob(old.sourceId,"workbench"));
+    fixture.clock.advance(60_000);
+
+    const goalInputId = "newest-report";
+    seedGoal(fixture,{ goalInputId,status: "CONSUMED",workbenchId });
+    fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET body=? WHERE input_id=?").run("飞书待办汇总",goalInputId));
+    await publishHistoryGoal(fixture,goalInputId,workbenchId,"Published but not yet indexed","ACCEPTED_WITH_GAPS");
+    const feed = new SqliteJoiHomeFeedRepository(fixture.database);
+    const published = (await feed.listGoalResults(goalInputId))?.items[0];
+    const prior = (await feed.listGoalResults("older-report"))?.items[0];
+    if (published === undefined || prior === undefined) throw new Error("Missing published goal result");
+
+    const [tool] = historicalMemoryTools(history,workbenchId,false);
+    if (tool === undefined) throw new Error("Missing Workbench history tool");
+    const first = (await tool.execute("list",{})).content[0];
+    expect(first?.type).toBe("text");
+    if (first?.type !== "text") throw new Error("Missing tool result text");
+    expect(JSON.parse(first.text)).toMatchObject({ sources: [
+      { source: `result:${published.resultId}`,title: "飞书待办汇总",completedAt: published.completedAt,status: "COMPLETED_WITH_GAPS" },
+      { source: `result:${prior.resultId}`,status: "COMPLETED",completedAt: prior.completedAt },
+    ] });
+    expect(first.text).not.toContain("Published but not yet indexed");
+    const page = await tool.execute("read",{ source: `result:${published.resultId}`,part: "conclusion" });
+    expect(page.content).toEqual([{ type: "text",text: JSON.stringify({ text: "Published but not yet indexed",nextOffset: null }) }]);
+  } finally { await fixture.close(); }
+});
+
+it("HIST-04/07 bounds published result pages and revokes access to reopened goals and other Workbenches", async () => {
+  const fixture = await createRuntimeFixture();
+  try {
+    const older = await completeHistorySource(fixture,"older","Earlier conclusion");
+    fixture.clock.advance(60_000);
+    await completeHistorySource(fixture,"newer","Newer conclusion",older.workbenchId);
+    const other = await completeHistorySource(fixture,"other","Other Workbench conclusion");
+    const history = new SqliteHistoricalMemoryStore(fixture.database);
+    const first = history.listPublishedResults(older.workbenchId,1);
+    expect(first?.items.map(item => item.title)).toEqual(["Newer conclusion"]);
+    if (first?.nextCursor === undefined) throw new Error("Missing next result cursor");
+    const cursor = first.nextCursor;
+    const second = history.listPublishedResults(older.workbenchId,1,cursor);
+    expect(second?.items.map(item => item.title)).toEqual(["Earlier conclusion"]);
+    expect(second?.nextCursor).toBeUndefined();
+    expect(history.listPublishedResults(other.workbenchId,1,cursor)).toBeNull();
+    const reference = `result:${cursor}`;
+    expect(history.readEvidence(other.workbenchId,reference,0,20,"conclusion")).toBeNull();
+    expect(history.readEvidence(older.workbenchId,reference,0,20,"input")?.text).toBe("Newer conclusion");
+    fixture.clock.advance(60_000);
+    fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET reopened_at=? WHERE input_id='newer'")
+      .run(fixture.clock.now().toISOString()));
+    const [tool] = historicalMemoryTools(history,older.workbenchId,false);
+    if (tool === undefined) throw new Error("Missing Workbench history tool");
+    const stale = await tool.execute("list",{ cursor });
+    expect(stale.content).toEqual([{ type: "text",text: JSON.stringify({ code: "workbench_history_cursor_unavailable" }) }]);
+    expect(history.readEvidence(older.workbenchId,reference,0,20,"conclusion")).toBeNull();
+    expect(history.listPublishedResults(older.workbenchId,1)?.items.map(item => item.title)).toEqual(["Earlier conclusion"]);
+  } finally { await fixture.close(); }
+});
+
+it.each(["published", "legacy"] as const)("HIST-07 lets ordinary chat page a finished report by its %s Workbench reference", async reference => {
   const fixture = await createRuntimeFixture();
   try {
     const body = "周报第12期\n" + "𠮷".repeat(12_360) + "\n全文结尾";
@@ -214,17 +284,15 @@ it.each(["list", "read"] as const)("HIST-07 lets ordinary chat %s the finished r
     if (update?.index === undefined) throw new Error("Missing Workbench source");
     expect(update.index.text).toContain("goal accepted with gaps · 周报第12期");
     expect(history.commit(update,[update.index])).toBe(true);
+    const published = (await new SqliteJoiHomeFeedRepository(fixture.database).listGoalResults(inputId))?.items[0];
+    if (published === undefined) throw new Error("Missing published goal result");
     const [tool] = historicalMemoryTools(history,workbenchId,false);
     if (tool === undefined) throw new Error("Missing Workbench history tool");
-    if (action === "list") {
-      const result = await tool.execute("list",{});
-      expect(result.content).toEqual([{ type: "text",text: JSON.stringify({ sources: [{ source,description: update.index.text }] }) }]);
-      return;
-    }
+    const selectedSource = reference === "published" ? `result:${published.resultId}` : source;
     const characters = Array.from(body);
     for (const offset of [0,4000,8000,12_000]) {
       const nextOffset = offset + 4000 < characters.length ? offset + 4000 : null;
-      const result = await tool.execute("read",{ source,part: "conclusion",offset });
+      const result = await tool.execute("read",{ source: selectedSource,part: "conclusion",offset });
       expect(result.content).toEqual([{ type: "text",text: JSON.stringify({ text: characters.slice(offset,offset + 4000).join(""),nextOffset }) }]);
     }
   } finally { await fixture.close(); }

@@ -732,15 +732,15 @@
     {
       "id": "793588d4-9226-45ea-bcb5-58e60334355c",
       "kind": "source-code",
-      "claim": "Capability-scoped guidance sends Workbench history questions to the evidence tool, with source discovery, exact references and result pagination. File inspection guidance uses bounded paths and official rules.",
+      "claim": "Capability-scoped guidance prioritizes the latest relevant published Workbench conclusion, preserves completion gaps and tells Pi how to stay within a history-only request. File inspection guidance uses bounded paths.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
       },
-      "hash": "fc26d763362e8e404b87b1c6b171b77e4e2b0d6db15a3690665093086a91a1ea",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "hash": "4390c9ee45822deb2898bc02d59bb33de28d51e6ac916ca6f74d9090bb9ce95d",
+      "observedAt": "2026-11-23T12:03:15.205Z",
       "range": {
         "startLine": 1,
-        "endLine": 15
+        "endLine": 19
       }
     },
     {
@@ -2426,15 +2426,15 @@
     {
       "id": "74291112-c1a7-4ac7-b9af-105899a135e8",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests cover Work-backed maps, feedback-based history, provenance, scoped reads, preference ordering and idempotent compaction. They verify full and bare source references, recent source discovery and paginated accepted reports in chat.",
+      "claim": "Disposable SQLite tests cover Work-backed maps, feedback-based history and compaction. Published conclusions are discoverable before background organization. Cursor and evidence reads enforce Workbench scope and reopening boundaries, and both published and legacy references support evidence pages.",
       "location": {
         "path": "tests/integration/sqlite-joi-harness-repository.test.ts"
       },
-      "hash": "56af9dade05af563c069f66f63cb41f0d3069c47e261d51ba1fec2a9c22ae1d0",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "hash": "063d35ae1c23d9d3aea4e5fa6d16dd390320f1fe0253116395798bf204838dea",
+      "observedAt": "2026-11-23T11:53:12.042Z",
       "range": {
         "startLine": 1,
-        "endLine": 2440
+        "endLine": 2508
       }
     },
     {
@@ -3283,12 +3283,12 @@
       "location": {
         "path": "resources/migrations/README.md"
       },
-      "claim": "Documents runtime migration responsibilities, including scoped history and durable explicit preference ordering. Ask migrations 107 and 108 preserve existing question and recovery data while exact draft ledger identities are moved out of 104 and 105. Migration 109 indexes dispatch history by instance and adds goal map read versions. Migrations 110 and 111 add Routine execution numbering and bounded settlement facts. Migration 113 adds the monotone retired layer boundary, carried-forward allowance usage and original planning Turn identity.",
-      "hash": "1976cf268a1493ca81f2a0971787046da931cb525566d27a786ae5c9931fc3c2",
-      "observedAt": "2026-11-21T15:17:05.662Z",
+      "claim": "Documents indexed Workbench result discovery and preservation of immutable published results in migration 114, alongside the existing recovery, historical memory and map migrations.",
+      "hash": "ba790940fa8f8ef4dd9aaf5ac9bde4c53d0f0b14a0e02f6a75bcf16dc9678810",
+      "observedAt": "2026-11-23T11:53:12.042Z",
       "range": {
         "startLine": 1,
-        "endLine": 116
+        "endLine": 118
       }
     },
     {
@@ -3367,12 +3367,12 @@
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "claim": "Pi contracts verify Workbench source discovery and scoped reads in ordinary chat, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
-      "hash": "f95ebe9d39f535c53012832f57b466aa207237409173d616c95e5d257c9876f4",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "claim": "Pi contracts verify published Workbench result discovery, history-only guidance, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
+      "hash": "d02a0d14105452eca5a62c33835d46727553f3a25ef472e86ef844a0021c8485",
+      "observedAt": "2026-11-23T12:03:15.205Z",
       "range": {
         "startLine": 1,
-        "endLine": 822
+        "endLine": 827
       }
     },
     {
@@ -3675,12 +3675,12 @@
       "location": {
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
-      "claim": "Disposable database migrations verify preservation of queued writer ordering and preference correction order across upgrades. Migration regressions also cover draft Ask schemas at 104 and 105, preserving existing recoveries and applying the parent historical and evidence migrations. The latest migrations add durable Routine sequences and historical settlement snapshots while preserving pre-existing recovery and memory facts. Migration coverage preserves old path IDs, canonical layer membership, and the legacy continuation balance.",
-      "hash": "e3ee1e0215d833c632bc5b8deddfedc52df6a4b38e5c67da02623d622e6cfde3",
-      "observedAt": "2026-11-21T15:18:30.030Z",
+      "claim": "Disposable SQLite migrations recover published results that predate historical memory without replaying work, and preserve preference ordering, queued writer order, draft Ask recovery, Routine sequencing and goal map history.",
+      "hash": "70899aef681da364620597e98db8bf3e1d88c6056a5c76c493d7028d1027025d",
+      "observedAt": "2026-11-23T11:53:12.042Z",
       "range": {
         "startLine": 1,
-        "endLine": 1091
+        "endLine": 1122
       }
     },
     {
@@ -3882,15 +3882,15 @@
     {
       "id": "4b18689f-6b0f-410b-a946-5b7479e53b33",
       "kind": "document",
-      "claim": "Historical memory admits completed Workbench conclusions, scoped Partner experience and explicit preferences from eligible settlements. Chat can discover recent sources and read the saved result by full reference or bare digest under bounded pagination.",
+      "claim": "Workbench history lists published conclusions immediately in completion order and reads bounded pages by immutable result reference. Existing evidence references remain scoped and readable. Memory organization and retained execution context have separate budgets.",
       "location": {
         "path": "docs/historical-context-policy-spec.md"
       },
-      "hash": "b65a42a343d70be7a721139c4334569df5415b6bddbd82c2e22bce850966c3ca",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "hash": "a7267e3e52c31b4076c353868c388e0b30d786473ea7a9955dfc06ae766684db",
+      "observedAt": "2026-11-23T12:03:15.205Z",
       "range": {
         "startLine": 1,
-        "endLine": 109
+        "endLine": 110
       }
     },
     {
@@ -3924,15 +3924,15 @@
     {
       "id": "3f34b0bc-f4aa-4596-8c14-5da82a18ea7f",
       "kind": "source-code",
-      "claim": "New memory settlements are scoped to Workbench conclusions and authoritative Partner results. Existing direct-answer history remains readable. Full references and bare source digests both require a current source in the authorized Workbench.",
+      "claim": "The history reader uses deferred snapshots to list published results and read result, legacy and bare-digest references within the authorized Workbench. Background memory organization continues to use validated settlements.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-historical-memory-store.ts"
       },
-      "hash": "83a9e98efa9a6399fa288f7c343f298871434f773275887140ddb91c7d3fcf3f",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "hash": "76769d6fa28d3b2e4e10a748c85164480ddc072399d3870a241932a03765d854",
+      "observedAt": "2026-11-23T11:53:12.042Z",
       "range": {
         "startLine": 1,
-        "endLine": 212
+        "endLine": 219
       }
     },
     {
@@ -3952,15 +3952,15 @@
     {
       "id": "e870d27a-37da-4a69-b130-82041cd4c549",
       "kind": "source-code",
-      "claim": "Pi contracts verify Workbench source discovery and scoped reads in ordinary chat, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
+      "claim": "Pi contracts verify published Workbench result discovery, history-only guidance, evidence omission on the next turn, full latest handoff facts and guarded model capacity.",
       "location": {
         "path": "tests/contract/pi-session-ownership.test.ts"
       },
-      "hash": "f95ebe9d39f535c53012832f57b466aa207237409173d616c95e5d257c9876f4",
-      "observedAt": "2026-11-23T05:14:33.397Z",
+      "hash": "d02a0d14105452eca5a62c33835d46727553f3a25ef472e86ef844a0021c8485",
+      "observedAt": "2026-11-23T12:03:15.205Z",
       "range": {
         "startLine": 1,
-        "endLine": 822
+        "endLine": 827
       }
     },
     {

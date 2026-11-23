@@ -1,9 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto, GoalResultSummaryDto } from "../../../shared/goal-results.js";
+import type { PublishedWorkbenchResults } from "../../application/ports/historical-memory.js";
 import { DomainError } from "../../domain/errors.js";
 import { sanitizeAgentConversationText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 
 type Row = Record<string, string | number | null>;
+
+const workbenchResults = `FROM joi_inbox_messages g
+  JOIN workbenches w ON w.workbench_id=g.workbench_id AND w.status='ACTIVE'
+  JOIN joi_goal_result_history h ON h.goal_input_id=g.input_id
+  WHERE g.workbench_id=? AND g.goal_input_id IS NULL AND g.canceled_at IS NULL AND g.dismissed_at IS NULL
+    AND (g.reopened_at IS NULL OR h.completed_at>=g.reopened_at)`;
 
 function visibleGoal(db: DatabaseSync, goalId: string): boolean {
   return db.prepare("SELECT 1 FROM joi_inbox_messages WHERE input_id=? AND goal_input_id IS NULL AND dismissed_at IS NULL").get(goalId) !== undefined;
@@ -34,4 +41,29 @@ export function queryGoalResult(db: DatabaseSync, goalId: string, resultId: stri
   if (!visibleGoal(db, goalId)) return null;
   const row = db.prepare("SELECT result_id,completed_at,status,body FROM joi_goal_result_history WHERE goal_input_id=? AND result_id=?").get(goalId, resultId) as Row | undefined;
   return row === undefined ? null : { ...summary(row), goalId, body: stripPathRedactions(sanitizeAgentConversationText(String(row.body))) };
+}
+
+export function queryPublishedWorkbenchResults(db: DatabaseSync, workbenchId: string, limit: number, cursor?: string): PublishedWorkbenchResults | null {
+  const anchor = cursor === undefined ? undefined : db.prepare(`SELECT h.completed_at ${workbenchResults} AND h.result_id=?`).get(workbenchId,cursor);
+  if (cursor !== undefined && anchor === undefined) return null;
+  const keyset = anchor === undefined ? "" : "AND (h.completed_at,h.result_id)<(?,?)";
+  const args = anchor === undefined ? [workbenchId,limit + 1] : [workbenchId,anchor.completed_at ?? null,cursor ?? null,limit + 1];
+  const rows = db.prepare(`SELECT page.result_id,page.completed_at,page.status,substr(g.body,1,160) AS title
+    FROM (SELECT h.result_id,h.completed_at,h.status,h.goal_input_id ${workbenchResults} ${keyset}
+      ORDER BY h.completed_at DESC,h.result_id DESC LIMIT ?) page
+    JOIN joi_inbox_messages g ON g.input_id=page.goal_input_id
+    ORDER BY page.completed_at DESC,page.result_id DESC`).all(...args) as Row[];
+  const items = rows.slice(0,limit).map(row => ({ ...summary(row),
+    title: stripPathRedactions(sanitizeAgentConversationText(String(row.title))).replace(/\s+/gu," "),
+  }));
+  const last = items.at(-1);
+  return { items,...(rows.length > limit && last !== undefined ? { nextCursor: last.resultId } : {}) };
+}
+
+export function readPublishedWorkbenchResult(db: DatabaseSync, workbenchId: string, resultId: string, offset: number, limit: number,
+  part: "input" | "conclusion"): { text: string; total: number } | null {
+  const body = part === "input" ? "g.body" : "h.body";
+  const row = db.prepare(`SELECT substr(${body},? + 1,?) AS text,length(${body}) AS total
+    ${workbenchResults} AND h.result_id=?`).get(offset,limit,workbenchId,resultId);
+  return typeof row?.text === "string" && typeof row.total === "number" ? { text: row.text,total: row.total } : null;
 }

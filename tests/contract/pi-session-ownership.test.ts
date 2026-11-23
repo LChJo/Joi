@@ -255,9 +255,12 @@ it("HIST-03/06 starts a distinct Work on a resident partner without replaying it
 });
 
 it("HIST-07 reads Workbench raw evidence on request and omits it from the next conversation turn", async () => {
+  const result = { resultId: "a".repeat(32),title: "Finished report",completedAt: "2026-11-23T11:00:00.000Z",status: "COMPLETED" as const };
+  const source = `result:${result.resultId}`;
   const { faux,runtime } = partnerRuntime("workbench-evidence-boundary", undefined, { memory: {
-    entries: () => [{ section: "sources",text: "Finished report",source: "history:fixture" }],
-    readEvidence: (_workbench,source) => source === "history:fixture" ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
+    entries: () => [],
+    listPublishedResults: () => ({ items: [result] }),
+    readEvidence: (_workbench,reference) => reference === source ? { text: "PRIVATE_EVIDENCE_BODY",total: 21 } : null,
   } });
   const sent: string[] = [];
   let historyPrompt = "";
@@ -268,8 +271,8 @@ it("HIST-07 reads Workbench raw evidence on request and omits it from the next c
     },
     context => {
       const list = context.messages.findLast(message => message.role === "toolResult");
-      expect(list?.content).toEqual([{ type: "text",text: JSON.stringify({ sources: [{ source: "history:fixture",description: "Finished report" }] }) }]);
-      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source: "history:fixture",part: "conclusion" })],{ stopReason: "toolUse" });
+      expect(list?.content).toEqual([{ type: "text",text: JSON.stringify({ sources: [{ source,title: result.title,completedAt: result.completedAt,status: result.status }],nextCursor: null }) }]);
+      return fauxAssistantMessage([fauxToolCall("workbench_read_history",{ source,part: "conclusion" })],{ stopReason: "toolUse" });
     },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("Evidence checked"); },
     context => { sent.push(JSON.stringify(context)); return fauxAssistantMessage("New response"); },
@@ -278,7 +281,9 @@ it("HIST-07 reads Workbench raw evidence on request and omits it from the next c
   await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat" } });
   await runtime.runResidentTurn({ ...input,request: { ...request,conversationId: "chat",actionId: "next",workId: "next" } });
   expect(historyPrompt).toContain("Use workbench_read_history to read saved Workbench history");
-  expect(historyPrompt).toContain("Use the source reference in the Workbench evidence index");
+  expect(historyPrompt).toContain("Choose the newest relevant published conclusion");
+  expect(historyPrompt).toContain("For history-only requests, use only saved records.");
+  expect(historyPrompt).toContain("give the completion date of any older result you cite");
   expect(sent[0]).toContain("PRIVATE_EVIDENCE_BODY");
   expect(sent[1]).not.toContain("PRIVATE_EVIDENCE_BODY");
 });

@@ -12,25 +12,30 @@ export function historicalMemoryTools(memory: HistoricalMemoryReader, workbenchI
   let summaryRead = false;
   let evidenceLeft = TURN_EVIDENCE_LIMIT;
   const parameters = Type.Object({
-    source: Type.Optional(Type.String({ maxLength: 180, description: "Use a source from the recent evidence list. Omit to list sources." })),
+    source: Type.Optional(Type.String({ maxLength: 180, description: "Use a saved source reference. Omit to list the latest published results." })),
+    cursor: Type.Optional(Type.String({ maxLength: 32, description: "Use the result list's nextCursor to list older results. Omit source when paging the list." })),
     offset: Type.Optional(Type.Integer({ minimum: 0, description: "Start at 0, then use the previous page's nextOffset." })),
     part: Type.Optional(Type.Union([Type.Literal("input"),Type.Literal("conclusion")])),
   });
   const tool: AgentTool<typeof parameters> = {
     name: WORKBENCH_HISTORY_TOOL,
     label: "Read Workbench history",
-    description: "List recent evidence for the current Workbench when source is omitted. Use a listed source and part=conclusion for the saved result. Follow nextOffset until it is null."
+    description: "List published conclusions for the current Workbench, newest first, when source is omitted. Use a listed source and part=conclusion to read its saved result. Follow nextOffset until it is null."
       + (includeSummary ? " The first list also includes the historical summary." : ""),
     parameters,
     executionMode: "sequential",
     execute: (_id,args) => {
       let value: unknown;
       if (args.source === undefined) {
-        const history = renderHistoricalContext("workbench",memory.entries("workbench",workbenchId));
-        const sources = history.entries.filter(entry => entry.section === "sources").slice(0,RECENT_SOURCE_LIMIT)
-          .map(({ source,text }) => ({ source,description: text }));
-        value = { sources,...(includeSummary && !summaryRead ? { summary: history.text } : {}) };
-        summaryRead = true;
+        const page = memory.listPublishedResults(workbenchId,RECENT_SOURCE_LIMIT,args.cursor);
+        if (page === null) value = { code: "workbench_history_cursor_unavailable" };
+        else {
+          const sources = page.items.map(({ resultId,...result }) => ({ source: `result:${resultId}`,...result }));
+          const summary = includeSummary && !summaryRead
+            ? renderHistoricalContext("workbench",memory.entries("workbench",workbenchId)).text : undefined;
+          value = { sources,nextCursor: page.nextCursor ?? null,...(summary === undefined ? {} : { summary }) };
+          summaryRead = true;
+        }
       } else if (evidenceLeft === 0) {
         value = { code: "workbench_history_evidence_budget_exhausted" };
       } else {

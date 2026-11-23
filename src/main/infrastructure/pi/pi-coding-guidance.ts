@@ -3,7 +3,11 @@ import { WORKBENCH_HISTORY_TOOL } from "./pi-historical-memory-tools.js";
 /** Host-owned guidance describes only capabilities present in this request. */
 export function piCodingGuidance(toolNames: readonly string[], toolGuidelines: Readonly<Record<string, readonly string[]>> = {}): string[] {
   const enabled = new Set(toolNames),lines: string[] = [];
-  if (enabled.has(WORKBENCH_HISTORY_TOOL)) lines.push(`Use ${WORKBENCH_HISTORY_TOOL} to read saved Workbench history. Call it without arguments to discover recent sources. Use the source reference in the Workbench evidence index exactly as returned. Set part to conclusion for a completed result and follow nextOffset until it is null. If a reference cannot be read, check the recent sources before reporting that the result is unavailable.`);
+  if (enabled.has(WORKBENCH_HISTORY_TOOL)) lines.push([
+    `Use ${WORKBENCH_HISTORY_TOOL} to read saved Workbench history before checking retained chat or workspace files for a prior Workbench conclusion. Call it without arguments to list published results, newest first.`,
+    "Choose the newest relevant published conclusion. Pass the returned source with part=conclusion and follow nextOffset until it is null. Use nextCursor to look for an older match. Keep any completed-with-gaps status when summarizing.",
+    "For history-only requests, use only saved records. If you cannot find the requested conclusion, say so and give the completion date of any older result you cite.",
+  ].join(" "));
   if (enabled.has("grep")) lines.push("Use grep (ripgrep) for content searches. Start with a narrow path, glob and match limit. Combine independent patterns to avoid repeated whole-tree scans.");
   if (enabled.has("find")) lines.push("Use find (fd) for file-name and glob searches; start with the smallest relevant directory.");
   if (enabled.has("ls")) lines.push("Use ls for directory listings instead of recursive shell traversal.");
