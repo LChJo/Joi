@@ -1,8 +1,87 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { ArrowUpRightIcon, CaretDownIcon, CheckCircleIcon, CircleIcon, CopyIcon, FlagIcon, ProhibitIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { JoiGoalMapDetailDto, JoiGoalMapPathDto } from "../shared/joi.js";
 import { t, useI18n } from "./i18n";
 import { JoiGoalProgress } from "./JoiGoalProgress.js";
+
+export function GoalDrawerResizeHandle({ drawerId, preferredWidthRef }: {
+  drawerId: string;
+  preferredWidthRef: RefObject<number | null>;
+}) {
+  const [size, setSize] = useState<{ min: number; max: number; width: number } | null>(null);
+  const handle = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ pointerId: number; x: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const panel = handle.current?.parentElement;
+    if (panel == null) return;
+    const backdrop = panel.parentElement;
+    const sidebar = panel.closest(".app-shell")?.querySelector(":scope > .sidebar");
+    const update = () => {
+      if (window.innerWidth <= 760) {
+        drag.current = null;
+        panel.style.removeProperty("width");
+        setSize(null);
+        return;
+      }
+      const backdropRight = backdrop?.getBoundingClientRect().right;
+      const right = backdropRight !== undefined && backdropRight > 0 ? Math.floor(backdropRight) : window.innerWidth;
+      const navigationEdge = Math.ceil(sidebar?.getBoundingClientRect().right ?? 0);
+      const max = Math.max(0, right - navigationEdge);
+      const min = Math.min(max, Math.round(Math.min(980, window.innerWidth * 0.94)));
+      const width = Math.max(min, Math.min(max, preferredWidthRef.current ?? min));
+      if (min === max) drag.current = null;
+      panel.style.setProperty("width", `${String(width)}px`);
+      setSize(current => current?.min === min && current.max === max && current.width === width ? current : { min, max, width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(update);
+    if (backdrop !== null) observer?.observe(backdrop);
+    if (sidebar != null) observer?.observe(sidebar);
+    return () => {
+      window.removeEventListener("resize", update);
+      observer?.disconnect();
+    };
+  }, [preferredWidthRef]);
+
+  const canResize = size !== null && size.min < size.max;
+  const applyWidth = (value: number) => {
+    if (size === null) return;
+    const width = Math.max(size.min, Math.min(size.max, Math.round(value)));
+    preferredWidthRef.current = width;
+    handle.current?.parentElement?.style.setProperty("width", `${String(width)}px`);
+    setSize(current => current === null || current.width === width ? current : { ...current, width });
+  };
+  const finishDrag = (pointerId: number) => {
+    if (drag.current?.pointerId === pointerId) drag.current = null;
+  };
+  return <div aria-controls={drawerId} aria-label={t("home.resizeGoalDetails")} aria-orientation="vertical" aria-valuemax={size?.max}
+    aria-valuemin={size?.min} aria-valuenow={size?.width} className="joi-goal-drawer-resizer" hidden={!canResize} ref={handle} role="separator" tabIndex={canResize ? 0 : -1}
+    onKeyDown={event => {
+      if (size === null) return;
+      const key = event.key;
+      const width = key === "ArrowLeft" ? size.width + 20 : key === "ArrowRight" ? size.width - 20
+        : key === "Home" ? size.min : key === "End" ? size.max : null;
+      if (width === null) return;
+      event.preventDefault();
+      applyWidth(width);
+    }}
+    onPointerDown={event => {
+      if (size === null || event.button !== 0 || drag.current !== null) return;
+      event.preventDefault();
+      event.currentTarget.focus({ preventScroll: true });
+      event.currentTarget.setPointerCapture(event.pointerId);
+      drag.current = { pointerId: event.pointerId, x: event.clientX, width: size.width };
+    }}
+    onPointerMove={event => {
+      const active = drag.current;
+      if (active?.pointerId === event.pointerId) applyWidth(active.width + active.x - event.clientX);
+    }}
+    onPointerUp={event => finishDrag(event.pointerId)}
+    onPointerCancel={event => finishDrag(event.pointerId)}
+    onLostPointerCapture={event => finishDrag(event.pointerId)} />;
+}
 
 export function GoalTitle({ title, fullTitle }: { title: string; fullTitle?: string }) {
   useI18n();

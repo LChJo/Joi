@@ -4,11 +4,11 @@ import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { GOAL_CONTINUATION_STALLED_PROMPT } from "../shared/joi.js";
 import { ResultExportMenu } from './ResultExportMenu';
 import { GoalResultHistory } from './GoalResultHistory';
-import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
+import { GoalDrawerResizeHandle, GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
 import { useWorkbenchAgentPage } from "./useWorkbenchAgentPage.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
-import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { SafeMarkdown as Markdown } from "./SafeMarkdown";
 
@@ -1514,6 +1514,8 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   useI18n();
   const detailState = useGoalDetail(api, goal.goalId);
   const artifactVersion = goal.resultId ?? goal.completedAt ?? String(goal.artifactCount ?? goal.artifacts?.length ?? 0);
+  const drawerId = useId();
+  const preferredWidthRef = useRef<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto>();
   const agentPage = useWorkbenchAgentPage(api, {
@@ -1536,7 +1538,8 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   }, []);
   if (showHistory) return <GoalResultHistory api={api} goal={goal} lockPage={false} onClose={() => setShowHistory(false)} />;
   return <div className="joi-drawer-backdrop" onClick={onBack} role="presentation">
-    <section aria-label={t("home.goalDetailsForValue", { p0: goal.workbench.name })} aria-modal="true" className="joi-goal-drawer" onClick={(event) => event.stopPropagation()} role="dialog">
+    <section aria-label={t("home.goalDetailsForValue", { p0: goal.workbench.name })} aria-modal="true" className="joi-goal-drawer" id={drawerId} onClick={(event) => event.stopPropagation()} role="dialog">
+      <GoalDrawerResizeHandle drawerId={drawerId} preferredWidthRef={preferredWidthRef} />
       <header className="joi-goal-detail-header">
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>

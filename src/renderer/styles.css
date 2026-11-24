@@ -176,6 +176,10 @@
 html:has(.joi-drawer-backdrop) { min-width: 0; }
 .joi-drawer-backdrop { position: fixed; z-index: 30; inset: 0; background: rgb(10 18 14 / 44%); animation: joi-drawer-fade .18s ease; }
 .joi-goal-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(980px, 94vw); display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); box-shadow: -18px 0 46px rgb(10 18 14 / 20%); animation: joi-drawer-in .22s ease; }
+.joi-goal-drawer-resizer { position: absolute; z-index: 1; inset: 0 auto 0 -5px; width: 11px; cursor: col-resize; touch-action: none; }
+.joi-goal-drawer-resizer::after { content: ""; position: absolute; inset: calc(50% - 24px) auto auto 4px; width: 3px; height: 48px; border-radius: 3px; background: var(--line-strong); }
+.joi-goal-drawer-resizer:is(:hover, :focus-visible)::after { background: var(--forest); }
+.joi-goal-drawer-resizer:focus-visible { outline: 2px solid var(--forest); outline-offset: -2px; }
 @keyframes joi-drawer-in { from { transform: translateX(36px); opacity: .4; } }
 @keyframes joi-drawer-fade { from { opacity: 0; } }
 .joi-goal-drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; gap: 14px; padding: 16px 20px 28px; align-content: start; }
@@ -987,6 +991,7 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
   .joi-goal-open { grid-template-columns: 40px minmax(0, 1fr); padding-left: 16px; }
   .joi-goal-detail-body { grid-template-columns: 1fr; }
   .joi-goal-drawer { width: 100vw; border-left: 0; }
+  .joi-goal-drawer:has(> .joi-goal-drawer-resizer) { width: 100%; }
   .joi-goal-result-preview { margin-left: 16px; }
   .joi-goal-agent-warning { margin-left: 16px; }
   .joi-goal-failure { margin-left: 16px; }

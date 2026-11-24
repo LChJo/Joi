@@ -352,6 +352,7 @@
   "unknown": "雾区：",
   "couldNotLoadAgentsForThisGoal": "没能读取这条目标的 Agent 列表。",
   "goalDetailsForValue": "{p0} 的目标详情",
+  "resizeGoalDetails": "调整目标详情宽度",
   "scheduleContinuationForThisGoal": "设置当前目标的定时继续计划",
   "schedule": "定时",
   "finalResult": "最终结果",

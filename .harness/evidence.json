@@ -848,8 +848,8 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "a39f9835e24d3999d92cbf7993d3debd7a47253ee63c002ca20fbe8687aaa817",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "824834e2b856a41dccdf3daf24a00cbe3479570f28d0263fc4c222fd01ab73a7",
+      "observedAt": "2026-11-24T09:54:05.415Z",
       "range": {
         "startLine": 1,
         "endLine": 795
@@ -946,8 +946,8 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "45abff70f8bcc1e59c2108e36fb0495873e60357ef46142a5d883686c3913509",
-      "observedAt": "2026-11-24T09:37:36.877Z",
+      "hash": "01d799461275baf0b7d8eec97db6bfed36dc2585a25f5c63fc1cde590077474f",
+      "observedAt": "2026-11-24T09:54:05.416Z",
       "range": {
         "startLine": 1,
         "endLine": 1614
@@ -1618,8 +1618,8 @@
         "path": "src/renderer/JoiHome.tsx"
       },
       "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version.",
-      "hash": "6bd855777084ef9cefd7cab9e3621f89fa6152cc11ce6e1cf666e664f6d8154b",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "c12414315869d1acad9ef9c9df6af0577033831307756a9d73f969a6fae90239",
+      "observedAt": "2026-11-24T09:54:05.416Z",
       "range": {
         "startLine": 1,
         "endLine": 1993
@@ -1632,8 +1632,8 @@
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
       "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft.",
-      "hash": "5aae1154de9d14f2796ee6573e254495f818e9fd0e458998e0bde2ab2b68c1c2",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "18fde1bd07cc299f6fab3b2299134ccb5b9e057b3b41054b537ed2b2e02eba35",
+      "observedAt": "2026-11-24T09:54:05.417Z",
       "range": {
         "startLine": 1,
         "endLine": 2566
@@ -1660,8 +1660,8 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "78b45f092ccbcfc4c6f81d03e5320e42fb6d147b621332f7c34691ac9ff0040e",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "4a9ca47b07605b8cb48c734a05255402e5f357510c615606d5dd1685aae5e9ee",
+      "observedAt": "2026-11-24T09:54:05.417Z",
       "range": {
         "startLine": 1,
         "endLine": 10691
@@ -1688,8 +1688,8 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "324d5aabe8fdd75edebb6f29f055e250c72c676ad63b1bd1c8defcd07cde83ba",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "4c1e49f72ada6989a3abc9d5bf066cce8b43cef36f6659ed48b1ceb7d06247c7",
+      "observedAt": "2026-11-24T09:54:05.418Z",
       "range": {
         "startLine": 1,
         "endLine": 7470
@@ -1842,8 +1842,8 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "ad653e61039ead48cd29cdc4d95fd27ea2ed2ff35234f2970cbaf2b979d6396f",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "462e918f0460ada0f8641ffeab8aafa077c500afde0ec8953dcb87bff4867607",
+      "observedAt": "2026-11-24T09:54:05.418Z",
       "range": {
         "startLine": 1,
         "endLine": 9432
@@ -2878,8 +2878,8 @@
       "location": {
         "path": "src/renderer/GoalDetailPresentation.tsx"
       },
-      "hash": "70e91bd78c24cef10e44975c257d75d54e360f62fcef99a223bd61da2c613628",
-      "observedAt": "2026-11-21T15:17:05.661Z",
+      "hash": "ef19ab7a7aaf8a1f0c2801ba0733a844c72d1b6e2e0488fb7765be6df9cc92ab",
+      "observedAt": "2026-11-24T09:54:05.419Z",
       "range": {
         "startLine": 1,
         "endLine": 209
@@ -4924,6 +4924,20 @@
       },
       "hash": "0b80f2dfa9d3e64375aecc363667239f6eb27a4da51ba73407e2714247a4e1fb",
       "observedAt": "2026-11-24T09:37:36.878Z"
+    },
+    {
+      "id": "478846fc-0a09-475e-a2bb-5a0a90fe5b18",
+      "kind": "source-code",
+      "claim": "Goal detail drawers use a pointer and keyboard separator and derive their maximum from the backdrop and the primary navigation boundary. Narrow viewports retain the full-width details layout.",
+      "location": {
+        "path": "src/renderer/GoalDetailPresentation.tsx"
+      },
+      "hash": "ef19ab7a7aaf8a1f0c2801ba0733a844c72d1b6e2e0488fb7765be6df9cc92ab",
+      "observedAt": "2026-11-24T09:23:38.237Z",
+      "range": {
+        "startLine": 7,
+        "endLine": 85
+      }
     }
   ]
 }

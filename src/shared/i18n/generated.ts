@@ -1094,6 +1094,7 @@ export interface MessageParameters {
   "home.paths": undefined;
   "home.unknown": undefined;
   "home.couldNotLoadAgentsForThisGoal": undefined;
+  "home.resizeGoalDetails": undefined;
   "home.goalDetailsForValue": { "p0": string };
   "home.scheduleContinuationForThisGoal": undefined;
   "home.schedule": undefined;
@@ -3047,6 +3048,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.paths": "paths",
     "home.unknown": "Unknown:",
     "home.couldNotLoadAgentsForThisGoal": "Could not load agents for this goal.",
+    "home.resizeGoalDetails": "Resize goal details",
     "home.goalDetailsForValue": "Goal details for {p0}",
     "home.scheduleContinuationForThisGoal": "Schedule continuation for this goal",
     "home.schedule": "Schedule",
@@ -4998,6 +5000,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.paths": "层路径",
     "home.unknown": "雾区：",
     "home.couldNotLoadAgentsForThisGoal": "没能读取这条目标的 Agent 列表。",
+    "home.resizeGoalDetails": "调整目标详情宽度",
     "home.goalDetailsForValue": "{p0} 的目标详情",
     "home.scheduleContinuationForThisGoal": "设置当前目标的定时继续计划",
     "home.schedule": "定时",
@@ -7830,6 +7833,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "雾区：": "home.unknown",
   "Could not load agents for this goal.": "home.couldNotLoadAgentsForThisGoal",
   "没能读取这条目标的 Agent 列表。": "home.couldNotLoadAgentsForThisGoal",
+  "Resize goal details": "home.resizeGoalDetails",
+  "调整目标详情宽度": "home.resizeGoalDetails",
   "Schedule continuation for this goal": "home.scheduleContinuationForThisGoal",
   "设置当前目标的定时继续计划": "home.scheduleContinuationForThisGoal",
   "Schedule": "home.schedule",

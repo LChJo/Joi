@@ -1081,6 +1081,7 @@
   "homePaths": "层路径",
   "homeUnknown": "雾区：",
   "homeCouldNotLoadAgentsForThisGoal": "没能读取这条目标的 Agent 列表。",
+  "homeResizeGoalDetails": "调整目标详情宽度",
   "homeGoalDetailsForValue": "{p0} 的目标详情",
   "homeScheduleContinuationForThisGoal": "设置当前目标的定时继续计划",
   "homeSchedule": "定时",

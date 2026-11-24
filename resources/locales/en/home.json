@@ -1706,6 +1706,10 @@
     "description": "home: Could not load agents for this goal.",
     "sourceText": "没能读取这条目标的 Agent 列表。"
   },
+  "resizeGoalDetails": {
+    "message": "Resize goal details",
+    "description": "Accessible name of the goal details drawer edge."
+  },
   "goalDetailsForValue": {
     "message": "Goal details for {p0}",
     "description": "home: Goal details for {p0}",

@@ -73,6 +73,50 @@ function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归�
   fireEvent.click(goalMenuItem(name));
 }
 
+it("lets goal details widen from the default width without covering primary navigation", async () => {
+  vi.stubGlobal("innerWidth", 1440);
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+  mockHomeMessages(api).mockResolvedValue({ items: [{
+    inputId: "goal-resize", acceptedAt: "2026-11-24T03:00:00.000Z", status: "CONSUMED", textPreview: "可调整宽度的目标", workbenchId: "resize-workbench",
+  }] });
+  vi.spyOn(api, "joiGoalDetail").mockResolvedValue({ goalId: "goal-resize", fullTitle: "可调整宽度的目标" });
+  vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+  const view = render(<div className="app-shell"><aside className="sidebar">一级导航</aside><JoiHome api={api} /></div>);
+  const navigation = screen.getByText("一级导航");
+  vi.spyOn(navigation, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 208, 800));
+  const backdrop = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains("joi-drawer-backdrop") ? new DOMRect(0, 0, window.innerWidth - 15, 800) : new DOMRect();
+  });
+  try {
+    fireEvent.click(await screen.findByText("可调整宽度的目标"));
+    const drawer = screen.getByRole("dialog");
+    const resize = within(drawer).getByRole("separator", { name: "调整目标详情宽度" });
+    expect(resize).toHaveAttribute("aria-valuemin", "980");
+    expect(resize).toHaveAttribute("aria-valuenow", "980");
+    fireEvent.keyDown(resize, { key: "ArrowLeft" });
+    expect(resize).toHaveAttribute("aria-valuenow", "1000");
+    fireEvent.keyDown(resize, { key: "End" });
+    expect(resize).toHaveAttribute("aria-valuenow", "1217");
+    fireEvent.keyDown(resize, { key: "ArrowLeft" });
+    expect(resize).toHaveAttribute("aria-valuenow", "1217");
+    fireEvent.keyDown(resize, { key: "Home" });
+    fireEvent.keyDown(resize, { key: "ArrowRight" });
+    expect(resize).toHaveAttribute("aria-valuenow", "980");
+    vi.stubGlobal("innerWidth", 1100);
+    fireEvent(window, new Event("resize"));
+    expect(drawer).toHaveStyle({ width: "877px" });
+    expect(within(drawer).queryByRole("separator")).toBeNull();
+    vi.stubGlobal("innerWidth", 740);
+    fireEvent(window, new Event("resize"));
+    expect(drawer.style.width).toBe("");
+  } finally {
+    view.unmount();
+    backdrop.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("keeps one Agent list request in flight and exposes the next page in the workbench", async () => {
   vi.useFakeTimers();
   try {
