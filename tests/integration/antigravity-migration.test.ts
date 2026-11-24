@@ -34,7 +34,7 @@ it("upgrades existing model networks and preserves historical source references"
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
       upgraded.transaction((db) => {
-        expect(db.prepare("SELECT filename FROM schema_migrations WHERE version >= 114 ORDER BY version").all())
+        expect(db.prepare("SELECT filename FROM schema_migrations WHERE version BETWEEN 114 AND 115 ORDER BY version").all())
           .toEqual([{ filename: "114_workbench_result_history.sql" }, { filename: "115_antigravity_subscription_model_source.sql" }]);
         expect(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_joi_inbox_workbench_result_history'").get())
           .toEqual({ name: "idx_joi_inbox_workbench_result_history" });
