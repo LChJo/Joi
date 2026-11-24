@@ -1,7 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
 import { sameGoalRequirement, type GoalRequirement, type GoalRequirements } from "../../domain/work/goal-requirements.js";
-import { GoalSynthesisCoverageError, parseGoalSynthesisDraft, type GoalSynthesisCoverageIssues, type GoalSynthesisDraft, type GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
+import { GoalSynthesisCoverageError, hasRepeatedSynthesisGaps, parseGoalSynthesisDraft, type GoalSynthesisCoverageIssues, type GoalSynthesisDraft, type GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements.js";
 
 export function readStoredSynthesisState(value: unknown): GoalSynthesisState | undefined {
@@ -18,10 +18,16 @@ export function readStoredSynthesisState(value: unknown): GoalSynthesisState | u
   } catch { return undefined; }
 }
 
-/** References are scoped to the committed evidence version; model statements cannot grant acceptance. */
-export function buildGoalSynthesisState(connection: DatabaseSync, input: {
+interface GoalSynthesisInput {
   goalInputId: string; workbenchId: string; resultRevision: number; requirementsRevision: number; draft?: GoalSynthesisDraft; requireCoverage?: boolean;
-}): GoalSynthesisState {
+}
+
+export function buildGoalSynthesisState(connection: DatabaseSync, input: GoalSynthesisInput): GoalSynthesisState {
+  return assessGoalSynthesis(connection, input).state;
+}
+
+/** References are scoped to the committed evidence version; model statements cannot grant acceptance. */
+export function assessGoalSynthesis(connection: DatabaseSync, input: GoalSynthesisInput, previousContinuation?: GoalSynthesisState) {
   const contract = loadGoalRequirements(connection, input.goalInputId);
   const knownRequirements = new Set(contract?.requirements.map(requirement => requirement.id) ?? []);
   const previous = input.draft === undefined ? readStoredSynthesisState(connection.prepare("SELECT synthesis_state_json FROM joi_goal_outcomes WHERE input_id=?")
@@ -51,7 +57,11 @@ export function buildGoalSynthesisState(connection: DatabaseSync, input: {
     }),
   };
   if (input.requireCoverage === true) assertGoalSynthesisCoverage(connection, contract, state, evidence);
-  return state;
+  const repeatedGaps = previousContinuation !== undefined && hasRepeatedSynthesisGaps(previousContinuation, state, (id, gapScope) => {
+    const result = evidence.get(id);
+    return result?.eligible === true && (gapScope === undefined || [...result.requirementIds].some(id => gapScope.has(id)));
+  });
+  return { state, repeatedGaps };
 }
 
 interface ResultEvidence {

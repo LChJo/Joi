@@ -33,6 +33,7 @@ import { DomainError } from "../../domain/errors.js";
 import { harnessReviewInputId as reviewInputId, harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
 import { quarantineHistoricalReview } from "./sqlite-joi-historical-review.js";
 import { visibleHarnessPathSql } from "./sqlite-joi-harness-paths.js";
+import { GOAL_CONTINUATION_STALLED_PROMPT } from "../../../shared/joi.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -67,6 +68,8 @@ const REVIEW_GATE_OPEN_SQL = `NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates
 const REVIEW_UNSEEN_SQL = `(rs.revision > m.reviewed_revision OR (m.review_recovery_epoch IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages epoch_review
     WHERE epoch_review.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")})))`;
+const CONTINUATION_STALLED_SQL = "m.continuation_stalled_revision IS rs.revision";
+const CONTINUATION_PAUSED_SQL = `(m.continuation_used >= m.continuation_allowance OR ${CONTINUATION_STALLED_SQL})`;
 // Outcome-driven actions wait for the current synthesis owner, including a parked clarification.
 const SYNTHESIS_IDLE_SQL = `NOT EXISTS (
                 SELECT 1 FROM joi_inbox_messages synthesis
@@ -258,7 +261,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              o.disposition = 'CONTINUE'
              AND g.status = 'CONSUMED'
              AND g.clarification_reason_code IS NULL
-             AND m.continuation_used < m.continuation_allowance
+             AND NOT ${CONTINUATION_PAUSED_SQL}
            ))
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM work_items w
@@ -282,7 +285,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
          AND ${SYNTHESIS_IDLE_SQL}
-         AND m.continuation_used >= m.continuation_allowance
+         AND ${CONTINUATION_PAUSED_SQL}
          AND g.status = 'CONSUMED'
          AND g.clarification_reason_code IS NULL
          AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
@@ -670,7 +673,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              o.disposition = 'CONTINUE'
              AND g.status = 'CONSUMED'
              AND g.clarification_reason_code IS NULL
-             AND m.continuation_used < m.continuation_allowance
+             AND NOT ${CONTINUATION_PAUSED_SQL}
             ))`).get(digest.goalInputId, digest.resultRevision, digest.recoveryEpoch ?? null) as Row | undefined;
       if (gate === undefined) return null;
       const resultRevision = numberValue(gate, "result_revision");
@@ -716,7 +719,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
 
   async requestContinuationDecision(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean> {
     return this.database.transaction((connection) => {
-      const eligible = connection.prepare(`SELECT 1
+      const eligible = connection.prepare(`SELECT ${CONTINUATION_STALLED_SQL} AS stalled
         FROM joi_harness_maps m
         JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
         JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
@@ -726,7 +729,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND rs.synthesized_revision = rs.revision AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
          AND ${SYNTHESIS_IDLE_SQL}
-         AND m.continuation_used >= m.continuation_allowance
+         AND ${CONTINUATION_PAUSED_SQL}
          AND g.status = 'CONSUMED'
          AND g.clarification_reason_code IS NULL
          AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
@@ -737,7 +740,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         input.seed.goalInputId, input.seed.workbenchId, input.seed.resultRevision,
       );
       if (eligible === undefined) return false;
-      const prompt = "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。";
+      const prompt = eligible.stalled === 1 ? GOAL_CONTINUATION_STALLED_PROMPT
+        : "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。";
       // A prior request for the same revision can be resolved before a later review consumes the grant.
       const prior = connection.prepare(`SELECT COUNT(*) AS n FROM joi_user_action_requests
         WHERE input_id = ? AND result_revision = ? AND kind = 'GOAL_CONTINUATION'`).get(

@@ -1122,6 +1122,31 @@
     "description": "home: Keep current result",
     "sourceText": "保留当前结果"
   },
+  "continuationSupplementLabel": {
+    "message": "Additional instructions (optional)",
+    "description": "Label for instructions to update a paused goal.",
+    "sourceText": "补充要求（可选）"
+  },
+  "continuationSupplementPlaceholder": {
+    "message": "For example, address this scan's omissions first and wait for new evidence on older gaps",
+    "description": "Example of additional instructions for a paused goal.",
+    "sourceText": "例如：先补本轮遗漏项，历史缺口等新证据"
+  },
+  "continuationSubmitSupplement": {
+    "message": "Continue with instructions",
+    "description": "Submit instructions and continue the paused goal.",
+    "sourceText": "补充要求并继续"
+  },
+  "continuationActionsHint": {
+    "message": "Continue for up to two more rounds. Keeping the result ends this task and records the remaining gaps.",
+    "description": "Explains both possible outcomes of the continuation decision.",
+    "sourceText": "继续最多再尝试两轮。保留会结束本次任务并记录剩余缺口。"
+  },
+  "continuationStalledHint": {
+    "message": "The additional review found no new evidence. You can add a lead or adjust the scope.",
+    "description": "Explains why a repeated evidence gap paused automatic continuation.",
+    "sourceText": "自动补充仍未获得新证据。你可以补充线索或调整本次范围。"
+  },
   "resumeOriginalWork": {
     "message": "Resume original work",
     "description": "home: Resume original work",

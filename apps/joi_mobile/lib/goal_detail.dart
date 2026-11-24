@@ -3,7 +3,7 @@ import 'result_reader.dart';
 import 'result_history.dart';
 import 'goal_artifacts.dart';
 import 'goal_route_map.dart';
-import 'i18n_messages.dart' show errorMessageKeys;
+import 'i18n_messages.dart' show errorMessageKeys, sourceMessageKeys;
 import 'connection_diagnostics_view.dart';
 import 'composer_text_field.dart';
 import 'conversation_output.dart';
@@ -299,7 +299,10 @@ class _GoalActionsState extends State<GoalActions> {
               Text(
                 continuation
                     ? tr(
-                        Msg.homeTheResultStillNeedsAdditionsOrVerificationThisRound,
+                        sourceMessageKeys[goal.prompt] ==
+                                Msg.homeContinuationStalledHint
+                            ? Msg.homeContinuationStalledHint
+                            : Msg.homeTheResultStillNeedsAdditionsOrVerificationThisRound,
                       )
                     : historical
                     ? tr(Msg.homeHistoricalReviewRecoveryHint)

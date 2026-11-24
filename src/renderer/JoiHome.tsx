@@ -1,6 +1,7 @@
 import { localizeProductText, currentLocale, errorNotice, noticeMessage, t, translateNotice, useI18n, useNotice } from "./i18n";
 import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
 import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
+import { GOAL_CONTINUATION_STALLED_PROMPT } from "../shared/joi.js";
 import { ResultExportMenu } from './ResultExportMenu';
 import { GoalResultHistory } from './GoalResultHistory';
 import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
@@ -998,6 +999,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
   const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
   const selectablePartners = partners.filter((partner) => partner.status === "ACTIVE" && partner.configuration === undefined);
+  const hasDraft = draft.trim() !== "";
   const resolve = async (resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
     try {
@@ -1013,7 +1015,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   };
   const submitDraft = () => {
     const text = draft.trim();
-    if (!busy && text !== "") void resolve({ text });
+    if (!busy && text !== "") void resolve(needsGoalContinuation ? { actionChoice: "CONTINUE", text } : { text });
   };
   const chooseWorkspace = async () => {
     if (workbenchId === undefined) {
@@ -1058,12 +1060,17 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     {needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
       <div><strong>{t("home.recheckExistingWork")}</strong><span>{t("home.existingAnswersAndResultsArePreservedJoiWillReview")}</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ text: REVIEW_RETRY_TEXT })} type="button">{busy ? t("home.submitting") : t("home.retryReview")}</button>
-    </div> : needsGoalContinuation ? <div className="joi-clarify-workspace">
-      <div><span>{t("home.continueImprovingTryUpToTwoMoreRoundsYou")}</span><span>{t("home.keepCurrentResultEndThisTaskPreserveConclusionsAnd")}</span></div>
-      <span className="row-actions">
-        <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{busy ? t("home.submitting") : t("home.continueImproving")}</button>
+    </div> : needsGoalContinuation ? <div aria-busy={busy} className="joi-continuation-controls">
+      <label className="joi-clarify-add joi-continuation-label">
+        <span>{t("home.continuationSupplementLabel")}</span>
+        <ClarifyTextarea aria-label={t("home.continuationSupplementLabel")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => submitComposerOnEnter(event, submitDraft)} placeholder={t("home.continuationSupplementPlaceholder")} value={draft} />
+      </label>
+      <p className="joi-clarify-hint">{t("home.continuationActionsHint")}</p>
+      <div className="row-actions joi-continuation-actions">
         <button className="button quiet" disabled={busy} onClick={() => void resolve({ actionChoice: "ACCEPT_CURRENT" })} type="button">{t("home.keepCurrentResult")}</button>
-      </span>
+        <button className={hasDraft ? "button quiet" : "button primary"} disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{t("home.continueImproving")}</button>
+        <button className={hasDraft ? "button primary" : "button quiet"} disabled={busy || !hasDraft} onClick={submitDraft} type="button">{t("home.continuationSubmitSupplement")}</button>
+      </div>
     </div> : needsWaitingRecovery ? <div className="joi-clarify-workspace">
       <div><strong>{t("home.resumeOriginalWork")}</strong><span>{t("home.joiResumesTheSavedWorkAndPartnerSessionWithout")}</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "RESUME" })} type="button">{busy ? t("home.resuming") : t("home.resumeOriginalWorkfa2119")}</button>
@@ -1907,7 +1914,8 @@ function clarificationText(code: string | undefined, prompt?: string, workbenchN
   if (code === "question_required") return prompt ?? t("home.joiNeedsAnAnswerBeforeContinuingToPlanThis");
   if (code === "partner_waiting_recovery_required") return prompt ?? t("home.aPartnerIsStillWaitingChooseResumeOriginalWork");
   if (code === "partner_auth_required") return prompt ?? t("home.thePartnerNeedsAuthorizationAgainAuthorizeItInPartner");
-  if (code === "goal_continuation_required") return t("home.theResultStillNeedsAdditionsOrVerificationThisRound");
+  if (code === "goal_continuation_required") return prompt === GOAL_CONTINUATION_STALLED_PROMPT
+    ? t("home.continuationStalledHint") : t("home.theResultStillNeedsAdditionsOrVerificationThisRound");
   if (code === "workbench_workspace_not_ready") return t("home.valueHasNoWorkingDirectoryYetChooseADirectory", { p0: (workbenchName ?? t("home.currentWorkbench")) });
   if (code === "partner_selection_required") return prompt ?? t("home.chooseAnAvailablePartnerToContinueThisTask");
   if (code === "work_dispatch_failed") return prompt ?? t("home.joiCouldNotDispatchThisTaskItIsPaused");

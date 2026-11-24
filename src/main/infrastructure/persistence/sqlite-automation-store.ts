@@ -405,8 +405,23 @@ function queueGoalContinuation(
     routine.routineId, occurrence.now, occurrence.now, nextGoalReopenTime(connection, goal.goalId, occurrence.now), goal.goalId,
   );
   if (claimed.changes !== 1) return null;
-  connection.prepare(`UPDATE joi_harness_maps SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
-    revision = revision + 1, updated_at = ? WHERE goal_input_id = ? AND status = 'CLEARED'`).run(occurrence.now, goal.goalId);
+  // A scheduled execution can top up its two-round budget once when it claims the goal.
+  // Cap automatic top-ups across executions even when a Routine fires very frequently.
+  const windowCutoff = new Date(Date.parse(occurrence.now) - 24 * 60 * 60 * 1_000).toISOString();
+  connection.prepare(`WITH budget AS (
+    SELECT CASE WHEN scheduled_continuation_window_at > ? THEN scheduled_continuation_granted ELSE 0 END AS granted,
+           MAX(0, 2 - MAX(0, continuation_allowance - continuation_used)) AS needed
+    FROM joi_harness_maps WHERE goal_input_id = ?
+  ), top_up AS (
+    SELECT granted, MIN(needed, MAX(0, 24 - granted)) AS rounds FROM budget
+  )
+  UPDATE joi_harness_maps
+    SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL, continuation_stalled_revision = NULL,
+        continuation_allowance = MAX(continuation_allowance, continuation_used) + (SELECT rounds FROM top_up),
+        scheduled_continuation_granted = (SELECT granted + rounds FROM top_up),
+        scheduled_continuation_window_at = CASE WHEN scheduled_continuation_window_at > ? THEN scheduled_continuation_window_at ELSE ? END,
+        revision = revision + 1, updated_at = ? WHERE goal_input_id = ? AND status = 'CLEARED'`)
+    .run(windowCutoff, goal.goalId, windowCutoff, occurrence.now, occurrence.now, goal.goalId);
   if (waiting === undefined) {
     connection.prepare(`INSERT OR IGNORE INTO joi_automation_runs
       (run_id, routine_id, occurrence_at, input_id, idempotency_key, triggered_at, queued_at, merge_count, status, result)

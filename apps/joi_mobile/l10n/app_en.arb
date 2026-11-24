@@ -5277,6 +5277,31 @@
     "description": "home: Keep current result",
     "placeholders": {}
   },
+  "homeContinuationSupplementLabel": "Additional instructions (optional)",
+  "@homeContinuationSupplementLabel": {
+    "description": "Label for instructions to update a paused goal.",
+    "placeholders": {}
+  },
+  "homeContinuationSupplementPlaceholder": "For example, address this scan''s omissions first and wait for new evidence on older gaps",
+  "@homeContinuationSupplementPlaceholder": {
+    "description": "Example of additional instructions for a paused goal.",
+    "placeholders": {}
+  },
+  "homeContinuationSubmitSupplement": "Continue with instructions",
+  "@homeContinuationSubmitSupplement": {
+    "description": "Submit instructions and continue the paused goal.",
+    "placeholders": {}
+  },
+  "homeContinuationActionsHint": "Continue for up to two more rounds. Keeping the result ends this task and records the remaining gaps.",
+  "@homeContinuationActionsHint": {
+    "description": "Explains both possible outcomes of the continuation decision.",
+    "placeholders": {}
+  },
+  "homeContinuationStalledHint": "The additional review found no new evidence. You can add a lead or adjust the scope.",
+  "@homeContinuationStalledHint": {
+    "description": "Explains why a repeated evidence gap paused automatic continuation.",
+    "placeholders": {}
+  },
   "homeResumeOriginalWork": "Resume original work",
   "@homeResumeOriginalWork": {
     "description": "home: Resume original work",

@@ -988,6 +988,11 @@ export interface MessageParameters {
   "home.keepCurrentResultEndThisTaskPreserveConclusionsAnd": undefined;
   "home.continueImproving": undefined;
   "home.keepCurrentResult": undefined;
+  "home.continuationSupplementLabel": undefined;
+  "home.continuationSupplementPlaceholder": undefined;
+  "home.continuationSubmitSupplement": undefined;
+  "home.continuationActionsHint": undefined;
+  "home.continuationStalledHint": undefined;
   "home.resumeOriginalWork": undefined;
   "home.joiResumesTheSavedWorkAndPartnerSessionWithout": undefined;
   "home.resuming": undefined;
@@ -2936,6 +2941,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.keepCurrentResultEndThisTaskPreserveConclusionsAnd": "Keep current result: end this task, preserve conclusions and unresolved items, and mark it as completed with gaps.",
     "home.continueImproving": "Continue improving",
     "home.keepCurrentResult": "Keep current result",
+    "home.continuationSupplementLabel": "Additional instructions (optional)",
+    "home.continuationSupplementPlaceholder": "For example, address this scan's omissions first and wait for new evidence on older gaps",
+    "home.continuationSubmitSupplement": "Continue with instructions",
+    "home.continuationActionsHint": "Continue for up to two more rounds. Keeping the result ends this task and records the remaining gaps.",
+    "home.continuationStalledHint": "The additional review found no new evidence. You can add a lead or adjust the scope.",
     "home.resumeOriginalWork": "Resume original work",
     "home.joiResumesTheSavedWorkAndPartnerSessionWithout": "joi resumes the saved work and partner session without creating another task.",
     "home.resuming": "Resuming…",
@@ -4882,6 +4892,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.keepCurrentResultEndThisTaskPreserveConclusionsAnd": "保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。",
     "home.continueImproving": "继续完善",
     "home.keepCurrentResult": "保留当前结果",
+    "home.continuationSupplementLabel": "补充要求（可选）",
+    "home.continuationSupplementPlaceholder": "例如：先补本轮遗漏项，历史缺口等新证据",
+    "home.continuationSubmitSupplement": "补充要求并继续",
+    "home.continuationActionsHint": "继续最多再尝试两轮。保留会结束本次任务并记录剩余缺口。",
+    "home.continuationStalledHint": "自动补充仍未获得新证据。你可以补充线索或调整本次范围。",
     "home.resumeOriginalWork": "恢复原工作",
     "home.joiResumesTheSavedWorkAndPartnerSessionWithout": "joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。",
     "home.resuming": "恢复中…",
@@ -7646,6 +7661,16 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "继续完善": "home.continueImproving",
   "Keep current result": "home.keepCurrentResult",
   "保留当前结果": "home.keepCurrentResult",
+  "Additional instructions (optional)": "home.continuationSupplementLabel",
+  "补充要求（可选）": "home.optionalReviewRequirements",
+  "For example, address this scan's omissions first and wait for new evidence on older gaps": "home.continuationSupplementPlaceholder",
+  "例如：先补本轮遗漏项，历史缺口等新证据": "home.continuationSupplementPlaceholder",
+  "Continue with instructions": "home.continuationSubmitSupplement",
+  "补充要求并继续": "home.continuationSubmitSupplement",
+  "Continue for up to two more rounds. Keeping the result ends this task and records the remaining gaps.": "home.continuationActionsHint",
+  "继续最多再尝试两轮。保留会结束本次任务并记录剩余缺口。": "home.continuationActionsHint",
+  "The additional review found no new evidence. You can add a lead or adjust the scope.": "home.continuationStalledHint",
+  "自动补充仍未获得新证据。你可以补充线索或调整本次范围。": "home.continuationStalledHint",
   "Resume original work": "home.resumeOriginalWorkfa2119",
   "恢复原工作": "home.resumeOriginalWork",
   "joi resumes the saved work and partner session without creating another task.": "home.joiResumesTheSavedWorkAndPartnerSessionWithout",
@@ -7984,7 +8009,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "Review interrupted": "home.reviewInterrupted",
   "复核中断": "home.reviewInterrupted",
   "Add requirements (optional)": "home.optionalReviewRequirements",
-  "补充要求（可选）": "home.optionalReviewRequirements",
   "View JOI progress": "home.joiProgressOpen",
   "查看 JOI 工作进展": "home.joiProgressOpen",
   "JOI progress": "home.joiProgressTitle",

@@ -1935,8 +1935,7 @@ describe("joi home single entry", () => {
     } else {
       expect(screen.getByText("暂时没有可展示的结果说明，无法列出具体待补充内容。")).toBeInTheDocument();
     }
-    expect(screen.getByText("继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。")).toBeInTheDocument();
-    expect(screen.getByText("保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。")).toBeInTheDocument();
+    expect(screen.getByText("继续最多再尝试两轮。保留会结束本次任务并记录剩余缺口。")).toBeInTheDocument();
     expect(screen.queryByText(/已自动补充两轮/u)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/最终结果全文/u)).not.toBeInTheDocument();
     if (hasSummary) {
@@ -1950,7 +1949,23 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "CONTINUE" }));
     fireEvent.click(screen.getByRole("button", { name: "保留当前结果" }));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "ACCEPT_CURRENT" }));
-    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+    const supplement = screen.getByRole("textbox", { name: /补充要求/u });
+    const submitSupplement = screen.getByRole("button", { name: "补充要求并继续" });
+    expect(submitSupplement).toBeDisabled();
+    fireEvent.change(supplement, { target: { value: "  只补本轮漏项  " } });
+    expect(submitSupplement).toHaveClass("primary");
+    clarify.mockRejectedValueOnce(new Error("transport error"));
+    fireEvent.click(submitSupplement);
+    await screen.findByText("没能交给 joi，请重试。");
+    expect(supplement).toHaveValue("  只补本轮漏项  ");
+    fireEvent.keyDown(supplement, { key: "Enter", shiftKey: true });
+    expect(clarify).toHaveBeenCalledTimes(3);
+    fireEvent.keyDown(supplement, { key: "Enter", keyCode: 229 });
+    expect(clarify).toHaveBeenCalledTimes(3);
+    fireEvent.keyDown(supplement, { key: "Enter" });
+    await waitFor(() => expect(clarify).toHaveBeenCalledTimes(4));
+    expect(clarify).toHaveBeenLastCalledWith("goal-continuation", { actionChoice: "CONTINUE", text: "只补本轮漏项" });
+    await waitFor(() => expect(supplement).toHaveValue(""));
   });
 
   it("keeps a large workbench choice list bounded and searchable", async () => {

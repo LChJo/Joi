@@ -2,6 +2,7 @@ import type { UserQuestionDto } from "./user-questions.js";
 
 /** Fixed task input remains independent of the interface locale. */
 export const REVIEW_RETRY_TEXT = "沿用已保存的回答，重试评审。";
+export const GOAL_CONTINUATION_STALLED_PROMPT = "自动补充仍未获得新证据。你可以补充线索或调整本次范围。";
 export const GOAL_RECENT_AGENT_LIMIT = 100;
 
 export const MODEL_SOURCE_KINDS = [

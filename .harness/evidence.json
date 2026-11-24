@@ -176,11 +176,11 @@
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "d0f9dbd9daf695760824afa30d16a6adfe08bfce413c9157b218587bfe4edffb",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "54ff1815070d819a2006b4b41067cf565b1a36e31aeb5a0410ee15f1114bbdb6",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 801
+        "endLine": 802
       }
     },
     {
@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "69a73ef7d6d875deacda479fbc0fbb1c43916f05daa4e76c0faa3680dbbcebea",
-      "observedAt": "2026-11-24T05:42:25.003Z",
+      "hash": "a39f9835e24d3999d92cbf7993d3debd7a47253ee63c002ca20fbe8687aaa817",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
         "endLine": 795
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "e236833c54e6a7a217a99b9b82ad81a2d384695dd3a18243e900a87465893a0f",
-      "observedAt": "2026-11-23T12:39:01.249Z",
+      "hash": "45abff70f8bcc1e59c2108e36fb0495873e60357ef46142a5d883686c3913509",
+      "observedAt": "2026-11-24T09:37:36.877Z",
       "range": {
         "startLine": 1,
-        "endLine": 1598
+        "endLine": 1614
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss.",
-      "hash": "d41bcdda4fc4d2e1b0ee5727aa982323bd78af64c6d885f042f10e8914d60a62",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version.",
+      "hash": "6bd855777084ef9cefd7cab9e3621f89fa6152cc11ce6e1cf666e664f6d8154b",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 1985
+        "endLine": 1993
       }
     },
     {
@@ -1632,11 +1632,11 @@
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
       "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft.",
-      "hash": "e3f0b6b32132857737b87868500e77b35bd6837000ad0a36ca19671baaac95a3",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "5aae1154de9d14f2796ee6573e254495f818e9fd0e458998e0bde2ab2b68c1c2",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 2551
+        "endLine": 2566
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "b53369d3bd820a30e18260fe61253fd8b138a4d11f30704a9ccc5d63497ff0d2",
-      "observedAt": "2026-11-24T05:42:25.007Z",
+      "hash": "78b45f092ccbcfc4c6f81d03e5320e42fb6d147b621332f7c34691ac9ff0040e",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 10416
+        "endLine": 10691
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "48a3a7849db5978adb8db93b3c3062a290da4ec6ebf8d52c629526896e8a7998",
-      "observedAt": "2026-11-24T05:42:25.007Z",
+      "hash": "324d5aabe8fdd75edebb6f29f055e250c72c676ad63b1bd1c8defcd07cde83ba",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 7353
+        "endLine": 7470
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "20941911286991437945312da8042f35afa625ae9b864d71fac888631ab2550f",
-      "observedAt": "2026-11-24T05:42:25.008Z",
+      "hash": "ad653e61039ead48cd29cdc4d95fd27ea2ed2ff35234f2970cbaf2b979d6396f",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 9281
+        "endLine": 9432
       }
     },
     {
@@ -2384,15 +2384,15 @@
     {
       "id": "3fe19ae5-307a-42df-a06c-51a4f22df5f0",
       "kind": "source-code",
-      "claim": "Explicit roadmap tools or the presence of Work create a map. Review and feedback wait for current facts; idle cleanup clears only trivial maps. Work from a planning Turn shares its previously assigned layer. A new automatic continuation review consumes one durable allowance unit.",
+      "claim": "Explicit roadmap tools or the presence of Work create a map. Review and feedback wait for current facts; idle cleanup clears only trivial maps. Work from a planning Turn shares its previously assigned layer. A new automatic continuation review consumes one durable allowance unit. An exhausted allowance or unchanged structured gap pauses continuation at the current result revision.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-harness-repository.ts"
       },
-      "hash": "be7dab7a7851b1141722fa77533c706c72ca25c3d1074f24a0013b6425ba8fc6",
-      "observedAt": "2026-11-21T15:17:05.659Z",
+      "hash": "7f823f8633c386bddcb02f6ff770c479fb7b7656da7b18425c40e0d19c31cbee",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 1402
+        "endLine": 1406
       }
     },
     {
@@ -2444,8 +2444,8 @@
       "location": {
         "path": "docs/10-requirements-traceability.md"
       },
-      "hash": "d7e2056691c1e2da8cff2079abecef0fcc847381a54c962cd8af47c3b5b63cd0",
-      "observedAt": "2026-11-21T12:17:22.540Z",
+      "hash": "38339b32aad7aadb2ce2b6e30c7f96b7f65a7b9ae5e0046f33b61f7afa0cde8d",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
         "endLine": 286
@@ -2720,15 +2720,15 @@
     {
       "id": "15cb1f9c-3615-409d-aafe-698cb987748b",
       "kind": "source-code",
-      "claim": "A first-source direct reply atomically persists its completion without settling a Work contract or queuing historical memory. The current resumed Turn can publish directly to its original zero-Work goal. First Workbench assignment saves its versioned receipt and queues the original input. Existing and interrupted goals retain recovery gates. An explicit continuation decision grants two units above the persisted usage or allowance.",
+      "claim": "A first-source direct reply atomically persists its completion without settling a Work contract or queuing historical memory. The current resumed Turn can publish directly to its original zero-Work goal. First Workbench assignment saves its versioned receipt and queues the original input. Existing and interrupted goals retain recovery gates. An explicit continuation decision grants two units above the persisted usage or allowance. Supplemental continuation atomically applies the action, records the user requirement, and queues gated planning.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "d982adf13f91514e5118d5f8aee8cc32e2a264440d64b79296ac170cba1f30c1",
-      "observedAt": "2026-11-21T15:17:05.661Z",
+      "hash": "d0b23902f88365ca1e748bc6e0b508aea194fbcad042642736e8c27a7d57e2fb",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 1872
+        "endLine": 1892
       }
     },
     {
@@ -2748,15 +2748,15 @@
     {
       "id": "42b8045e-50f5-4144-9960-3de0e9b2c402",
       "kind": "source-code",
-      "claim": "Synthetic Pi and SQLite tests exercise restricted recovery tools and persistence of continuation or validated completion after trusted synthesis rejection. Two synthetic Pi sources sharing durable SQLite prove that the backup actually executes. The real Wayfinder traversal enqueues one review and a verified final review clears the map without redispatch. Backup coverage uses the native Pi session store in a disposable directory.",
+      "claim": "Synthetic Pi and SQLite tests exercise restricted recovery tools and persistence of continuation or validated completion after trusted synthesis rejection. Two synthetic Pi sources sharing durable SQLite prove that the backup actually executes. The real Wayfinder traversal enqueues one review and a verified final review clears the map without redispatch. Backup coverage uses the native Pi session store in a disposable directory. Repeated gaps pause after failed evidence and remain reviewable with new verified evidence or changed gaps.",
       "location": {
         "path": "tests/integration/semantic-synthesis-state.test.ts"
       },
-      "hash": "e1a4f7635eba9d53ee263344a62fde83f2be7b4b0660d530185001963dc691bd",
-      "observedAt": "2026-11-19T16:57:58.616Z",
+      "hash": "7a4a106af971f12363402d1c142d6b3b95d40352503099af4a403feb365ee41b",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 215
+        "endLine": 258
       }
     },
     {
@@ -3284,11 +3284,11 @@
         "path": "resources/migrations/README.md"
       },
       "claim": "Documents indexed Workbench result discovery and preservation of immutable published results in migration 114, alongside the existing recovery, historical memory and map migrations.",
-      "hash": "0faa02eab73e431742007d412b3c2eb38a0c76f3e64ef3bf2b507e6300c09666",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "d053147a1aa13ad7517eb604717b09d806ed869f442f3b5688ea5a55bd67f4b7",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 120
+        "endLine": 122
       }
     },
     {
@@ -3676,11 +3676,11 @@
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
       "claim": "Disposable SQLite migrations recover published results that predate historical memory without replaying work, and preserve preference ordering, queued writer order, draft Ask recovery, Routine sequencing and goal map history.",
-      "hash": "f3593feba3096e65009773712176d0bae1b3fd23e9f7b64149e20c2a406989bd",
-      "observedAt": "2026-11-24T05:42:25.015Z",
+      "hash": "a0de54e59745fc07c1996132fb2b2cf979ebd658313b6536a1ab2dc66ce125cb",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 1122
+        "endLine": 1124
       }
     },
     {
@@ -3718,11 +3718,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/goal_detail.dart"
       },
-      "hash": "e62569c3e157f7165b8104be9c420b6abcf8e4e788f1ba939ed8188612dd453a",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "1c05551918e3ec0e156d94fffc8660aac5110220862706fdee0b53519c94996a",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 1009
+        "endLine": 1012
       }
     },
     {
@@ -4050,15 +4050,15 @@
     {
       "id": "46193bc6-5f95-4df0-9533-52b4cdcd1751",
       "kind": "source-code",
-      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence. Accepted authoritative results support individually unchanged historical requirements through their frozen scope and source. Bounded coverage diagnostics identify missing or unresolved requirements, conflicts and unusable citations.",
+      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence. Accepted authoritative results support individually unchanged historical requirements through their frozen scope and source. Bounded coverage diagnostics identify missing or unresolved requirements, conflicts and unusable citations. Continuation progress uses the same result eligibility facts and ignores failed citations.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-goal-synthesis-state.ts"
       },
-      "hash": "f83a03908d1ce3e7643bbc538fa95feec6ae99f45d15659b2e38853b8637a155",
-      "observedAt": "2026-11-19T14:19:48.650Z",
+      "hash": "a29d4d169512d30fde9f02f7d78d490eb3914b13f1c753d7a55185fa2c949e2e",
+      "observedAt": "2026-11-24T09:33:37.447Z",
       "range": {
         "startLine": 1,
-        "endLine": 228
+        "endLine": 238
       }
     },
     {
@@ -4894,6 +4894,36 @@
         "startLine": 1,
         "endLine": 7
       }
+    },
+    {
+      "id": "c5a5ee2f-03f5-4756-b947-6a9aeab8a344",
+      "kind": "document",
+      "claim": "Continuation budgets, repeated proof gaps, versioned user input and partial acceptance align on one goal.",
+      "location": {
+        "path": "docs/adr/0017-goal-result-continuation.md"
+      },
+      "hash": "f6ffa216eb9597bb3180a49634660a4eb86920c8c699bdd8df2f329195f2a31f",
+      "observedAt": "2026-11-24T09:33:37.447Z"
+    },
+    {
+      "id": "122357bd-017c-4400-b177-cc4aa381e338",
+      "kind": "source-code",
+      "claim": "Persists the stalled result revision and scheduled continuation grant window without rewriting prior usage.",
+      "location": {
+        "path": "resources/migrations/119_goal_continuation_progress.sql"
+      },
+      "hash": "6c08228e57b4ccb636525c2e06782418a17581e37e6dafe4f0f798e3be8613d8",
+      "observedAt": "2026-11-24T09:33:37.447Z"
+    },
+    {
+      "id": "fc05368f-87de-411a-b581-98c15b118bfd",
+      "kind": "source-code",
+      "claim": "Exercises the original Electron renderer at desktop and narrow widths with both localized action sets.",
+      "location": {
+        "path": "tests/e2e/home-c2.spec.ts"
+      },
+      "hash": "0b80f2dfa9d3e64375aecc363667239f6eb27a4da51ba73407e2714247a4e1fb",
+      "observedAt": "2026-11-24T09:37:36.878Z"
     }
   ]
 }

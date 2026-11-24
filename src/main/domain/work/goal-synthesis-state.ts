@@ -21,6 +21,29 @@ export interface GoalSynthesisState extends Omit<GoalSynthesisDraft, "claims"> {
   source: "MODEL" | "LEGACY";
 }
 
+/** A repeat must have the same gaps and no newly verified evidence in their scope. */
+export function hasRepeatedSynthesisGaps(
+  previous: GoalSynthesisState,
+  current: GoalSynthesisState,
+  supportsGap: (resultId: string, requirementIds: ReadonlySet<string> | undefined) => boolean,
+): boolean {
+  if (previous.source !== "MODEL" || current.source !== "MODEL"
+    || previous.requirementsRevision !== current.requirementsRevision || previous.resultRevision >= current.resultRevision) return false;
+  const gaps = (state: GoalSynthesisState) => [...state.unresolved, ...state.conflicts.filter(item => item.resolution === undefined)];
+  const signatures = (items: ReturnType<typeof gaps>) => items.map(({ description, requirementIds }) =>
+    JSON.stringify([description.trim().replace(/\s+/gu, " "), [...new Set(requirementIds)].sort()])).sort();
+  const currentGaps = gaps(current);
+  if (currentGaps.length === 0 || JSON.stringify(signatures(currentGaps)) !== JSON.stringify(signatures(gaps(previous)))) return false;
+  const gapScope = currentGaps.some(item => (item.requirementIds?.length ?? 0) === 0)
+    ? undefined : new Set(currentGaps.flatMap(item => item.requirementIds ?? []));
+  const evidence = (state: GoalSynthesisState) => state.claims
+    .filter(claim => claim.verification === "VERIFIED"
+      && (gapScope === undefined || claim.requirementIds.some(id => gapScope.has(id))))
+    .flatMap(claim => claim.resultIds.filter(id => supportsGap(id, gapScope)));
+  const previousEvidence = new Set(evidence(previous));
+  return evidence(current).every(id => previousEvidence.has(id));
+}
+
 export interface GoalSynthesisCoverageIssues {
   requirementsStatus: "READY" | "DIRTY" | "STALE";
   missingRequirementIds: string[];

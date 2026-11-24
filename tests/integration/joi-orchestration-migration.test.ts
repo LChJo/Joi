@@ -146,6 +146,7 @@ describe("JOI-01 non-destructive migration", () => {
             "110_routine_execution_sequence.sql","111_historical_memory_settlements.sql","112_codex_subscription_model_source.sql",
             "113_goal_route_depth.sql","114_workbench_result_history.sql", "115_antigravity_subscription_model_source.sql",
             "116_method_learning_source_identity.sql","117_method_learning_decision_fragments.sql","118_method_learning_phase_and_cohorts.sql",
+            "119_goal_continuation_progress.sql",
           ]);
           expect(db.prepare("SELECT question_recovery_source_turn_id,status,question_recovery_context FROM conversation_turns WHERE turn_id='retry'").get())
             .toEqual({ question_recovery_source_turn_id:"source",status:"QUEUED",question_recovery_context:"Private recovery context" });

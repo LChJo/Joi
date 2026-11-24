@@ -478,11 +478,42 @@ describe("sqlite joi inbox clarify", () => {
       await expect(inbox.clarify({
         actionChoice: "CONTINUE", inputId: accepted.inputId,
         questionId: gate.question_id, questionVersion: gate.question_version,
-      })).resolves.toMatchObject({ status: "CONSUMED" });
-      // Deciding clears the gate back to OPEN, which is what review recovery requires to resume.
-      expect(fixture.database.transaction((connection) => connection.prepare(
-        "SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(accepted.inputId)))
-        .toEqual({ status: "OPEN" });
+        text: "只补当前周期的缺口",
+      })).resolves.toMatchObject({ status: "ROUTED" });
+      const facts = () => fixture.database.transaction((connection) => ({
+        gate: connection.prepare("SELECT status, resume_input_id FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(accepted.inputId),
+        source: connection.prepare("SELECT kind, body FROM joi_goal_requirement_sources WHERE goal_input_id = ? AND source_revision = 2").get(accepted.inputId),
+        work: connection.prepare("SELECT COUNT(*) AS n FROM work_items WHERE input_id = ?").get(accepted.inputId),
+        action: connection.prepare("SELECT status, decision FROM joi_user_action_requests WHERE input_id = ?").get(accepted.inputId),
+        result: connection.prepare("SELECT result_revision, disposition FROM joi_goal_outcomes WHERE input_id = ?").get(accepted.inputId),
+      }));
+      expect(facts()).toEqual({
+        gate: { status: "REVIEWING", resume_input_id: `joi_goal_resume:goal:${accepted.inputId}:v2` },
+        source: { kind: "USER", body: "只补当前周期的缺口" },
+        work: { n: 0 },
+        action: { status: "APPLIED", decision: "CONTINUE" },
+        result: { result_revision: 7, disposition: "CONTINUE" },
+      });
+      expect(await harness.listReviewDigests()).toEqual([]);
+      await expect(inbox.clarify({
+        actionChoice: "CONTINUE", inputId: accepted.inputId,
+        questionId: gate.question_id, questionVersion: gate.question_version,
+        text: "重复提交",
+      })).rejects.toThrow();
+      expect(facts().source).toEqual({ kind: "USER", body: "只补当前周期的缺口" });
+
+      const resumeId = `joi_goal_resume:goal:${accepted.inputId}:v2`;
+      const resumeInput = await inboxRepository.loadInput(resumeId);
+      expect(resumeInput).toMatchObject({ goalInputId: accepted.inputId, status: "PENDING" });
+      expect(resumeInput?.body).toContain("Organize the supplementary requirements before resuming.");
+      await inboxRepository.createTurn({ inputId: resumeId, workbenchId: workbench.workbenchId,
+        turnId: "supplement-plan", sessionId: "supplement-plan", createdAt: now });
+      await expect(inboxRepository.completeInput(resumeId, "supplement-plan")).rejects.toMatchObject({ code: "goal_resume_required" });
+      await expect(inboxRepository.resumeGoal({ inputId: resumeId, turnId: "supplement-plan" })).resolves.toEqual({ status: "OPEN" });
+      await inboxRepository.completeInput(resumeId, "supplement-plan");
+      const resynthesis = fixture.database.transaction(db => db.prepare(`SELECT status FROM joi_inbox_messages
+        WHERE goal_input_id = ? AND input_id LIKE 'joi_result_input:%' AND status = 'PENDING'`).get(accepted.inputId));
+      expect(resynthesis).toEqual({ status: "PENDING" });
     } finally {
       fixture.database.close();
     }
@@ -503,8 +534,8 @@ describe("sqlite joi inbox clarify", () => {
           .run(accepted.inputId, workbench.workbenchId, now, now);
         connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required', clarification_prompt = '证据仍有缺口。' WHERE input_id = ?").run(accepted.inputId);
         connection.prepare(`INSERT INTO joi_harness_maps
-          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
-          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, continuation_used, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
         connection.prepare(`INSERT INTO joi_goal_result_sets
           (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 3, 3, ?)`).run(accepted.inputId, now);
         connection.prepare(`INSERT INTO joi_goal_outcomes

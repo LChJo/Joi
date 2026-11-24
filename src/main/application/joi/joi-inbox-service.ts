@@ -73,7 +73,8 @@ export class JoiInboxService {
     if (cleanActionChoice !== undefined && !["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(cleanActionChoice)) {
       throw new DomainError("joi_clarification_invalid", "The selected action is invalid.");
     }
-    if (cleanActionChoice !== undefined && (cleanPartner !== undefined || cleanWorkbench !== undefined || cleanText !== undefined)) {
+    if (cleanActionChoice !== undefined && (cleanPartner !== undefined || cleanWorkbench !== undefined
+      || (cleanText !== undefined && cleanActionChoice !== "CONTINUE"))) {
       throw new DomainError("joi_clarification_invalid", "Choose one clarification resolution.");
     }
     if (cleanPartner !== undefined && (cleanWorkbench !== undefined || cleanText !== undefined)) {

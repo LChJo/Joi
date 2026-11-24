@@ -2,6 +2,76 @@ import { _electron as electron, expect, test } from "@playwright/test";
 import { setDesktopTestLocale } from "./locale";
 import type { JoiGoalCardDto, JoiSnapshotDto } from "../../src/shared/joi";
 
+test("paused goals keep the instructions and three actions reachable in both locales", async () => {
+  test.setTimeout(60_000);
+  const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
+  try {
+    expect(await application.evaluate(({ app }) => app.getPath("userData"))).toContain("joi-e2e");
+    const page = await application.firstWindow();
+    const goal: JoiGoalCardDto = {
+      agentCount: 3, canDelete: false, goalId: "continuation",
+      status: "NEEDS_ATTENTION", title: "核对本轮扫描结果和待处理事项",
+      updatedAt: "2026-11-24T08:59:03Z", workbench: { workbenchId: "fixture", name: "工程工作台" },
+      clarification: { reasonCode: "goal_continuation_required", questionId: "decision", questionVersion: 2 },
+      completionSummary: "## 已核对\n\n本轮已整理扫描范围。\n\n## 待补充\n\n继续核对一条遗漏结果，历史缺口等新证据。",
+      work: { active: 0, completed: 2, failed: 1, total: 3 },
+    };
+    await page.route("**/api/v1/**", async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === "/api/v1/settings" || pathname === "/api/v1/auth/bootstrap") {
+        await route.fallback();
+        return;
+      }
+      const body = pathname === "/api/v1/auth/status" ? { configured: true }
+        : pathname === "/api/v1/joi" ? { workbenchChanges: [], workbenches: [], modelSources: [], work: [], partners: [], runtime: { configured: true, status: "READY" } }
+        : pathname === "/api/v1/joi/home-feed" ? { goals: [goal], thinking: [], unassignedActions: [] }
+        : { items: [] };
+      await route.fulfill({ json: body });
+    });
+    for (const locale of ["zh-CN", "en"] as const) {
+      await setDesktopTestLocale(page, locale);
+      await expect(page.locator("html")).toHaveAttribute("lang", locale);
+      // The same card also runs in the remote web shell without the desktop minimum.
+      await page.addStyleTag({ content: "html { min-width: 0; }" });
+      const card = page.locator(".joi-goal-card");
+      const controls = card.locator(".joi-continuation-controls");
+      const actions = controls.getByRole("button");
+      await expect(actions).toHaveCount(3);
+      await expect(actions.last()).toHaveText(locale === "en" ? "Continue with instructions" : "补充要求并继续");
+      await expect(actions.nth(1)).toHaveClass("button primary");
+      await expect(actions.last()).toBeDisabled();
+      for (const width of [1280, 390, 360]) {
+        await page.setViewportSize({ width, height: 1_100 });
+        expect(await page.evaluate(() => innerWidth)).toBe(width);
+        await page.emulateMedia({ colorScheme: width === 390 ? "dark" : "light" });
+        const input = controls.getByRole("textbox");
+        await input.fill(locale === "en" ? "Check only this scan first." : "先查本轮漏项。");
+        await expect(actions.last()).toHaveClass("button primary");
+        await expect(actions.last()).toBeEnabled();
+        expect(await controls.evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          const text = element.querySelector("textarea")?.getBoundingClientRect();
+          return bounds.left >= 0 && bounds.right <= innerWidth && text !== undefined && text.width >= bounds.width - 26 &&
+            Array.from(element.querySelectorAll("button")).every(button => {
+              const box = button.getBoundingClientRect();
+              return box.left >= bounds.left && box.right <= bounds.right && box.top > text.bottom && box.bottom <= bounds.bottom &&
+                button.scrollWidth <= button.clientWidth + 1;
+            });
+        })).toBe(true);
+        if (width === 1280 || width === 360) {
+          await controls.scrollIntoViewIfNeeded();
+          await expect(actions.last()).toBeInViewport({ ratio: .98 });
+          const preview = width === 360 ? controls : card;
+          await preview.screenshot({ path: test.info().outputPath(`continuation-${locale}-${String(width)}.png`) });
+        }
+        await input.fill("");
+      }
+    }
+  } finally {
+    await application.close();
+  }
+});
+
 test("C2 home keeps compact targets, a narrow expanding composer and reachable actions", async () => {
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
   try {

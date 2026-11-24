@@ -258,7 +258,13 @@ describe("Routine persistence", () => {
     }
   });
 
-  it("continues the same completed or failed goal instead of creating a second card", async () => {
+  it.each([
+    { allowance: 12, granted: 0, expectedGranted: 2, windowDaysOld: 0 },
+    { allowance: 10, granted: 24, expectedGranted: 24, windowDaysOld: 0 },
+    { allowance: 12, granted: 24, expectedGranted: 2, windowDaysOld: 1 },
+  ])("continues the same goal with allowance $allowance after $granted prior grants", async ({
+    allowance, granted, expectedGranted, windowDaysOld,
+  }) => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "Continuation WB", personaSummary: "summary", projectLabel: "project", scopeSummary: "scope" });
@@ -280,6 +286,12 @@ describe("Routine persistence", () => {
           VALUES ('turn-failed', 'goal-failed', ?, 'session-failed', 'FAILED', ?, ?)`).run(
           workbench.workbenchId, completedAt, completedAt,
         );
+        const windowAt = new Date(fixture.clock.now().getTime() - windowDaysOld * 24 * 60 * 60 * 1_000).toISOString();
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_used, continuation_allowance,
+           scheduled_continuation_window_at, scheduled_continuation_granted, created_at, updated_at)
+          VALUES ('goal-completed', ?, 'Scheduled scan', 'CLEARED', 10, 10, ?, ?, ?, ?)`)
+          .run(workbench.workbenchId, windowAt, granted, completedAt, completedAt);
       });
       const store = new SqliteAutomationStore(fixture.database);
       const service = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
@@ -305,6 +317,10 @@ describe("Routine persistence", () => {
       expect(fixture.database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM joi_inbox_messages").get() as { count: number }).count).toBe(2);
       expect((await store.get(completedRoutine.routineId))?.runs[0]?.status).toBe("PENDING");
       expect((await store.get(failedRoutine.routineId))?.runs[0]?.status).toBe("PENDING");
+      expect(fixture.database.transaction((db) => db.prepare(
+        "SELECT status, continuation_used, continuation_allowance, scheduled_continuation_granted FROM joi_harness_maps WHERE goal_input_id='goal-completed'",
+      ).get())).toEqual({ status: "ACTIVE", continuation_used: 10, continuation_allowance: allowance, scheduled_continuation_granted: expectedGranted });
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" })).toEqual([]);
     } finally {
       await fixture.close();
     }

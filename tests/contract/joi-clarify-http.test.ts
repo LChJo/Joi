@@ -100,6 +100,16 @@ describe("joi clarify HTTP route", () => {
       });
       expect(session.clarifyCalls.at(-1)).toEqual({ actionChoice: "CONTINUE", inputId: "input-1" });
 
+      const supplemented = await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
+        body: JSON.stringify({ actionChoice: "CONTINUE", questionId: "decision", questionVersion: 2, text: "只补本轮漏项" }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(supplemented.status).toBe(202);
+      expect(session.clarifyCalls.at(-1)).toEqual({
+        actionChoice: "CONTINUE", inputId: "input-1", questionId: "decision", questionVersion: 2, text: "只补本轮漏项",
+      });
+
       await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
         body: JSON.stringify({ actionChoice: "ACCEPT_CURRENT" }),
         headers: session.headers,

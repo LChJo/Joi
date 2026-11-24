@@ -9,6 +9,7 @@ import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasonin
 import { PiNativeSessionStore } from "../../src/main/infrastructure/pi/pi-native-session-store.js";
 import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
+import { GOAL_CONTINUATION_STALLED_PROMPT } from "../../src/shared/joi.js";
 
 const handoff = { version: 1 as const, conclusion: "SEMANTIC_CONCLUSION", requirementIds: [], evidenceResultIds: [], artifactRefs: [],
   unresolved: ["MIDDLE_GAP"], conflicts: ["CONFLICT_REQUIRES_REVIEW"] };
@@ -19,6 +20,48 @@ const state = { version: 1 as const,
   conflicts: [{ description: "CONFLICT_REQUIRES_REVIEW", resultIds: ["result-1", "result-2"] }] };
 
 describe("semantic incremental synthesis state", () => {
+  it.each([
+    { changed: false, extra: "NONE", pauses: true },
+    { changed: false, extra: "FAILED", pauses: true },
+    { changed: false, extra: "COMPLETED", pauses: false },
+    { changed: true, extra: "NONE", pauses: false },
+  ] as const)("pauses early only for a repeated gap (gap changed: $changed, new result: $extra)", async ({ changed, extra, pauses }) => {
+    const fixture = await createGoalEvidenceFixture([{}, { status: extra === "FAILED" ? "FAILED" : "COMPLETED" }]);
+    const now = fixture.clock.now().toISOString();
+    const harness = new SqliteJoiHarnessRepository(fixture.database);
+    const previousGap = { description: "The upstream log is missing", requirementIds: [], resultIds: [] };
+    const confirmed = { statement: "The local log is available", requirementIds: [], resultIds: ["result-1"] };
+    try {
+      await harness.createMap({ goalInputId: "goal", workbenchId: fixture.workbenchId, now });
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE joi_harness_maps SET reviewed_revision=1,continuation_used=1 WHERE goal_input_id='goal'").run();
+        db.prepare(`INSERT INTO joi_goal_outcomes
+        (input_id,result_revision,disposition,completion_summary,completed_at,updated_at,synthesis_state_json)
+        VALUES ('goal',1,'CONTINUE','One gap remains',?,?,?)`).run(now, now, JSON.stringify({
+          version: 1, claims: [{ ...confirmed, verification: "VERIFIED" }], unresolved: [previousGap], conflicts: [],
+          resultRevision: 1, requirementsRevision: 0, source: "MODEL",
+        }));
+      });
+      await fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", {
+        outcome: "RESULT_CONTINUE", completionSummary: "One gap remains",
+        synthesisState: { version: 1, claims: [extra === "NONE" ? confirmed : { ...confirmed, resultIds: ["result-1", "result-2"] }],
+          conflicts: [], unresolved: [changed
+          ? { ...previousGap, description: "Verify the new reproduction" } : previousGap] },
+      });
+      const reviews = await harness.listReviewDigests();
+      const decisions = await harness.listContinuationDecisionSeeds();
+      expect(reviews).toHaveLength(pauses ? 0 : 1);
+      expect(decisions).toHaveLength(pauses ? 1 : 0);
+      if (decisions[0] !== undefined) {
+        await expect(harness.requestContinuationDecision({ seed: decisions[0], now })).resolves.toBe(true);
+        await expect(harness.requestContinuationDecision({ seed: decisions[0], now })).resolves.toBe(false);
+        expect((await fixture.joiHomeFeed.load()).goals[0]).toMatchObject({
+          status: "NEEDS_ATTENTION", clarification: { reasonCode: "goal_continuation_required", prompt: GOAL_CONTINUATION_STALLED_PROMPT },
+        });
+      }
+    } finally { await fixture.close(); }
+  });
+
   it.each([
     ["goal_synthesis_coverage_incomplete", false],
     ["goal_synthesis_reference_invalid", false],

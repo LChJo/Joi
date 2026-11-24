@@ -1046,6 +1046,7 @@ void main() {
               status: 'NEEDS_ATTENTION',
               reasonCode: 'goal_continuation_required',
               summary: '横评维度已建立，但近七天来源不足。',
+              prompt: '自动补充仍未获得新证据。你可以补充线索或调整本次范围。',
               activeWork: 0,
               completedWork: 3,
               totalWork: 3,
@@ -1057,6 +1058,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('横评维度已建立，但近七天来源不足。'), findsOneWidget);
       expect(find.text('当前结果与待补充内容'), findsOneWidget);
+      expect(find.text('自动补充仍未获得新证据。你可以补充线索或调整本次范围。'), findsOneWidget);
       await tester.ensureVisible(find.text('查看全文'));
       await tester.tap(find.text('查看全文'));
       await tester.pumpAndSettle();
