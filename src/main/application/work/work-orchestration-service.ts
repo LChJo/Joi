@@ -486,7 +486,10 @@ export class WorkOrchestrationService {
     const executionNeeds = readExecutionNeeds(input.executionNeeds ?? context.executionNeeds);
     assertExecutionAccess(accessMode, executionNeeds, pin.localExecution);
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
-    if (!policy.allowed) throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
+    // The dispatch queue handles transient contention after the resume is durably committed.
+    if (!policy.allowed && policy.reason !== DISPATCH_POLICY_REASONS.workspaceLeaseConflict) {
+      throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
+    }
     // Continue in the instance that paused so the resident conversation keeps the question
     // context. Never reference a disposed instance: dispatch would fail and the outbox row
     // would retry forever. Fall back to a resident continuation when the instance is gone.

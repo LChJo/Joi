@@ -5,10 +5,12 @@ import path from "node:path";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
+import { SqliteDispatchPolicyGate } from "../../src/main/infrastructure/persistence/sqlite-dispatch-policy-gate.js";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
@@ -19,7 +21,7 @@ async function questionVersion(repository: SqliteJoiInboxRepository, inputId: st
 }
 
 describe("sqlite joi inbox clarify", () => {
-  it("resolves a persisted partner question to the exact waiting Work", async () => {
+  it.each(["available", "held by another writer"])("resolves a persisted partner question to the exact waiting Work with the workspace %s", async (workspace) => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "恢复", personaSummary: "persona", projectLabel: "joi", scopeSummary: "恢复等待工作" });
@@ -87,12 +89,25 @@ describe("sqlite joi inbox clarify", () => {
         VALUES ('turn-action-retry-1', ?, ?, 'session-action-retry', 'RUNNING', ?, ?),
                ('turn-action-retry-2', ?, ?, 'session-action-retry', 'RUNNING', ?, ?)`)
         .run(accepted.inputId, workbench.workbenchId, now, now, accepted.inputId, workbench.workbenchId, now, now));
+      const policy = new SqliteDispatchPolicyGate({ clock: fixture.clock, database: fixture.database });
+      if (workspace === "held by another writer") {
+        const workspaceRef = fixture.database.transaction((connection) => {
+          const binding = connection.prepare(`UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY'
+            WHERE workbench_id = ? RETURNING workspace_ref`).get(workbench.workbenchId);
+          connection.prepare(`INSERT INTO work_items
+            (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+            VALUES ('lease-holder', ?, ?, 'Other writer', '{}', 'WRITE', 'RUNNING', ?, ?)`).run(workbench.workbenchId, accepted.inputId, now, now);
+          return String(binding?.workspace_ref);
+        });
+        const leases = new SqliteWorkspaceLeaseManager({ clock: fixture.clock, database: fixture.database });
+        expect(await leases.acquire({ accessMode: "WRITE", workId: "lease-holder", workspaceRef })).not.toBeNull();
+      }
       const workRepository = new SqliteWorkPlanRepository(fixture.database);
       const work = new WorkOrchestrationService({
         clock: fixture.clock,
         ids: fixture.ids,
         partners: fixture.partners,
-        policy: { evaluate: () => Promise.resolve({ allowed: true }) },
+        policy,
         reassignment: workRepository,
         repository: workRepository,
       });
@@ -142,6 +157,8 @@ describe("sqlite joi inbox clarify", () => {
         LEFT JOIN work_access_policies p ON p.work_id = w.work_id WHERE w.work_id = 'work-action-question'`).get()))
         .toEqual({ access_mode: "READ", policy_access: null });
       expect(fixture.database.transaction((connection) => ({
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-action-question'").get(),
+        outbox: connection.prepare("SELECT status, attempt_count FROM outbox WHERE outbox_id = ?").get(firstResume.outbox.outboxId),
         activeAttempts: connection.prepare(`SELECT COUNT(*) AS count FROM dispatch_attempts
           WHERE work_id = 'work-action-question' AND status = 'PENDING'`).get(),
         oldAttempt: connection.prepare(`SELECT status FROM dispatch_attempts
@@ -149,6 +166,8 @@ describe("sqlite joi inbox clarify", () => {
         oldRun: connection.prepare(`SELECT status FROM partner_runs
           WHERE run_id = 'run-action-question'`).get(),
       }))).toEqual({
+        work: { status: "READY" },
+        outbox: { status: "PENDING", attempt_count: 0 },
         activeAttempts: { count: 1 },
         oldAttempt: { status: "FAILED" },
         oldRun: { status: "FAILED" },
