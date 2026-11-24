@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "63c67d30cc5a794d2e6545ccf168d7a6524621961a44706d550872c80d064901",
-      "observedAt": "2026-11-24T13:18:35.850Z",
+      "hash": "34e322e0a48504925851efa896ec1d5245ec894fc07ac44e91ab828678213710",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
         "endLine": 801
@@ -1698,43 +1698,43 @@
     {
       "id": "f8b6f0fa-14fe-4833-9554-150cfe6a6c38",
       "kind": "source-code",
-      "claim": "Native conversation RPC negotiates conversations.v1 and reuses serialized encrypted requests, deadlines, generation checks and bounded read.next assembly. Existing task operations remain available on older hosts. questions.v1 is negotiated separately and required for scoped question answers and explicit conversation recovery; responses keep generation checks and unsupported hosts fail locally. Goal map and completed-turn fork RPCs require separately negotiated capabilities.",
+      "claim": "Native conversation RPC negotiates conversations.v1 and reuses serialized encrypted requests, deadlines, generation checks and bounded read.next assembly. Existing task operations remain available on older hosts. questions.v1 is negotiated separately and required for scoped question answers and explicit conversation recovery; responses keep generation checks and unsupported hosts fail locally. Goal map and completed-turn fork RPCs require separately negotiated capabilities. Instructions submitted with CONTINUE require goal.continuation.instructions.v1 and carry the original decision identity.",
       "location": {
         "path": "apps/joi_mobile/lib/native_remote_controller.dart"
       },
-      "hash": "62b8a238c5f1ae903017221f683c5e4be9cd8b57acc1ee5a141b2101abf2630e",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "d7fb4950717f574f426d915511d5d36bf12c6918a882378710677618ecfcc28d",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
-        "endLine": 1230
+        "endLine": 1241
       }
     },
     {
       "id": "4bf896c9-b798-4616-a9db-8da8c7e8980d",
       "kind": "source-code",
-      "claim": "Narrow optional conversation and question controller interfaces extend paired clients without changing existing task controllers. RemoteUserQuestion retains scoped identity/version, options, defaults, answer and delivery, and goal cards project question lists. The card projection retains optional synthesis recovery facts. The remote view state carries the goal map capability.",
+      "claim": "Narrow optional conversation and question controller interfaces extend paired clients without changing existing task controllers. RemoteUserQuestion retains scoped identity/version, options, defaults, answer and delivery, and goal cards project question lists. The card projection retains optional synthesis recovery facts. The remote view state carries the goal map capability. Remote view state also carries the negotiated goal continuation instructions capability.",
       "location": {
         "path": "apps/joi_mobile/lib/remote_controller.dart"
       },
-      "hash": "cb1ef9b6bad9e2d1124efa56197d5c3fdcffa8bc3d9694595d75c033d36dc86f",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "ff0285ffef03613b6b01547af960675bed1a23d0ddefd95cbb87e56287ef3cab",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
-        "endLine": 534
+        "endLine": 539
       }
     },
     {
       "id": "baccc11b-b811-475c-8ccc-299ecea71659",
       "kind": "source-code",
-      "claim": "Encrypted native session regressions negotiate normal conversation capability, reassemble full Unicode pages, preserve refusal codes and refuse unsupported hosts locally. Question coverage checks questions.v1, scoped version/default payloads, explicit recovery without resubmitting an answer, disconnection and older-host refusal before sending.",
+      "claim": "Encrypted native session regressions negotiate normal conversation capability, reassemble full Unicode pages, preserve refusal codes and refuse unsupported hosts locally. Question coverage checks questions.v1, scoped version/default payloads, explicit recovery without resubmitting an answer, disconnection and older-host refusal before sending. The encrypted peer covers both negotiation outcomes and confirms that only the supported host receives continuation instructions with the decision version.",
       "location": {
         "path": "apps/joi_mobile/test/remote_session_test.dart"
       },
-      "hash": "0263706a18335c6da946b5b640132155c107529495542bdcc30581a5eea70be5",
-      "observedAt": "2026-11-19T11:54:37.020Z",
+      "hash": "736ea8ed7d529602cfe140632baa80932689c42b8da063cc7e1218146b8d3df4",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
-        "endLine": 1075
+        "endLine": 1125
       }
     },
     {
@@ -1796,12 +1796,12 @@
     {
       "id": "7248e4e7-328d-4d19-9d07-c7552695b8a5",
       "kind": "source-code",
-      "claim": "The authenticated encrypted host admits validated conversation and scoped question commands and advertises conversations.v1 plus questions.v1 while preserving existing pairing, replay protection, frame limits and connection-scoped page release. The host advertises goal map and conversation fork capabilities and admits goal archive and restore commands.",
+      "claim": "The authenticated encrypted host admits validated conversation and scoped question commands and advertises conversations.v1 plus questions.v1 while preserving existing pairing, replay protection, frame limits and connection-scoped page release. The host advertises goal map and conversation fork capabilities and admits goal archive and restore commands. The handshake also declares goal.continuation.instructions.v1 for versioned goal clarification with text.",
       "location": {
         "path": "src/main/infrastructure/remote/remote-access-host.ts"
       },
-      "hash": "81f1b092bcc4b925fc358b658063abe0b8a1fbd0b2feb17f015f3f4d986042e7",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "f2c27de19ab4614ad73111362fca0fb217b351ec633b1f6a67430e644fa03ec5",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
         "endLine": 462
@@ -3714,15 +3714,15 @@
     {
       "id": "f38946e3-12db-45b8-898b-c8d8eb3bea6b",
       "kind": "source-code",
-      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls. Goal actions show compact pending cards, and the detail page puts resolved questions behind a history disclosure. Goal details show synthesis recovery, delegate route map reads on demand and rebuild the loaded Agent prefix from fresh cursors. Goal Agent rows and refreshed records project the current question continuation label.",
+      "claim": "Partner records build visible rows lazily while preserving per-page identity and existing refresh/paging. Goal actions render durable question cards with scope/version and negotiated question support, while independent non-question decisions retain their existing controls. Goal actions show compact pending cards, and the detail page puts resolved questions behind a history disclosure. Goal details show synthesis recovery, delegate route map reads on demand and rebuild the loaded Agent prefix from fresh cursors. Goal Agent rows and refreshed records project the current question continuation label. Home and detail use the same optional continuation composer; its versioned submission keeps drafts on failure.",
       "location": {
         "path": "apps/joi_mobile/lib/goal_detail.dart"
       },
-      "hash": "a3c38a8b1f422e8b3ce62c9f7f2db40b4bc8753ed7f01bba3938082217bb9e24",
-      "observedAt": "2026-11-24T13:22:19.250Z",
+      "hash": "1772298f876839272067b90df5da271c52edcc26a4fec6dc40f0ed3493731e39",
+      "observedAt": "2026-11-24T16:19:53.708Z",
       "range": {
         "startLine": 1,
-        "endLine": 1020
+        "endLine": 1048
       }
     },
     {
@@ -4958,6 +4958,34 @@
       },
       "hash": "4c9be7c5c3e66639516f4084d23f75f26be55a34ee3a170b1eb8645ba351db47",
       "observedAt": "2026-11-24T13:22:19.250Z"
+    },
+    {
+      "id": "dc22756b-ff00-4e66-81f7-f0a2f933a012",
+      "kind": "source-code",
+      "claim": "Synthetic Android widget coverage checks continuation on an older host, then verifies keyboard submission, a retained draft on refusal, and the original question version on a supported host.",
+      "location": {
+        "path": "apps/joi_mobile/test/widget_test.dart"
+      },
+      "hash": "244b9ddacd9f15e9a534086327480593f9a0872567dfad98adc65d61a6e593cf",
+      "observedAt": "2026-11-24T16:19:53.708Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1204
+      }
+    },
+    {
+      "id": "e84a2eec-8204-455b-b375-5cba3b2927a1",
+      "kind": "source-code",
+      "claim": "Simulated peers exercise the real encrypted handshake and admission of a versioned continuation command carrying instructions.",
+      "location": {
+        "path": "tests/integration/native-remote-access-host.test.ts"
+      },
+      "hash": "b616f428264c8a6b65151db263cadbb6e02431376766cbc67813710ff03885af",
+      "observedAt": "2026-11-24T16:19:53.708Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 191
+      }
     }
   ]
 }

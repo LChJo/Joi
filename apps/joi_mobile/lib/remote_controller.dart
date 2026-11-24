@@ -357,6 +357,7 @@ class RemoteViewState {
     this.supportsWorkbenchChoice = false,
     this.supportsResultHistory = false,
     this.supportsGoalMap = false,
+    this.supportsContinuationInstructions = false,
     this.workbenches = const [],
     this.partners = const [],
     this.busyGoals = const {},
@@ -378,6 +379,7 @@ class RemoteViewState {
   final bool supportsWorkbenchChoice;
   final bool supportsResultHistory;
   final bool supportsGoalMap;
+  final bool supportsContinuationInstructions;
   final List<RemoteChoice> workbenches;
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
@@ -395,6 +397,7 @@ class RemoteViewState {
     bool? supportsWorkbenchChoice,
     bool? supportsResultHistory,
     bool? supportsGoalMap,
+    bool? supportsContinuationInstructions,
     List<RemoteChoice>? workbenches,
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
@@ -415,6 +418,8 @@ class RemoteViewState {
         supportsWorkbenchChoice ?? this.supportsWorkbenchChoice,
     supportsResultHistory: supportsResultHistory ?? this.supportsResultHistory,
     supportsGoalMap: supportsGoalMap ?? this.supportsGoalMap,
+    supportsContinuationInstructions:
+        supportsContinuationInstructions ?? this.supportsContinuationInstructions,
     workbenches: workbenches ?? this.workbenches,
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,

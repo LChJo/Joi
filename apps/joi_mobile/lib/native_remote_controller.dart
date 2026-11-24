@@ -810,6 +810,14 @@ class NativeRemoteController extends ChangeNotifier
     int? questionVersion,
   }) async {
     if (!_state.supportsHome) throw StateError('remote_upgrade_required');
+    final cleanText = text?.trim();
+    final hasText = cleanText != null && cleanText.isNotEmpty;
+    if (action == 'clarify' &&
+        actionChoice == 'CONTINUE' &&
+        hasText &&
+        !_state.supportsContinuationInstructions) {
+      throw StateError('remote_upgrade_required');
+    }
     if (_state.busyGoals.contains(inputId)) return;
     final generation = _generation;
     _setState(_state.copyWith(busyGoals: {..._state.busyGoals, inputId}));
@@ -818,7 +826,7 @@ class NativeRemoteController extends ChangeNotifier
         'kind': 'message.$action',
         'requestId': _requestId('action'),
         'inputId': inputId,
-        if (text != null && text.trim().isNotEmpty) 'text': text.trim(),
+        if (hasText) 'text': cleanText,
         'workbenchId': ?workbenchId,
         'partnerId': ?partnerId,
         'actionChoice': ?actionChoice,
@@ -1086,6 +1094,9 @@ class NativeRemoteController extends ChangeNotifier
           supportsWorkbenchCreation: supported.contains('workbench.create'),
           supportsResultHistory: supported.contains('goal.results.v1'),
           supportsGoalMap: supported.contains('goal.map.v1'),
+          supportsContinuationInstructions: supported.contains(
+            'goal.continuation.instructions.v1',
+          ),
           sending: false,
           busyGoals: {},
         ),

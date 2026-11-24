@@ -195,11 +195,11 @@ describe("RemoteCommandService", () => {
     await expect(service.handle({
       actionChoice: "CONTINUE", inputId: "goal",
       kind: "message.clarify", questionId: "joi_action:goal_continuation:goal:r5:s1", questionVersion: 3,
-      requestId: "clarify",
+      requestId: "clarify", text: "只补本轮漏项",
     } as never)).resolves.toMatchObject({ result: { inputId: "goal" } });
     expect(clarify).toHaveBeenCalledWith({
       actionChoice: "CONTINUE", inputId: "goal",
-      questionId: "joi_action:goal_continuation:goal:r5:s1", questionVersion: 3,
+      questionId: "joi_action:goal_continuation:goal:r5:s1", questionVersion: 3, text: "只补本轮漏项",
     });
   });
 

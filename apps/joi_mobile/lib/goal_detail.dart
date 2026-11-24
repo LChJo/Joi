@@ -100,6 +100,7 @@ class _GoalActionsState extends State<GoalActions> {
 
   Future<void> _act(
     String action, {
+    String? text,
     String? workbenchId,
     String? partnerId,
     String? actionChoice,
@@ -113,14 +114,7 @@ class _GoalActionsState extends State<GoalActions> {
       await widget.controller.act(
         widget.goal.goalId,
         action,
-        text:
-            action == 'retry' ||
-                action == 'clarify' &&
-                    actionChoice == null &&
-                    workbenchId == null &&
-                    partnerId == null
-            ? _draft.text
-            : null,
+        text: text,
         workbenchId: workbenchId,
         partnerId: partnerId,
         actionChoice: actionChoice,
@@ -238,6 +232,16 @@ class _GoalActionsState extends State<GoalActions> {
         ].contains(reason);
         final continuation = goal.needsContinuationDecision;
         final continuationSummary = goal.summary?.trim();
+        final canSupplementContinuation =
+            state.supportsContinuationInstructions;
+        final continuationText = _draft.text.trim();
+        final VoidCallback? submitContinuation = busy || continuationText.isEmpty
+            ? null
+            : () => _act(
+                'clarify',
+                actionChoice: 'CONTINUE',
+                text: continuationText,
+              );
         final directory = reason == 'workbench_workspace_not_ready';
         final historical = reason == 'harness_review_unrecoverable';
         final answer =
@@ -251,7 +255,10 @@ class _GoalActionsState extends State<GoalActions> {
         final VoidCallback? submitDraft =
             busy || (answer || historical) && _draft.text.trim().isEmpty
             ? null
-            : () => _act(answer || historical ? 'clarify' : 'retry');
+            : () => _act(
+                answer || historical ? 'clarify' : 'retry',
+                text: _draft.text,
+              );
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -419,7 +426,22 @@ class _GoalActionsState extends State<GoalActions> {
                     : () => _act('clarify', actionChoice: 'RESUME'),
                 child: Text(tr(Msg.homeResumeOriginalWorkfa2119)),
               ),
-            if (continuation)
+            if (continuation) ...[
+              if (canSupplementContinuation) ...[
+                ComposerTextField(
+                  controller: _draft,
+                  enabled: !busy,
+                  maxLength: 8000,
+                  onChanged: (_) => setState(() {}),
+                  onSend: submitContinuation,
+                  decoration: InputDecoration(
+                    labelText: tr(Msg.homeContinuationSupplementLabel),
+                    hintText: tr(Msg.homeContinuationSupplementPlaceholder),
+                    counterText: '',
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -436,8 +458,14 @@ class _GoalActionsState extends State<GoalActions> {
                         : () => _act('clarify', actionChoice: 'ACCEPT_CURRENT'),
                     child: Text(tr(Msg.homeKeepCurrentResult)),
                   ),
+                  if (canSupplementContinuation)
+                    OutlinedButton(
+                      onPressed: submitContinuation,
+                      child: Text(tr(Msg.homeContinuationSubmitSupplement)),
+                    ),
                 ],
               ),
+            ],
             if (historical)
               Wrap(
                 spacing: 8,

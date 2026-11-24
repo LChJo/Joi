@@ -159,6 +159,7 @@ describe("native RemoteAccessHost", () => {
       const ready = transport.sent.findLast((item) => item.connectionId === connectionId)!.frame as RemoteHandshakeReady;
       expect(ready.capabilities).toContain("goal.map.v1");
       expect(ready.capabilities).toContain("conversation.fork.v1");
+      expect(ready.capabilities).toContain("goal.continuation.instructions.v1");
       const key = deriveRemoteSessionKey(fields.secret!, clientNonce, ready.hostNonce);
       transport.emit({
         connectionId,
@@ -168,6 +169,18 @@ describe("native RemoteAccessHost", () => {
       await vi.waitFor(() => expect(transport.sent.filter((item) => item.connectionId === connectionId).length).toBe(2));
       const encrypted = transport.sent.findLast((item) => item.connectionId === connectionId)!.frame as RemoteEncryptedFrame;
       expect(decryptRemotePayload(key, encrypted, connectionId)).toEqual(expect.objectContaining({ requestId: `feed-${connectionId}` }));
+
+      const clarification = {
+        kind: "message.clarify", requestId: `continue-${connectionId}`, inputId: "goal",
+        actionChoice: "CONTINUE", questionId: "decision", questionVersion: 2, text: "只补本轮漏项",
+      };
+      transport.emit({
+        connectionId,
+        frame: encryptRemotePayload(key, 2, clarification, connectionId),
+        type: "peerFrame",
+      });
+      await vi.waitFor(() => expect(transport.sent.filter((item) => item.connectionId === connectionId).length).toBe(3));
+      expect(handle).toHaveBeenCalledWith(clarification, expect.any(String));
     }
 
     expect((await host.status()).devices.map((device) => device.name)).toEqual(["手机 A", "手机 B"]);
