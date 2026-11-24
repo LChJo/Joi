@@ -75,7 +75,7 @@ export class ModelSourceService {
 
   create(input: CreateModelSourceRequest): Promise<ModelSourceDto> {
     return this.#serialize(() => {
-      if (input.kind === "codex") throw new DomainError("codex_oauth_required", "Sign in with ChatGPT to connect Codex.");
+      if (input.kind === "codex" || input.kind === "antigravity") throw new DomainError(`${input.kind}_oauth_required`, "Sign in to connect this subscription.");
       return this.#create(input, (providerId, local) => {
         const key = input.apiKey.trim();
         if (key === "" && !local) throw new DomainError("model_source_key_required", "API key is required.");
@@ -85,12 +85,20 @@ export class ModelSourceService {
   }
 
   async connectCodex(credential: ModelSourceOAuthCredential, signal: AbortSignal, sourceId?: string): Promise<ModelSourceDto> {
+    return this.#connectOAuth("codex", credential, signal, sourceId);
+  }
+
+  async connectAntigravity(credential: ModelSourceOAuthCredential, signal: AbortSignal, sourceId?: string): Promise<ModelSourceDto> {
+    return this.#connectOAuth("antigravity", credential, signal, sourceId);
+  }
+
+  async #connectOAuth(kind: "codex" | "antigravity", credential: ModelSourceOAuthCredential, signal: AbortSignal, sourceId?: string): Promise<ModelSourceDto> {
     const source = await this.#serialize(async () => {
       signal.throwIfAborted();
       const secrets = this.dependencies.secrets;
       const saveOAuth = secrets.saveOAuth?.bind(secrets);
-      if (saveOAuth === undefined) throw new Error("codex_credential_store_unavailable");
-      if (sourceId === undefined) return this.#create({ kind: "codex" }, async (id) => {
+      if (saveOAuth === undefined) throw new Error(`${kind}_credential_store_unavailable`);
+      if (sourceId === undefined) return this.#create({ kind }, async (id) => {
         signal.throwIfAborted();
         const version = await saveOAuth(id, credential);
         signal.throwIfAborted();
@@ -98,7 +106,7 @@ export class ModelSourceService {
       });
       const current = await this.#get(sourceId);
       signal.throwIfAborted();
-      if (current.source.activeSourceRevision.kind !== "codex") throw new DomainError("codex_oauth_required", "The source is not a Codex subscription.");
+      if (current.source.activeSourceRevision.kind !== kind) throw new DomainError(`${kind}_oauth_required`, "The source uses another provider.");
       const revisionId = this.dependencies.ids.next("source_revision");
       const providerId = `joi-source:${sourceId}:${revisionId}`;
       let revised: ModelSourceDto;
@@ -218,8 +226,8 @@ export class ModelSourceService {
 
   async #update(current: ModelSourceRecord, input: UpdateModelSourceRequest, oauth?: { providerId: string; revisionId: string; version: number }): Promise<ModelSourceDto> {
     const kind = current.source.activeSourceRevision.kind;
-    if (kind === "codex" && (input.apiKey !== undefined || input.baseUrl !== undefined)) {
-      throw new DomainError("codex_oauth_required", "Sign in with ChatGPT to connect Codex.");
+    if ((kind === "codex" || kind === "antigravity") && (input.apiKey !== undefined || input.baseUrl !== undefined)) {
+      throw new DomainError(`${kind}_oauth_required`, "Sign in to connect this subscription.");
     }
     const catalog = this.dependencies.catalog.resolve(
       kind,

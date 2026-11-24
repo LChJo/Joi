@@ -232,6 +232,8 @@ joi has no `.env` file; configuration is either an environment variable or an in
 | --- | --- | --- | --- |
 | `JOI_TEST` | Test mode: isolated `userData`, skip the single-instance lock, random loopback port. | unset (treated as `0`) | `src/main/index.ts` |
 | `VITE_DEV_SERVER_URL` | Load the Vite dev server instead of the embedded UI. | unset | `src/main/index.ts` |
+| `JOI_ANTIGRAVITY_OAUTH_CLIENT_ID` | Google desktop OAuth client ID for Antigravity sign-in and token refresh. | unset | `src/main/infrastructure/pi/pi-antigravity-authorization.ts` |
+| `JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET` | Matching Google desktop OAuth client secret. Set both values in the Electron process environment before startup. | unset | `src/main/infrastructure/pi/pi-antigravity-authorization.ts` |
 | `JOI_RELAY_HOST_TOKEN` | Browser relay host token. | `""` | `src/relay/index.ts` |
 | `JOI_RELAY_BIND_ADDRESS` | Browser relay bind address. | `127.0.0.1` | `src/relay/index.ts` |
 | `JOI_RELAY_PORT` | Browser relay port. | `8787` | `src/relay/index.ts` |

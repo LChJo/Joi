@@ -116,3 +116,5 @@ Migration 105 为每个已记录的全局偏好主题保存最后采纳的输入
 Migration 106 添加主 Joi 取证回执，记录授权目标、结果与需求版本、来源引用及实际返回的正文区间。回执按 Turn 和工具调用去重，供恢复和结案核对。见 [REV-04–07](../../docs/joi-review-evidence-spec.md)。
 
 Migration 112 为模型源修订增加 Codex 订阅来源，固定使用订阅接入与 OpenAI 协议。迁移保留既有来源、修订、凭据引用和历史 Turn 外键。见 [AC-65](../../docs/07-roadmap-and-acceptance.md#ac-65-搭档实际权限与模型来源新鲜度)。
+
+Migration 115 增加 Antigravity 订阅来源与 Google 协议，约束其固定为订阅接入且不允许自定义端点。保留既有来源、修订及历史 Turn 外键，Google 协议仅用于 Antigravity。验收对应 AC-24、AC-55、AC-65。

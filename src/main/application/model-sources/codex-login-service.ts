@@ -3,6 +3,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { CodexAuthorizationPort } from "../ports/model-source-ports.js";
 import type { IdGenerator } from "../ports/runtime-store.js";
 import type { ModelSourceService } from "./model-source-service.js";
+import { ANTIGRAVITY_REDIRECT_URI } from "../../../shared/antigravity-authorization.js";
 
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 
@@ -17,27 +18,35 @@ interface LoginAttempt {
   completion?: Promise<void>;
 }
 
-export class CodexLoginService {
+export class SubscriptionLoginService {
   #attempt: LoginAttempt | undefined;
   #closed = false;
 
   constructor(private readonly dependencies: {
+    provider?: "codex" | "antigravity";
     authorization: CodexAuthorizationPort;
     ids: IdGenerator;
-    sources: Pick<ModelSourceService, "connectCodex">;
+    connect: ModelSourceService["connectCodex"];
   }) {}
 
+  #error(suffix: string, message: string): DomainError {
+    return new DomainError(`${this.dependencies.provider ?? "codex"}_${suffix}`, message);
+  }
+
   start(owner: string, method: CodexLoginMethod, sourceId?: string): CodexLoginDto {
-    if (this.#closed) throw new DomainError("codex_login_unavailable", "Codex sign-in is unavailable.");
+    if (this.#closed) throw this.#error("login_unavailable", "Subscription sign-in is unavailable.");
+    if (this.dependencies.provider === "antigravity" && method !== "browser") {
+      throw this.#error("login_method_invalid", "Antigravity uses browser sign-in.");
+    }
     const active = this.#attempt;
     if (active?.completion !== undefined) {
       if (!active.controller.signal.aborted && active.owner === owner && active.method === method && active.sourceId === sourceId) {
         return this.#dto(active);
       }
-      throw new DomainError("codex_login_busy", "A Codex sign-in is already in progress.");
+      throw this.#error("login_busy", "A subscription sign-in is already in progress.");
     }
     const attempt: LoginAttempt = {
-      id: this.dependencies.ids.next("codex_login"),
+      id: this.dependencies.ids.next(`${this.dependencies.provider ?? "codex"}_login`),
       owner,
       method,
       sourceId,
@@ -58,16 +67,17 @@ export class CodexLoginService {
   submitCallback(owner: string, id: string, value: string): void {
     const attempt = this.#get(owner, id);
     if (attempt.state.status !== "browser" || attempt.submitCallback === undefined) {
-      throw new DomainError("codex_callback_unavailable", "This sign-in is no longer waiting for a callback.");
+      throw this.#error("callback_unavailable", "This sign-in is no longer waiting for a callback.");
     }
     const redirect = URL.parse(value);
     const authState = new URL(attempt.state.url).searchParams.get("state");
-    if (redirect?.origin !== "http://localhost:1455"
-      || redirect.pathname !== "/auth/callback" || redirect.username !== "" || redirect.password !== ""
+    const expected = new URL(this.dependencies.provider === "antigravity" ? ANTIGRAVITY_REDIRECT_URI : "http://localhost:1455/auth/callback");
+    if (redirect?.origin !== expected.origin
+      || redirect.pathname !== expected.pathname || redirect.username !== "" || redirect.password !== ""
       || redirect.hash !== "" || redirect.searchParams.getAll("code").length !== 1
       || !redirect.searchParams.get("code") || redirect.searchParams.getAll("state").length !== 1
       || !authState || redirect.searchParams.get("state") !== authState) {
-      throw new DomainError("codex_callback_invalid", "Paste the complete Codex callback URL from this sign-in.");
+      throw this.#error("callback_invalid", "Paste the complete callback URL from this sign-in.");
     }
     attempt.submitCallback(redirect.href);
   }
@@ -104,7 +114,7 @@ export class CodexLoginService {
       signal.throwIfAborted();
       clearTimeout(timer);
       attempt.state = { status: "validating" };
-      const source = await this.dependencies.sources.connectCodex(credential, signal, sourceId);
+      const source = await this.dependencies.connect(credential, signal, sourceId);
       if (!signal.aborted) attempt.state = { status: "completed", source };
     } catch {
       if (!signal.aborted) attempt.state = { status: "failed" };
@@ -137,7 +147,7 @@ export class CodexLoginService {
   #get(owner: string, id: string): LoginAttempt {
     const attempt = this.#attempt;
     if (attempt?.id !== id || attempt.owner !== owner) {
-      throw new DomainError("codex_login_not_found", "Codex sign-in was not found.");
+      throw this.#error("login_not_found", "Subscription sign-in was not found.");
     }
     return attempt;
   }
@@ -149,5 +159,16 @@ export class CodexLoginService {
   #abort(attempt: LoginAttempt, status: "canceled" | "expired") {
     attempt.state = { status };
     attempt.controller.abort();
+  }
+}
+
+export class CodexLoginService extends SubscriptionLoginService {
+  constructor(dependencies: {
+    authorization: CodexAuthorizationPort;
+    ids: IdGenerator;
+    sources: Pick<ModelSourceService, "connectCodex">;
+  }) {
+    super({ authorization: dependencies.authorization, ids: dependencies.ids,
+      connect: (credential, signal, id) => dependencies.sources.connectCodex(credential, signal, id) });
   }
 }

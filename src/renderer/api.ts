@@ -370,6 +370,18 @@ export class DigitalLifeApi {
   listModelSources(includeCodexAccount = false) {
     return this.request<{ items: ModelSourceDto[] }>(this.desktop && includeCodexAccount ? "/api/v1/model-sources?include=codex-account" : "/api/v1/model-sources");
   }
+  startAntigravityLogin(sourceId?: string) {
+    return this.request<CodexLoginDto>("/api/v1/model-sources/antigravity-login", { method: "POST", body: { method: "browser", sourceId } });
+  }
+  antigravityLoginStatus(attemptId: string, signal: AbortSignal) {
+    return this.request<CodexLoginDto>(`/api/v1/model-sources/antigravity-login/${encodeURIComponent(attemptId)}`, { signal });
+  }
+  completeAntigravityCallback(attemptId: string, callbackUrl: string) {
+    return this.request<undefined>(`/api/v1/model-sources/antigravity-login/${encodeURIComponent(attemptId)}/callback`, { method: "POST", body: { callbackUrl } });
+  }
+  cancelAntigravityLogin(attemptId: string) {
+    return this.request<undefined>(`/api/v1/model-sources/antigravity-login/${encodeURIComponent(attemptId)}`, { method: "DELETE" });
+  }
   startCodexLogin(method: CodexLoginMethod, sourceId?: string) {
     return this.request<CodexLoginDto>("/api/v1/model-sources/codex-login", { method: "POST", body: { method, sourceId } });
   }

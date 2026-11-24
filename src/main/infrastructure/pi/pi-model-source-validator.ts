@@ -7,6 +7,7 @@ import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
+import { ANTIGRAVITY_LOCATION_DENIED } from "./antigravity-http.js";
 
 type Probe = (record: ModelSourceRecord, signal: AbortSignal) => Promise<void>;
 
@@ -113,13 +114,16 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           return { ...original, error: `[bearer_probe_failed:${failureReason(alternateError).reasonCode}] ${original.error ?? ""}`.trim(), validatedAt };
         }
       }
-      const detail = revision.kind === "codex" && error instanceof Error && error.message.startsWith("OAuth refresh failed")
+      const detail = (revision.kind === "codex" || revision.kind === "antigravity") && error instanceof Error && error.message.startsWith("OAuth refresh failed")
         ? error.cause ?? error : error;
+      if (revision.kind === "antigravity" && errorMessage(detail).includes(ANTIGRAVITY_LOCATION_DENIED)) {
+        return { reasonCode: "region_forbidden", status: "NEEDS_AUTH", validatedAt };
+      }
       const failure = failureReason(detail);
-      if (revision.kind === "codex" && /invalid_grant|refresh_token_(?:expired|reused|invalidated)/iu.test(errorMessage(detail))) {
+      if ((revision.kind === "codex" || revision.kind === "antigravity") && /invalid_grant|refresh_token_(?:expired|reused|invalidated)/iu.test(errorMessage(detail))) {
         return { reasonCode: "auth_failed", status: "NEEDS_AUTH", validatedAt };
       }
-      if (revision.kind === "codex") return { reasonCode: failure.reasonCode, status: failure.status, validatedAt };
+      if ((revision.kind === "codex" || revision.kind === "antigravity")) return { reasonCode: failure.reasonCode, status: failure.status, validatedAt };
       return { ...failure, validatedAt };
     } finally {
       clearTimeout(timer);
@@ -140,7 +144,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       // Alternative auth must use the exact credential that received the original rejection.
       const models = createModels({
         authContext: { env: () => Promise.resolve(undefined), fileExists: () => Promise.resolve(false) },
-        credentials: source.activeSourceRevision.kind === "codex" ? credentials : {
+        credentials: (source.activeSourceRevision.kind === "codex" || source.activeSourceRevision.kind === "antigravity") ? credentials : {
           read: (id) => {
             if (id !== provider.id) return Promise.resolve(undefined);
             const snapshot = snapshots.get(signal) ?? credentials.read(id);

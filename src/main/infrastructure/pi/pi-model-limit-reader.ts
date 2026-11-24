@@ -3,6 +3,7 @@ import type { ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol } from
 import { getDirectModelSourcePreset, type DirectModelSourcePreset } from "./provider-presets.js";
 import { effectiveModelLimits } from "./source-provider-factory.js";
 import { codexModelLimits } from "./codex-source-provider.js";
+import { antigravityModelLimits } from "./antigravity-source-provider.js";
 
 /**
  * Resolves a route's real size by reusing the same merge the provider factory applies, so the
@@ -28,6 +29,7 @@ export class PiModelLimitReader implements ModelLimitReader {
     if (input.kind === "codex") {
       return codexModelLimits({ ...overrides, modelId: input.modelId, sourceId: input.sourceId });
     }
+    if (input.kind === "antigravity") return antigravityModelLimits({ ...overrides, modelId: input.modelId, sourceId: input.sourceId });
     if (input.kind === "generic-openai") {
       // A gateway has no preset to fall back to, so the factory's conservative gateway defaults
       // are the whole answer — which is exactly what a real request on this route gets.

@@ -31,7 +31,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
   const [notice, setNotice] = useNotice();
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (selected === null || selected === "codex" || selectedAccessMode === null || selectedProtocol === null) return;
+    if (selected === null || (selected === "codex" || selected === "antigravity") || selectedAccessMode === null || selectedProtocol === null) return;
     const form = new FormData(event.currentTarget);
     const value = (key: string) => {
       const field = form.get(key);
@@ -76,6 +76,15 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
   };
   const selectedChoice = MODEL_SOURCE_CHOICES.find((choice) => choice.kind === selected);
   const selectedOption = selectedChoice?.options.find((option) => option.accessMode === selectedAccessMode);
+  const choices = MODEL_SOURCE_CHOICES.map(({ kind,label }) => ({ kind,label: localizeProductText(label) }));
+  const providerChoices: { kind: ModelSourceKindDto; label: string }[] = [
+    ...choices.filter(({ kind }) => kind !== "generic-openai"),
+    ...(api.desktop ? [
+      { kind: "codex", label: t("home.codexSubscription") },
+      { kind: "antigravity", label: t("home.antigravitySubscription") },
+    ] as const : []),
+    ...choices.filter(({ kind }) => kind === "generic-openai"),
+  ];
   const chooseProvider = (kind: ModelSourceKindDto) => {
     const choice = MODEL_SOURCE_CHOICES.find((candidate) => candidate.kind === kind);
     const defaultAccessMode = choice?.options.length === 1 ? choice.options[0].accessMode : null;
@@ -98,10 +107,10 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
     <h1 id="joi-network-title">{t("home.joiNeedsAModelConnection")}</h1>
     <p>{t("home.chooseAModelProviderYouAlreadyUseCredentialsAre")}</p>
     <div className="model-source-choices">
-      {MODEL_SOURCE_CHOICES.map((choice) => <button className={selected === choice.kind ? "selected" : ""} key={choice.kind} onClick={() => chooseProvider(choice.kind)} type="button">{t("home.connect")} {localizeProductText(choice.label)}</button>)}
-      {api.desktop ? <button className={selected === "codex" ? "selected" : ""} onClick={() => chooseProvider("codex")} type="button">{t("home.connect")} {t("home.codexSubscription")}</button> : null}
+      {providerChoices.map(({ kind,label }) => <button className={selected === kind ? "selected" : ""} key={kind} onClick={() => chooseProvider(kind)} type="button">{t("home.connect")} {label}</button>)}
     </div>
     {selected === "codex" ? <CodexSubscriptionForm api={api} onCancel={cancel} onConnected={changed} /> : null}
+    {selected === "antigravity" ? <CodexSubscriptionForm provider="antigravity" api={api} onCancel={cancel} onConnected={changed} /> : null}
     {selectedChoice !== undefined && selectedAccessMode === null ? <section className="model-source-access-picker" aria-label={t("home.valueAccessPlan", { p0: localizeProductText(selectedChoice.label) })}>
       <h2>{localizeProductText(selectedChoice.label)}  {t("home.accessPlan")}</h2>
       <div className="model-source-access-choices">{selectedChoice.options.map((option) => <button aria-label={localizeProductText(option.label)} key={option.accessMode} onClick={() => chooseAccessMode(option.accessMode)} type="button"><strong>{localizeProductText(option.label)}</strong><span>{localizeProductText(option.description)}</span></button>)}</div>
@@ -143,6 +152,11 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
 }
 
 function modelSourceReasonText(reasonCode: string | undefined, kind?: ModelSourceKindDto): string {
+  if (kind === "antigravity") {
+    if (reasonCode === "auth_failed") return t("home.antigravitySignInAgain");
+    if (reasonCode === "region_forbidden") return t("home.antigravityRegionForbidden");
+    if (reasonCode === "http_403") return t("home.antigravityAccessForbidden");
+  }
   if (kind === "codex" && reasonCode === "auth_failed") return t("home.codexSignInAgain");
   if (reasonCode === "auth_failed") return t("home.theApiKeyDoesNotMatchThisAccessPlan");
   if (reasonCode === "rate_limited") return t("home.theApiIsRateLimitedOrOverloadedTryLater");
@@ -188,7 +202,7 @@ function modelSourceStatusLabel(status: JoiSnapshotDto["modelSources"][number]["
 }
 
 function protocolLabel(protocol: ModelSourceProtocolDto): string {
-  return protocol === "anthropic" ? "Anthropic-compatible" : "OpenAI-compatible";
+  return protocol === "google" ? "Google / Antigravity" : protocol === "anthropic" ? "Anthropic-compatible" : "OpenAI-compatible";
 }
 
 function thinkingEffortOptions() {
@@ -354,7 +368,9 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       let saved: typeof source;
       try { saved = await api.updateModelSource(source.sourceId, body); }
       catch (error) {
-        tell(error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"), true);
+        const unsupportedModel = source.kind === "antigravity" && error instanceof ApiError && error.code === "antigravity_model_unavailable";
+        tell(unsupportedModel ? t("home.antigravityModelUnavailable")
+          : error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"), true);
         return;
       }
       setEditing((current) => current === source.sourceId ? null : current);
@@ -381,7 +397,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       return <article className="model-source-item" key={source.sourceId}>
       <div className="model-source-summary">
         <div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div>
-        <span className="model-source-meta">{source.primary ? t("home.primary") : t("home.backupValue", { p0: String(index) })} · {source.kind === "codex" ? t("home.codexSubscription") : accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span>
+        <span className="model-source-meta">{source.primary ? t("home.primary") : t("home.backupValue", { p0: String(index) })} · {source.kind === "antigravity" ? t("home.antigravitySubscription") : source.kind === "codex" ? t("home.codexSubscription") : accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span>
         <small>{t("home.model")}{source.activeModel.id}</small>
         {source.codexAccount === undefined ? null : <div className="model-source-account">
           {source.codexAccount.maskedAccount === undefined ? null : <small>{t("home.codexAccountLabel", { p0: source.codexAccount.maskedAccount })}</small>}
@@ -404,8 +420,8 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <button className="button quiet" disabled={busy} onClick={() => void validateSource(source.sourceId)} type="button">{t(source.status === "DISABLED" ? "home.enable" : "home.validate")}</button>
         <ModelSourceMenu label={source.displayName} disabled={busy} items={[
           { label: t("common.edit"), run: () => { setReconnecting(null); setEditing(source.sourceId); } },
-          ...(source.kind === "codex" && api.desktop ? [
-            { label: t("home.codexReconnect"), run: () => { setEditing(null); setReconnecting(source.sourceId); } },
+          ...((source.kind === "codex" || source.kind === "antigravity") && api.desktop ? [
+            { label: t(source.kind === "antigravity" ? "home.antigravityReconnect" : "home.codexReconnect"), run: () => { setEditing(null); setReconnecting(source.sourceId); } },
           ] : []),
           { label: t("home.disable"), disabled: source.status === "DISABLED", run: () => void runSourceAction(source.sourceId, async () => {
             try { await api.updateModelSource(source.sourceId, { disabled: true }); await load(); }
@@ -414,11 +430,11 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
           { label: t("common.delete"), danger: true, run: () => void runSourceAction(source.sourceId, () => removeSource(source.sourceId)) },
         ]} />
       </div>
-      {reconnecting === source.sourceId ? <CodexSubscriptionForm api={api} sourceId={source.sourceId} onCancel={() => setReconnecting(null)} onConnected={async () => { setReconnecting(null); await load(); }} /> : null}
+      {reconnecting === source.sourceId ? <CodexSubscriptionForm key={source.sourceId} provider={source.kind === "antigravity" ? "antigravity" : "codex"} api={api} sourceId={source.sourceId} onCancel={() => setReconnecting(null)} onConnected={async () => { setReconnecting(null); await load(); }} /> : null}
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>{t("home.editDisplayName")}<input defaultValue={source.displayName} name="displayName" required /></label><label>{t("home.editBaseUrl")}<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
         <label>{t("home.editModelId")}<input defaultValue={source.activeModel.id} name="modelId" required /></label>
-        {source.kind === "codex" ? null : <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>}
+        {(source.kind === "codex" || source.kind === "antigravity") ? null : <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>}
         <details className="model-source-advanced">
           <summary>{t("home.advancedSettings")}</summary>
           <p className="model-source-hint">{t("home.piAutomaticCompaction")}</p>

@@ -72,9 +72,10 @@ export interface ModelSourceOAuthCredential {
   access: string;
   refresh: string;
   expires: number;
+  projectId?: string;
 }
 
-export interface CodexAuthorizationPort {
+export interface SubscriptionAuthorizationPort {
   authorize(input: {
     method: CodexLoginMethod;
     signal: AbortSignal;
@@ -83,6 +84,8 @@ export interface CodexAuthorizationPort {
     waitForCallback(signal: AbortSignal): Promise<string>;
   }): Promise<ModelSourceOAuthCredential>;
 }
+
+export type CodexAuthorizationPort = SubscriptionAuthorizationPort;
 
 export interface ModelSourceCatalog {
   resolve(kind: ModelSourceKind, requestedModelId?: string, requestedAccessMode?: ModelSourceAccessMode, requestedProtocol?: ModelSourceProtocol): {

@@ -470,11 +470,12 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
 .model-source-choices {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .model-source-choices button {
-  min-height: 72px;
+  min-height: 44px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--paper);

@@ -169,7 +169,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       artifactOpener: { open: (input) => desktop.artifactOpen(input) } });
     await conversationStack.recover();
     exportJobs = runtimeStack.exportJobs;
-    drainRuntime = async () => { await modelSourceStack.codexLogin.close(); await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
+    drainRuntime = async () => { await modelSourceStack.codexLogin.close(); await modelSourceStack.antigravityLogin.close(); await conversationStack.close(); userQuestions.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
     await persistence.joiInboxRepository.recoverOnBoot();
     await persistence.dispatchClaims.recoverOnBoot();
@@ -277,6 +277,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       skills: partnerStack.partnerSkillCatalog,
       modelSources: modelSourceStack.modelSources,
       codexLogin: modelSourceStack.codexLogin,
+      antigravityLogin: modelSourceStack.antigravityLogin,
       operations,
       partners: partnerStack.partners,
       scenarioPacks: partnerStack.scenarioPacks,

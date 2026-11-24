@@ -3702,6 +3702,76 @@
     "description": "No diagnostic failure",
     "placeholders": {}
   },
+  "homeAntigravitySubscription": "Antigravity subscription",
+  "@homeAntigravitySubscription": {
+    "description": "home.antigravitySubscription",
+    "placeholders": {}
+  },
+  "homeAntigravitySubscriptionHint": "Sign in with a Google account that has Antigravity access. Requests use that account''s model quota.",
+  "@homeAntigravitySubscriptionHint": {
+    "description": "home.antigravitySubscriptionHint",
+    "placeholders": {}
+  },
+  "homeAntigravityBrowserSignIn": "Continue with Google",
+  "@homeAntigravityBrowserSignIn": {
+    "description": "home.antigravityBrowserSignIn",
+    "placeholders": {}
+  },
+  "homeAntigravityWaitingForAuthorization": "Waiting for Google authorization…",
+  "@homeAntigravityWaitingForAuthorization": {
+    "description": "home.antigravityWaitingForAuthorization",
+    "placeholders": {}
+  },
+  "homeAntigravitySavedNeedsValidation": "Antigravity subscription saved. Check its connection status in Model Connections.",
+  "@homeAntigravitySavedNeedsValidation": {
+    "description": "home.antigravitySavedNeedsValidation",
+    "placeholders": {}
+  },
+  "homeAntigravityLoginFailed": "Antigravity authorization did not finish. Try again.",
+  "@homeAntigravityLoginFailed": {
+    "description": "home.antigravityLoginFailed",
+    "placeholders": {}
+  },
+  "homeAntigravityLoginExpired": "Antigravity authorization timed out. Sign in again.",
+  "@homeAntigravityLoginExpired": {
+    "description": "home.antigravityLoginExpired",
+    "placeholders": {}
+  },
+  "homeAntigravityLoginBusy": "An Antigravity sign-in is in progress. Finish or cancel it before trying again.",
+  "@homeAntigravityLoginBusy": {
+    "description": "home.antigravityLoginBusy",
+    "placeholders": {}
+  },
+  "homeAntigravityStatusFailed": "Could not check the Antigravity sign-in status.",
+  "@homeAntigravityStatusFailed": {
+    "description": "home.antigravityStatusFailed",
+    "placeholders": {}
+  },
+  "homeAntigravitySignInAgain": "The Antigravity authorization has expired or been revoked. Sign in again.",
+  "@homeAntigravitySignInAgain": {
+    "description": "home.antigravitySignInAgain",
+    "placeholders": {}
+  },
+  "homeAntigravityRegionForbidden": "Google reported that the current account or location does not meet Antigravity’s region requirements.",
+  "@homeAntigravityRegionForbidden": {
+    "description": "home.antigravityRegionForbidden",
+    "placeholders": {}
+  },
+  "homeAntigravityAccessForbidden": "Google rejected the Antigravity request (HTTP 403). The reason is unknown.",
+  "@homeAntigravityAccessForbidden": {
+    "description": "home.antigravityAccessForbidden",
+    "placeholders": {}
+  },
+  "homeAntigravityModelUnavailable": "This model ID is outside the Antigravity model catalog.",
+  "@homeAntigravityModelUnavailable": {
+    "description": "home.antigravityModelUnavailable",
+    "placeholders": {}
+  },
+  "homeAntigravityReconnect": "Sign in to Antigravity again",
+  "@homeAntigravityReconnect": {
+    "description": "home.antigravityReconnect",
+    "placeholders": {}
+  },
   "homeCodexSubscription": "Codex subscription",
   "@homeCodexSubscription": {
     "description": "home.codexSubscription",

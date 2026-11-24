@@ -16,6 +16,7 @@ import { trayMenuTemplate } from "./infrastructure/operations/tray-menu.js";
 import { DesktopUpdater } from "./infrastructure/operations/desktop-updater.js";
 import { PRODUCT_NAME, type DesktopBootstrapNonce, type DesktopRuntimeInfo } from "../shared/product.js";
 import { resolveLocale, translate, type UiLocalePreference } from "../shared/i18n/index.js";
+import { ANTIGRAVITY_AUTHORIZATION_WINDOW, isAntigravityAuthorizationUrl } from "../shared/antigravity-authorization.js";
 import { CODEX_AUTHORIZATION_WINDOW, isCodexAuthorizationUrl } from "../shared/codex-authorization.js";
 import { isJoiReleaseUrl, JOI_RELEASE_WINDOW } from "../shared/desktop-update.js";
 
@@ -124,6 +125,10 @@ function createMainWindow() {
   window.webContents.setWindowOpenHandler(({ frameName, url }) => {
     if (frameName === JOI_RELEASE_WINDOW) {
       if (isJoiReleaseUrl(url)) void shell.openExternal(url).catch(() => undefined);
+      return { action: "deny" };
+    }
+    if (frameName === ANTIGRAVITY_AUTHORIZATION_WINDOW) {
+      if (isAntigravityAuthorizationUrl(url)) void shell.openExternal(url).catch(() => undefined);
       return { action: "deny" };
     }
     if (frameName !== CODEX_AUTHORIZATION_WINDOW) return { action: "allow" };

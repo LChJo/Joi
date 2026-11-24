@@ -16,6 +16,7 @@ import type { ThinkingEffort } from "../../../shared/joi.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 import { withModelSourceHttpTransport } from "./model-source-http-transport.js";
 import { createCodexSourceProvider, type CodexSourceProviderInput } from "./codex-source-provider.js";
+import { createAntigravitySourceProvider, type AntigravitySourceProviderInput } from "./antigravity-source-provider.js";
 
 /** A model's own documented geometry, as configured on the settings page. */
 export interface ModelLimitOverrides {
@@ -39,6 +40,7 @@ export function defaultThinkingLevel(
 ): ModelThinkingLevel {
   if (effort !== undefined) return effort;
   if (api === "openai-codex-responses") return "high";
+  if (api === "google-generative-ai" && baseUrl === "https://daily-cloudcode-pa.googleapis.com") return "low";
   return modelRequiresAlwaysOnThinking(baseUrl) ? "low" : "off";
 }
 
@@ -51,14 +53,14 @@ export function piSourceProviderInput(record: ModelSourceRecord): PiSourceProvid
     ...modelLimitOverrides(source.activeModelRevision),
     ...(source.activeModelRevision.thinkingEffort === undefined ? {} : { thinkingEffort: source.activeModelRevision.thinkingEffort }),
   };
-  if (source.activeSourceRevision.kind === "codex") {
-    return {
+  if (source.activeSourceRevision.kind === "codex" || source.activeSourceRevision.kind === "antigravity") {
+    const subscription = {
       ...overrides,
-      kind: "codex",
       credentialRef: source.activeSourceRevision.credentialRef,
       modelId: source.activeModelRevision.modelId,
       sourceId: source.sourceId,
     };
+    return source.activeSourceRevision.kind === "codex" ? { ...subscription, kind: "codex" } : { ...subscription, kind: "antigravity" };
   }
   return source.activeSourceRevision.kind === "generic-openai"
     ? {
@@ -101,7 +103,7 @@ interface GenericSourceProviderInput extends ModelLimitOverrides {
 }
 
 export type ApiKeySourceProviderInput = (DirectSourceProviderInput | GenericSourceProviderInput) & { anthropicAuthMode?: "bearer" };
-export type PiSourceProviderInput = ApiKeySourceProviderInput | CodexSourceProviderInput;
+export type PiSourceProviderInput = ApiKeySourceProviderInput | CodexSourceProviderInput | AntigravitySourceProviderInput;
 
 /** The tiers Kimi's coding-plan K3 endpoint is known to offer. `null` marks one joi believes it
  *  refuses, which for "off" also keeps pi-ai from sending a `thinking: disabled` block the
@@ -214,6 +216,7 @@ export function effectiveModelLimits(
 
 export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   if (input.kind === "codex") return createCodexSourceProvider(input);
+  if (input.kind === "antigravity") return createAntigravitySourceProvider(input);
   const providerId = `joi-source:${input.sourceId}`;
   const direct = input.kind === "generic-openai" ? undefined : getDirectModelSourcePreset(input.kind, input.accessMode, input.protocol);
   const baseUrl = input.kind === "generic-openai" ? input.baseUrl : direct?.endpoint;

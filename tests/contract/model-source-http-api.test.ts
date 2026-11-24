@@ -1,7 +1,7 @@
 /* Immediate API doubles implement asynchronous application contracts. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { UpdateModelSourceRequest } from "../../src/main/application/model-sources/model-source-service.js";
-import { CodexLoginService } from "../../src/main/application/model-sources/codex-login-service.js";
+import { SubscriptionLoginService } from "../../src/main/application/model-sources/codex-login-service.js";
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import type { ModelSourceDto } from "../../src/shared/joi.js";
@@ -14,22 +14,22 @@ function cookieFrom(response: Response): string {
 }
 
 describe("model source HTTP API", () => {
-  it("binds Codex sign-in to the desktop session and checks callback state", async () => {
+  it.each(["codex", "antigravity"] as const)("binds %s sign-in to the desktop session and checks callback state", async (provider) => {
     const fixture = await createRuntimeFixture();
     const connect = vi.fn().mockResolvedValue({ sourceId: "codex-source", kind: "codex", status: "READY" });
-    const login = new CodexLoginService({
-      ids: new TestIds(), sources: { connectCodex: connect },
+    const login = new SubscriptionLoginService({
+      provider, ids: new TestIds(), connect,
       authorization: {
         authorize: async (input) => {
-          input.showBrowser("https://auth.openai.com/oauth/authorize?state=expected");
+          input.showBrowser(provider === "codex" ? "https://auth.openai.com/oauth/authorize?state=expected" : "https://accounts.google.com/o/oauth2/v2/auth?state=expected");
           await input.waitForCallback(input.signal);
           return { access: "private-access", refresh: "private-refresh", expires: 100 };
         },
       },
     });
-    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, codexLogin: login }), loopbackPort: 0 });
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, [provider === "codex" ? "codexLogin" : "antigravityLogin"]: login }), loopbackPort: 0 });
     const base = listeners.loopback.url;
-    const path = `${base}/api/v1/model-sources/codex-login`;
+    const path = `${base}/api/v1/model-sources/${provider}-login`;
     const password = "disposable local Codex test";
     const desktopHeaders = async () => {
       const { nonce } = await fixture.auth.issueDesktopBootstrap();
@@ -63,7 +63,7 @@ describe("model source HTTP API", () => {
       expect((await fetch(attempt, { headers: otherDesktop })).status).toBe(404);
       expect((await fetch(attempt, { headers: { cookie: lanCookie } })).status).toBe(403);
       const submit = (state: string) => fetch(`${attempt}/callback`, {
-        method: "POST", headers: desktop, body: JSON.stringify({ callbackUrl: `http://localhost:1455/auth/callback?code=private-callback&state=${state}` }),
+        method: "POST", headers: desktop, body: JSON.stringify({ callbackUrl: `${provider === "codex" ? "http://localhost:1455/auth/callback" : "http://localhost:51121/oauth-callback"}?code=private-callback&state=${state}` }),
       });
       expect((await submit("mismatch")).status).toBe(400);
       expect(connect).not.toHaveBeenCalled();

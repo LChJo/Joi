@@ -1,16 +1,19 @@
 import { useEffect, useEffectEvent, useRef, useState, type SubmitEvent } from "react";
 import { CODEX_AUTHORIZATION_WINDOW, isCodexAuthorizationUrl } from "../shared/codex-authorization";
+import { ANTIGRAVITY_AUTHORIZATION_WINDOW, isAntigravityAuthorizationUrl } from "../shared/antigravity-authorization";
 import type { CodexLoginDto, CodexLoginMethod } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { t, useI18n } from "./i18n";
 
-export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: {
+export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected, provider = "codex" }: {
   api: DigitalLifeApi;
+  provider?: "codex" | "antigravity";
   sourceId?: string;
   onCancel: () => void;
   onConnected: () => Promise<void>;
 }) {
   useI18n();
+  const antigravity = provider === "antigravity";
   const [attempt, setAttempt] = useState<CodexLoginDto>();
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string>();
@@ -27,10 +30,10 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
     lifetime.current = controller;
     return () => {
       controller.abort();
-      if (activeAttempt.current !== undefined) void api.cancelCodexLogin(activeAttempt.current).catch(() => undefined);
+      if (activeAttempt.current !== undefined) void (antigravity ? api.cancelAntigravityLogin(activeAttempt.current) : api.cancelCodexLogin(activeAttempt.current)).catch(() => undefined);
       activeAttempt.current = undefined;
     };
-  }, [api]);
+  }, [api, antigravity]);
 
   useEffect(() => {
     if (attemptId === undefined || !waiting) return;
@@ -38,7 +41,7 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const next = await api.codexLoginStatus(attemptId, controller.signal);
+        const next = await (antigravity ? api.antigravityLoginStatus(attemptId, controller.signal) : api.codexLoginStatus(attemptId, controller.signal));
         if (controller.signal.aborted) return;
         setStatusError(false);
         setAttempt(next);
@@ -64,7 +67,7 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
     };
     timer = setTimeout(() => void poll(), 1000);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [api, attemptId, waiting]);
+  }, [api, antigravity, attemptId, waiting]);
 
   const start = async (method: CodexLoginMethod) => {
     const signal = lifetime.current?.signal;
@@ -74,15 +77,15 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
     setError(undefined);
     setStatusError(false);
     try {
-      const result = await api.startCodexLogin(method, sourceId);
+      const result = await (antigravity ? api.startAntigravityLogin(sourceId) : api.startCodexLogin(method, sourceId));
       if (signal.aborted) {
-        void api.cancelCodexLogin(result.attemptId).catch(() => undefined);
+        void (antigravity ? api.cancelAntigravityLogin(result.attemptId) : api.cancelCodexLogin(result.attemptId)).catch(() => undefined);
         return;
       }
       activeAttempt.current = result.attemptId;
       setAttempt(result);
     } catch (error) {
-      if (!signal.aborted) setError(t(error instanceof ApiError && error.code === "codex_login_busy" ? "home.codexLoginBusy" : "home.codexLoginFailed"));
+      if (!signal.aborted) setError(t(error instanceof ApiError && error.code === `${provider}_login_busy` ? (antigravity ? "home.antigravityLoginBusy" : "home.codexLoginBusy") : (antigravity ? "home.antigravityLoginFailed" : "home.codexLoginFailed")));
     } finally {
       submitting.current = false;
       if (!signal.aborted) setWorking(false);
@@ -99,7 +102,7 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
     setWorking(true);
     setError(undefined);
     try {
-      await api.completeCodexCallback(attemptId, callbackUrl.trim());
+      await (antigravity ? api.completeAntigravityCallback(attemptId, callbackUrl.trim()) : api.completeCodexCallback(attemptId, callbackUrl.trim()));
       form.reset();
     } catch {
       setError(t("home.codexCallbackInvalid"));
@@ -110,29 +113,29 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected }: 
   };
 
   const authorizationUrl = (attempt?.status === "browser" || attempt?.status === "device_code")
-    && isCodexAuthorizationUrl(attempt.url, attempt.status) ? attempt.url : undefined;
-  return <section className="model-source-form" aria-label={t("home.codexSubscription")}>
-    <h2>{t("home.codexSubscription")}</h2>
+    && (antigravity ? isAntigravityAuthorizationUrl(attempt.url) : isCodexAuthorizationUrl(attempt.url, attempt.status)) ? attempt.url : undefined;
+  return <section className="model-source-form" aria-label={t(antigravity ? "home.antigravitySubscription" : "home.codexSubscription")}>
+    <h2>{t(antigravity ? "home.antigravitySubscription" : "home.codexSubscription")}</h2>
     {!waiting && attempt?.status !== "completed" ? <>
-      <p>{t("home.codexSubscriptionHint")}</p>
+      <p>{t(antigravity ? "home.antigravitySubscriptionHint" : "home.codexSubscriptionHint")}</p>
       <div className="row-actions">
-        <button className="button primary" disabled={working} onClick={() => void start("browser")} type="button">{t("home.codexBrowserSignIn")}</button>
-        <button className="button quiet" disabled={working} onClick={() => void start("device_code")} type="button">{t("home.codexDeviceSignIn")}</button>
+        <button className="button primary" disabled={working} onClick={() => void start("browser")} type="button">{t(antigravity ? "home.antigravityBrowserSignIn" : "home.codexBrowserSignIn")}</button>
+        {antigravity ? null : <button className="button quiet" disabled={working} onClick={() => void start("device_code")} type="button">{t("home.codexDeviceSignIn")}</button>}
       </div>
     </> : null}
     {attempt?.status === "device_code" ? <p>{t("home.codexEnterDeviceCode")} <code>{attempt.userCode}</code></p> : null}
     {authorizationUrl === undefined ? null : <div className="row-actions">
-      <a className="button primary" href={authorizationUrl} rel="noopener noreferrer" target={CODEX_AUTHORIZATION_WINDOW}>{t("home.codexOpenAuthorization")}</a>
+      <a className="button primary" href={authorizationUrl} rel="noopener noreferrer" target={antigravity ? ANTIGRAVITY_AUTHORIZATION_WINDOW : CODEX_AUTHORIZATION_WINDOW}>{t("home.codexOpenAuthorization")}</a>
     </div>}
     {attempt?.status === "browser" && attempt.acceptsCallback ? <form onSubmit={(event) => void submitCallback(event)}>
       <label>{t("home.codexCallbackUrl")}<input autoComplete="off" name="callbackUrl" required type="url" /></label>
       <button className="button quiet" disabled={working} type="submit">{t("home.codexSubmitCallback")}</button>
     </form> : null}
-    {waiting ? <p role="status">{t(attempt.status === "validating" ? "home.checkingTheConnectionThisMayIncurASmallModel" : "home.codexWaitingForAuthorization")}</p> : null}
-    {attempt?.status === "completed" ? <p role="status">{t(attempt.source.status === "READY" ? "home.connectedJoiIsReadyToThink" : "home.codexSavedNeedsValidation")}</p> : null}
-    {attempt?.status === "failed" || attempt?.status === "expired" ? <p role="alert">{t(attempt.status === "failed" ? "home.codexLoginFailed" : "home.codexLoginExpired")}</p> : null}
+    {waiting ? <p role="status">{t(attempt.status === "validating" ? "home.checkingTheConnectionThisMayIncurASmallModel" : (antigravity ? "home.antigravityWaitingForAuthorization" : "home.codexWaitingForAuthorization"))}</p> : null}
+    {attempt?.status === "completed" ? <p role="status">{t(attempt.source.status === "READY" ? "home.connectedJoiIsReadyToThink" : (antigravity ? "home.antigravitySavedNeedsValidation" : "home.codexSavedNeedsValidation"))}</p> : null}
+    {attempt?.status === "failed" || attempt?.status === "expired" ? <p role="alert">{t(attempt.status === "failed" ? (antigravity ? "home.antigravityLoginFailed" : "home.codexLoginFailed") : (antigravity ? "home.antigravityLoginExpired" : "home.codexLoginExpired"))}</p> : null}
     {error === undefined ? null : <p role="alert">{error}</p>}
-    {statusError ? <p role="alert">{t("home.codexStatusFailed")}</p> : null}
+    {statusError ? <p role="alert">{t(antigravity ? "home.antigravityStatusFailed" : "home.codexStatusFailed")}</p> : null}
     {attempt?.status === "validating" ? null : <div className="row-actions"><button className="button ghost" onClick={onCancel} type="button">{t(attempt?.status === "completed" ? "home.collapse" : "common.cancel")}</button></div>}
   </section>;
 }

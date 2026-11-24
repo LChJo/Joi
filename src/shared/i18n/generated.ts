@@ -713,6 +713,20 @@ export interface MessageParameters {
   "exportState.pair": undefined;
   "exportState.resume": undefined;
   "exportState.none": undefined;
+  "home.antigravitySubscription": undefined;
+  "home.antigravitySubscriptionHint": undefined;
+  "home.antigravityBrowserSignIn": undefined;
+  "home.antigravityWaitingForAuthorization": undefined;
+  "home.antigravitySavedNeedsValidation": undefined;
+  "home.antigravityLoginFailed": undefined;
+  "home.antigravityLoginExpired": undefined;
+  "home.antigravityLoginBusy": undefined;
+  "home.antigravityStatusFailed": undefined;
+  "home.antigravitySignInAgain": undefined;
+  "home.antigravityRegionForbidden": undefined;
+  "home.antigravityAccessForbidden": undefined;
+  "home.antigravityModelUnavailable": undefined;
+  "home.antigravityReconnect": undefined;
   "home.codexSubscription": undefined;
   "home.codexAccountLabel": { "p0": string };
   "home.codexPlanLabel": { "p0": string };
@@ -2618,6 +2632,20 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "Initial pairing (pair)",
     "exportState.resume": "Resume connection (resume)",
     "exportState.none": "None",
+    "home.antigravitySubscription": "Antigravity subscription",
+    "home.antigravitySubscriptionHint": "Sign in with a Google account that has Antigravity access. Requests use that account's model quota.",
+    "home.antigravityBrowserSignIn": "Continue with Google",
+    "home.antigravityWaitingForAuthorization": "Waiting for Google authorization…",
+    "home.antigravitySavedNeedsValidation": "Antigravity subscription saved. Check its connection status in Model Connections.",
+    "home.antigravityLoginFailed": "Antigravity authorization did not finish. Try again.",
+    "home.antigravityLoginExpired": "Antigravity authorization timed out. Sign in again.",
+    "home.antigravityLoginBusy": "An Antigravity sign-in is in progress. Finish or cancel it before trying again.",
+    "home.antigravityStatusFailed": "Could not check the Antigravity sign-in status.",
+    "home.antigravitySignInAgain": "The Antigravity authorization has expired or been revoked. Sign in again.",
+    "home.antigravityRegionForbidden": "Google reported that the current account or location does not meet Antigravity’s region requirements.",
+    "home.antigravityAccessForbidden": "Google rejected the Antigravity request (HTTP 403). The reason is unknown.",
+    "home.antigravityModelUnavailable": "This model ID is outside the Antigravity model catalog.",
+    "home.antigravityReconnect": "Sign in to Antigravity again",
     "home.codexSubscription": "Codex subscription",
     "home.codexAccountLabel": "Account {p0}",
     "home.codexPlanLabel": "{p0} plan",
@@ -4521,6 +4549,20 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "首次配对 pair",
     "exportState.resume": "恢复连接 resume",
     "exportState.none": "无",
+    "home.antigravitySubscription": "反重力订阅",
+    "home.antigravitySubscriptionHint": "使用已开通反重力的 Google 账号授权，请求计入该账号的模型额度。",
+    "home.antigravityBrowserSignIn": "使用 Google 登录",
+    "home.antigravityWaitingForAuthorization": "等待 Google 授权…",
+    "home.antigravitySavedNeedsValidation": "已保存反重力订阅。请在模型网络中检查连接状态。",
+    "home.antigravityLoginFailed": "反重力登录失败，请重试。",
+    "home.antigravityLoginExpired": "反重力授权已超时，请重新登录。",
+    "home.antigravityLoginBusy": "已有反重力登录正在进行，请先完成或取消。",
+    "home.antigravityStatusFailed": "暂时无法获取反重力授权状态。",
+    "home.antigravitySignInAgain": "反重力授权已过期或撤销，请重新登录。",
+    "home.antigravityRegionForbidden": "Google 判定当前账号或位置不符合反重力的地区资格。",
+    "home.antigravityAccessForbidden": "Google 拒绝了反重力请求（HTTP 403）。具体原因未知。",
+    "home.antigravityModelUnavailable": "此 Model ID 不在反重力模型目录中。",
+    "home.antigravityReconnect": "重新登录反重力",
     "home.codexSubscription": "Codex 订阅",
     "home.codexAccountLabel": "账号 {p0}",
     "home.codexPlanLabel": "套餐 {p0}",
@@ -7033,6 +7075,34 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "恢复连接 resume": "exportState.resume",
   "None": "exportState.none",
   "无": "exportState.none",
+  "Antigravity subscription": "home.antigravitySubscription",
+  "反重力订阅": "home.antigravitySubscription",
+  "Sign in with a Google account that has Antigravity access. Requests use that account's model quota.": "home.antigravitySubscriptionHint",
+  "使用已开通反重力的 Google 账号授权，请求计入该账号的模型额度。": "home.antigravitySubscriptionHint",
+  "Continue with Google": "home.antigravityBrowserSignIn",
+  "使用 Google 登录": "home.antigravityBrowserSignIn",
+  "Waiting for Google authorization…": "home.antigravityWaitingForAuthorization",
+  "等待 Google 授权…": "home.antigravityWaitingForAuthorization",
+  "Antigravity subscription saved. Check its connection status in Model Connections.": "home.antigravitySavedNeedsValidation",
+  "已保存反重力订阅。请在模型网络中检查连接状态。": "home.antigravitySavedNeedsValidation",
+  "Antigravity authorization did not finish. Try again.": "home.antigravityLoginFailed",
+  "反重力登录失败，请重试。": "home.antigravityLoginFailed",
+  "Antigravity authorization timed out. Sign in again.": "home.antigravityLoginExpired",
+  "反重力授权已超时，请重新登录。": "home.antigravityLoginExpired",
+  "An Antigravity sign-in is in progress. Finish or cancel it before trying again.": "home.antigravityLoginBusy",
+  "已有反重力登录正在进行，请先完成或取消。": "home.antigravityLoginBusy",
+  "Could not check the Antigravity sign-in status.": "home.antigravityStatusFailed",
+  "暂时无法获取反重力授权状态。": "home.antigravityStatusFailed",
+  "The Antigravity authorization has expired or been revoked. Sign in again.": "home.antigravitySignInAgain",
+  "反重力授权已过期或撤销，请重新登录。": "home.antigravitySignInAgain",
+  "Google reported that the current account or location does not meet Antigravity’s region requirements.": "home.antigravityRegionForbidden",
+  "Google 判定当前账号或位置不符合反重力的地区资格。": "home.antigravityRegionForbidden",
+  "Google rejected the Antigravity request (HTTP 403). The reason is unknown.": "home.antigravityAccessForbidden",
+  "Google 拒绝了反重力请求（HTTP 403）。具体原因未知。": "home.antigravityAccessForbidden",
+  "This model ID is outside the Antigravity model catalog.": "home.antigravityModelUnavailable",
+  "此 Model ID 不在反重力模型目录中。": "home.antigravityModelUnavailable",
+  "Sign in to Antigravity again": "home.antigravityReconnect",
+  "重新登录反重力": "home.antigravityReconnect",
   "Codex subscription": "home.codexSubscription",
   "Codex 订阅": "home.codexSubscription",
   "Authorize a ChatGPT account with Codex access. Requests count toward your ChatGPT plan limits.": "home.codexSubscriptionHint",

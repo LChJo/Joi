@@ -5,7 +5,7 @@ export const MODEL_SOURCE_STATUSES = ["DRAFT", "VALIDATING", "READY", "DEGRADED"
 export type ModelSourceStatus = (typeof MODEL_SOURCE_STATUSES)[number];
 export type ModelSourceKind = ModelSourceKindDto;
 export type ModelSourceAccessMode = "api" | "coding-plan" | "token-plan" | "custom";
-export type ModelSourceProtocol = "openai" | "anthropic";
+export type ModelSourceProtocol = "openai" | "anthropic" | "google";
 export type ModelCapability = "release-tested" | "custom-unverified-tools";
 export type SourceFailureKind =
   | "timeout" | "connect" | "rate_limited" | "server_error"

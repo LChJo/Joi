@@ -12,13 +12,14 @@ export const MODEL_SOURCE_KINDS = [
   "minimax",
   "deepseek",
   "codex",
+  "antigravity",
   "generic-openai",
 ] as const;
 
 export type ModelSourceKindDto = (typeof MODEL_SOURCE_KINDS)[number];
 export const MODEL_SOURCE_ACCESS_MODES = ["api", "coding-plan", "token-plan", "custom"] as const;
 export type ModelSourceAccessModeDto = (typeof MODEL_SOURCE_ACCESS_MODES)[number];
-export const MODEL_SOURCE_PROTOCOLS = ["openai", "anthropic"] as const;
+export const MODEL_SOURCE_PROTOCOLS = ["openai", "anthropic", "google"] as const;
 export type ModelSourceProtocolDto = (typeof MODEL_SOURCE_PROTOCOLS)[number];
 /** Ordered least-to-most, mirroring pi-ai's own thinking ladder with `minimal` left out. The
  *  order is also the order the settings page renders, so the array must stay sorted. */

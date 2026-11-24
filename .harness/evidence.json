@@ -4,15 +4,15 @@
     {
       "id": "8cdafcd8-5645-4e29-a4e6-84a24465e383",
       "kind": "document",
-      "claim": "Product scope: persistent global joi, workbenches, local and A2A partners; cross-platform clients. The release guide requires stable version upgrades, generated notes and immutable published versions.",
+      "claim": "Product scope: persistent global joi, workbenches, local and A2A partners; cross-platform clients. The release guide requires stable version upgrades, generated notes and immutable published versions. Documents the desktop OAuth client environment variables required by Antigravity.",
       "location": {
         "path": "README.md"
       },
-      "hash": "fc2d1f0026ad00c260ddf528f21848a69bd1a37c75954ea58ca45eb2a3275024",
-      "observedAt": "2026-11-16T06:38:13.966Z",
+      "hash": "590f0396485c38eda2d83b7ddd39984914dc1b2486ca992b1ab973f2acf2c667",
+      "observedAt": "2026-11-24T03:37:40.268Z",
       "range": {
         "startLine": 1,
-        "endLine": 490
+        "endLine": 492
       }
     },
     {
@@ -36,11 +36,11 @@
       "location": {
         "path": "src/main/index.ts"
       },
-      "hash": "d7895748d005aa362a2c8c113fc2d5adbdee260497c063ec3a13d6dff2a75bef",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "574d81ec28be9faa2a6546e819e2f1aa7a7e7f66340fc7162ccb19c4fb1cf412",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 321
+        "endLine": 326
       }
     },
     {
@@ -64,11 +64,11 @@
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "0f01ae019be1400dde1917bc5e4f8fa4029d34c0f1262411b5e1bd86b6bc42c4",
-      "observedAt": "2026-11-23T05:39:35.585Z",
+      "hash": "08ad622ece2036165b51c2766a9f46f653ef1a5c932196a4f2ecf9b0aa7e4e21",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 631
+        "endLine": 643
       }
     },
     {
@@ -176,11 +176,11 @@
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "c45188ec5a990ccf98a55234b7c99eeab406c92624a0579db18e2ab3ba99f843",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "d0f9dbd9daf695760824afa30d16a6adfe08bfce413c9157b218587bfe4edffb",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 800
+        "endLine": 801
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "dc7beba90d03481317ae7d2f389252ee29d2d7a6742bb2b7ebf3a5fe02209baa",
-      "observedAt": "2026-11-22T11:57:49.132Z",
+      "hash": "234adf8eabf67653b12aed4e4588c1444446671d2c71860a7b69f6c558afac9b",
+      "observedAt": "2026-11-24T03:37:40.268Z",
       "range": {
         "startLine": 1,
-        "endLine": 781
+        "endLine": 791
       }
     },
     {
@@ -904,11 +904,11 @@
       "location": {
         "path": "src/main/composition/runtime-host.ts"
       },
-      "hash": "e19479e110cb97436e59964f9236843cff9ca81e8ee1cbb9adbcb946dc8aab94",
-      "observedAt": "2026-11-23T05:39:35.585Z",
+      "hash": "ca1f37f6d00e351fba29916eb81aadd035fb5cf7789020fe191820d2fd8ec1a9",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 391
+        "endLine": 392
       }
     },
     {
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "fa4ce4fe220556c3195dbbd7b0563f08e6093c9ca1e94975f9040c5c35f6a70c",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "e236833c54e6a7a217a99b9b82ad81a2d384695dd3a18243e900a87465893a0f",
+      "observedAt": "2026-11-23T12:39:01.249Z",
       "range": {
         "startLine": 1,
-        "endLine": 1597
+        "endLine": 1598
       }
     },
     {
@@ -1436,11 +1436,11 @@
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "9610e141e1a01b087bac0ec2fc5e8520146e37ef2e7b4c92938c2643cefa227b",
-      "observedAt": "2026-11-21T11:14:01.531Z",
+      "hash": "be102bd813a266031040a6e5ea87eb99f47aa79b71fcafd8bd8dbd2e72b509c8",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 223
+        "endLine": 224
       }
     },
     {
@@ -1492,11 +1492,11 @@
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "88e6099a962c25e6a6c1e4dae8304d1b4a744fca46bdd7d2e47b6fe5e0be942e",
-      "observedAt": "2026-11-23T05:39:35.585Z",
+      "hash": "9e900c7a7b7aa0bc74b5d87b50e454e5cce169265b8f023d87dc85aa64d3a7b8",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 176
+        "endLine": 180
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu.",
-      "hash": "aa8eb63aa23b8cfe27e421a9fc8f6de9d59d55f5aa6d586fd8dcf1d99fab78ed",
-      "observedAt": "2026-11-21T09:43:40.186Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss.",
+      "hash": "d41bcdda4fc4d2e1b0ee5727aa982323bd78af64c6d885f042f10e8914d60a62",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 1969
+        "endLine": 1985
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded.",
-      "hash": "93db70cab76f63bd89d4af1419c768e7560454f4796117847998c69622d7a2c1",
-      "observedAt": "2026-11-21T16:20:10.294Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft.",
+      "hash": "e3f0b6b32132857737b87868500e77b35bd6837000ad0a36ca19671baaac95a3",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 2529
+        "endLine": 2551
       }
     },
     {
@@ -1645,12 +1645,12 @@
       "location": {
         "path": "tests/e2e/model-source-advanced-limits.spec.ts"
       },
-      "claim": "Disposable Electron regression verifies model defaults, token limit tiers, saved nonstandard sizes and reopening a 3M/512K revision with a numeric Pi compaction percentage. Verifies automatic validation, saved settings after validation fails, and placement and dismissal of the overflow menu at desktop and narrow widths.",
-      "hash": "625780b190ec380a862c1fd91ad4bd47f6c8ca9c6c8d3d882c1769d6d833dfdb",
-      "observedAt": "2026-11-21T09:43:40.189Z",
+      "claim": "Disposable Electron regression verifies model defaults, token limit tiers, saved nonstandard sizes and reopening a 3M/512K revision with a numeric Pi compaction percentage. Verifies automatic validation, saved settings after validation fails, and placement and dismissal of the overflow menu at desktop and narrow widths. The Add network picker uses compact button bounds and puts General Platform last.",
+      "hash": "b247d0f25755c5943e819f7f60be11b79cef97699d01eff0ccefde01741e84ff",
+      "observedAt": "2026-11-23T12:39:01.249Z",
       "range": {
         "startLine": 1,
-        "endLine": 134
+        "endLine": 140
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "730dcf00738616420c91c3ca443dea0d7b4aa08251c6487fae940548fccc66e5",
-      "observedAt": "2026-11-22T06:38:10.940Z",
+      "hash": "f5c27a93e48b5aeecaaa448cd19df4521fcc946c7af662ad70e5536de8fa52c8",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 10312
+        "endLine": 10416
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "065251976e5455fd7804fa4a5a56b67b0b677e9a53fcdf5038c26e77acef104e",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "6860481005d81395f603d362143bdf937bc04a26758617ce0e419200e781b653",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 7273
+        "endLine": 7353
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "643f413a1bba0d6c9cc14669f4f658bafda5041c02cace97ea1d36c3d738955d",
-      "observedAt": "2026-11-21T11:26:27.523Z",
+      "hash": "ccad912b7a1ff1ee17cab80e15ba9d9042603621b48006f64a66331fde50209a",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 9181
+        "endLine": 9281
       }
     },
     {
@@ -2580,15 +2580,15 @@
     {
       "id": "ce15aadc-3f49-421e-abf4-9c1465c28048",
       "kind": "source-code",
-      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts. The Codex probe uses the same reasoning effort as runtime model resolution.",
+      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts. The Codex probe uses the same reasoning effort as runtime model resolution. Antigravity validation retains the recognized Google location rejection as region_forbidden.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-model-source-validator.ts"
       },
-      "hash": "33dce271430005ee5826f7964d4d72e266d5501adfe97f1df2c316b81c73d3bb",
-      "observedAt": "2026-11-20T10:09:20.831Z",
+      "hash": "1feb1bba1ba0ccbff430cc696c2d0f9e5239311d6e1906b56c87e6cbd4ee1eea",
+      "observedAt": "2026-11-23T12:50:07.253Z",
       "range": {
         "startLine": 1,
-        "endLine": 191
+        "endLine": 195
       }
     },
     {
@@ -2668,8 +2668,8 @@
       "location": {
         "path": "src/main/domain/model-sources/model-source.ts"
       },
-      "hash": "0b3854ae54032cd3ee3985497d2364feadf23f55686af0a9ea748e9773b3ea4e",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "cbf78722d2cef7a6c8cf69a6b465fcd97488bcb3de04653a13767d677bb14a8b",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
         "endLine": 237
@@ -3284,11 +3284,11 @@
         "path": "resources/migrations/README.md"
       },
       "claim": "Documents indexed Workbench result discovery and preservation of immutable published results in migration 114, alongside the existing recovery, historical memory and map migrations.",
-      "hash": "ba790940fa8f8ef4dd9aaf5ac9bde4c53d0f0b14a0e02f6a75bcf16dc9678810",
-      "observedAt": "2026-11-23T11:53:12.042Z",
+      "hash": "0faa02eab73e431742007d412b3c2eb38a0c76f3e64ef3bf2b507e6300c09666",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 118
+        "endLine": 120
       }
     },
     {
@@ -3676,8 +3676,8 @@
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
       "claim": "Disposable SQLite migrations recover published results that predate historical memory without replaying work, and preserve preference ordering, queued writer order, draft Ask recovery, Routine sequencing and goal map history.",
-      "hash": "70899aef681da364620597e98db8bf3e1d88c6056a5c76c493d7028d1027025d",
-      "observedAt": "2026-11-23T11:53:12.042Z",
+      "hash": "32aff004f43f4840370243ba7d81b6ea014c0227e3387d0f983ed312e57e826c",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
         "endLine": 1122
@@ -4326,53 +4326,53 @@
       "location": {
         "path": "src/renderer/CodexSubscriptionForm.tsx"
       },
-      "hash": "e06900a394fe4c91c2eaeec11312407e15cb34fbac4d3a47745ff86a76895910",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "3538d9d7904aac8a140f89dad9850f0a4996ec6d239dbd56dcd5f6fb002f68e8",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 138
+        "endLine": 141
       }
     },
     {
       "id": "da6352e2-2041-4adc-85b0-f72b90cd445c",
       "kind": "source-code",
-      "claim": "Desktop sessions and CSRF protect Codex writes. Model settings opt into masked account details.",
+      "claim": "Desktop sessions, attempt ownership and CSRF protect Codex and Antigravity login routes. Model settings opt into masked Codex account details.",
       "location": {
         "path": "src/main/interfaces/http/routes/model-source-routes.ts"
       },
-      "hash": "de7c98475a3aed66a12d30a977b26ceefb8cd8199f70960537a958faea6fd145",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "e634168b7cb737538946513937b3e4ae88e776a8a24c6ce2f1194cd2257bcad2",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 183
+        "endLine": 180
       }
     },
     {
       "id": "ad171ae3-4f55-4fa5-bcc9-e0d1aa87cae2",
       "kind": "source-code",
-      "claim": "Wires Codex OAuth and resolution through model-source services.",
+      "claim": "Wires independent Codex and Antigravity OAuth services into the shared encrypted source storage and Pi resolution stack.",
       "location": {
         "path": "src/main/composition/wire-model-sources.ts"
       },
-      "hash": "2d0115a31cb669c7b27f022ee969b20497d76bd5aaadd382aa4bad51c83e79e7",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "5fcdb5dff5eb4b24045df9420435da354d3e360214e9616a08437a708f4a120e",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 59
+        "endLine": 62
       }
     },
     {
       "id": "4e7a7a43-5d98-4c25-8b99-803c3dcfdec5",
       "kind": "source-code",
-      "claim": "Owns a bounded session-scoped sign-in, checks fallback callback state and delegates authenticated source writes.",
+      "claim": "Shared bounded subscription authorization owns desktop attempts and callback state for Codex and Antigravity; Codex retains its compatibility constructor.",
       "location": {
         "path": "src/main/application/model-sources/codex-login-service.ts"
       },
-      "hash": "05cdb9683d299411eeeb2917595d1380996f70680d7db1406f65e4a83e2f3a64",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "6e435d4b5064ce7e33a9dbaa2b56818394bf7e2345c8886aa8ebc92d99633b18",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 153
+        "endLine": 174
       }
     },
     {
@@ -4382,11 +4382,11 @@
       "location": {
         "path": "src/main/application/model-sources/model-source-service.ts"
       },
-      "hash": "58455130c2e2af261cab0e8f0a975461566ed1e938468c1396f96b606efa8f9d",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "84037c57cafee798fd1a941277bd714d5ea81d7aca7e720fe48feb744be7c8d9",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 427
+        "endLine": 435
       }
     },
     {
@@ -4466,25 +4466,25 @@
       "location": {
         "path": "tests/e2e/codex-subscription.spec.ts"
       },
-      "hash": "20a24c0d5d534295666774a51be5a8b47dd4a4469bba9c9f2170191fe8d17ba9",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "1983a47e133017b0b96963c196a0d7998ce22b7273f22c6e2d856b51857e9fc2",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 45
+        "endLine": 48
       }
     },
     {
       "id": "c299d377-598f-4bec-b982-b4b6d2d0ea29",
       "kind": "source-code",
-      "claim": "Codex defaults to high effort while explicit effort settings take precedence and other transports use their existing provider defaults.",
+      "claim": "Subscription sources select their dedicated transport: Codex defaults to high effort and Antigravity to low; explicit settings take precedence.",
       "location": {
         "path": "src/main/infrastructure/pi/source-provider-factory.ts"
       },
-      "hash": "d9839253307c6c5534b5303492ecfa024b018c455d974d97ed6dbbe783c4e5e2",
-      "observedAt": "2026-11-20T10:09:35.240Z",
+      "hash": "30e1fb783601228d2d1df6a64a2ff1608684a2107440772e868de3a67fa65377",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
       "range": {
         "startLine": 1,
-        "endLine": 309
+        "endLine": 312
       }
     },
     {
@@ -4711,6 +4711,90 @@
       "range": {
         "startLine": 1,
         "endLine": 186
+      }
+    },
+    {
+      "id": "0b0faa14-a888-49cd-94ed-ae08545e558c",
+      "kind": "source-code",
+      "claim": "Google PKCE and loopback/manual callback authorization persist only encrypted source credentials and an opaque project identifier; source-locked refresh preserves that project. If the fixed port is occupied or reserved, the same PKCE flow accepts its manual callback. Desktop OAuth client settings come from the main runtime environment.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-antigravity-authorization.ts"
+      },
+      "hash": "90da987fdd2a95fe4efc7371f535eec186ce357fba36dbab6d542c9493b28ff1",
+      "observedAt": "2026-11-24T03:37:40.268Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 125
+      }
+    },
+    {
+      "id": "5afb3c85-7453-41ff-a1c3-6645ed566abc",
+      "kind": "source-code",
+      "claim": "The fixed eight-model catalog adapts Pi Google streams to Cloud Code Assist, retains tool signatures and caps requests by effective output limits. Structured Google denial metadata becomes a safe error string before entering Pi.",
+      "location": {
+        "path": "src/main/infrastructure/pi/antigravity-source-provider.ts"
+      },
+      "hash": "9b75a53f237c6121c97332fea1a43d8e32128e11361616a0e46a7fdf774b6a8e",
+      "observedAt": "2026-11-23T12:50:07.253Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 166
+      }
+    },
+    {
+      "id": "d85da173-6118-4dd3-9b4b-b22ad68dc5e3",
+      "kind": "source-code",
+      "claim": "Only pre-stream transport and server failures switch between two fixed Google endpoints while preserving the serialized request identity. A bounded error parser recognizes explicit Google location denial and keeps generic HTTP 403 separate.",
+      "location": {
+        "path": "src/main/infrastructure/pi/antigravity-http.ts"
+      },
+      "hash": "3ed79b19ee719207deadaa057d18b9a393e388a7a3ec7de1866f732ae509fba9",
+      "observedAt": "2026-11-23T12:50:07.253Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 57
+      }
+    },
+    {
+      "id": "86ad0405-8ca3-4946-ae3d-a8a6352dd561",
+      "kind": "source-code",
+      "claim": "Adds Antigravity and its Google protocol with immutable revision data preserved and fixed subscription-only constraints.",
+      "location": {
+        "path": "resources/migrations/115_antigravity_subscription_model_source.sql"
+      },
+      "hash": "fbff8ece7004ae2fc3127a0487d33f4ae6e338c8431f77fff9bf5469e443247f",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 29
+      }
+    },
+    {
+      "id": "2c7867c1-46eb-43a3-ba7b-c05058d101d6",
+      "kind": "source-code",
+      "claim": "The subscription form selects the correct provider API, labels and authorization allowlist, polls owned attempts and cancels on unmount.",
+      "location": {
+        "path": "src/renderer/CodexSubscriptionForm.tsx"
+      },
+      "hash": "3538d9d7904aac8a140f89dad9850f0a4996ec6d239dbd56dcd5f6fb002f68e8",
+      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 141
+      }
+    },
+    {
+      "id": "8698cec8-aea7-4e4b-8586-5bfedafeb555",
+      "kind": "source-code",
+      "claim": "Synthetic OAuth, encrypted SQLite, automatic refresh, tool continuations and loopback callback cancellation exercise the production Pi path without personal accounts. Validation exercises rejected credentials, explicit location responses, generic 403, oversized error suppression and model catalog rejection. A reserved-port fixture covers manual authorization and an ephemeral port covers the loopback lifecycle. Configuration is checked before opening the listener, and synthetic values cover sign-in and refresh.",
+      "location": {
+        "path": "tests/integration/antigravity-subscription.test.ts"
+      },
+      "hash": "f8b2c7f7b88f5d7cbbd62db359cfa03efdcb165bb3fb57fcf1886497fee1b7ab",
+      "observedAt": "2026-11-24T03:37:40.268Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 221
       }
     }
   ]

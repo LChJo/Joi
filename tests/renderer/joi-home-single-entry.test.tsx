@@ -452,16 +452,38 @@ function workbenchDto(workbenchId: string, name: string): WorkbenchDto {
 }
 
 describe("joi home single entry", () => {
-  it("shows the exact first-run copy and exactly seven direct connection choices", async () => {
-    const api = new DigitalLifeApi("");
+  it.each([false, true])("shows the first-run connection choices with the generic platform last (desktop: %s)", async (desktop) => {
+    const api = new DigitalLifeApi("", desktop);
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
     render(<JoiHome api={api} />);
     expect(await screen.findByRole("heading", { name: "joi需要链接到大模型网络" })).toBeInTheDocument();
     const choices = screen.getAllByRole("button", { name: /连接/u });
-    expect(choices).toHaveLength(7);
-    expect(choices.map((choice) => choice.textContent)).toEqual(expect.arrayContaining(["连接 Kimi", "连接 GLM", "连接 Qwen", "连接 Doubao", "连接 MiniMax", "连接 DeepSeek", "连接 通用平台"]));
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      "连接 Kimi", "连接 GLM", "连接 Qwen", "连接 Doubao", "连接 MiniMax", "连接 DeepSeek",
+      ...(desktop ? ["连接 Codex 订阅", "连接 反重力订阅"] : []),
+      "连接 通用平台",
+    ]);
     expect(screen.queryByLabelText("给 joi 输入")).not.toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/OpenRouter|SiliconFlow|转发平台|聚合平台/iu);
+  });
+
+  it.each([
+    ["region_forbidden", "Google 判定当前账号或位置不符合反重力的地区资格。"],
+    ["http_403", "Google 拒绝了反重力请求（HTTP 403）。具体原因未知。"],
+  ])("displays the Antigravity validation reason %s and rejects a model outside the catalog", async (reasonCode, message) => {
+    const api = new DigitalLifeApi("", true);
+    const source: ModelSourceDto = { ...readySource, kind: "antigravity", protocol: "google", displayName: "Antigravity", status: "NEEDS_AUTH", reasonCode };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [source] });
+    vi.spyOn(api, "updateModelSource").mockRejectedValue(new ApiError("antigravity_model_unavailable", "Choose an Antigravity catalog model.", 400));
+    const validate = vi.spyOn(api, "validateModelSource");
+    render(<ModelSourceManager api={api} />);
+
+    expect(await screen.findByText(`⚠ ${message}`)).toBeVisible();
+    await editModelSource("Antigravity");
+    fireEvent.change(screen.getByLabelText("编辑 Model ID"), { target: { value: "gemini-4-neon" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并验证" }));
+    expect(await screen.findByText("此 Model ID 不在反重力模型目录中。")).toBeVisible();
+    expect(validate).not.toHaveBeenCalled();
   });
 
   it("uses one composer when a source is ready and keeps consecutive inputs accepted", async () => {

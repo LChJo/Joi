@@ -3,6 +3,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
 import { defaultModelSourceProtocol, getDirectModelSourcePreset } from "./provider-presets.js";
 import { resolveCodexModelId } from "./codex-source-provider.js";
+import { resolveAntigravityModelId } from "./antigravity-source-provider.js";
 
 function normalizeDirectModelId(kind: ModelSourceKind, accessMode: Exclude<ModelSourceAccessMode, "custom">, modelId: string | undefined): string | undefined {
   if (kind !== "kimi" || accessMode !== "coding-plan") return modelId;
@@ -19,6 +20,16 @@ export class PiModelSourceCatalog implements ModelSourceCatalog {
     requestedProtocol?: ModelSourceProtocol,
   ) {
     const requested = requestedModelId?.trim();
+    if (kind === "antigravity") {
+      if (requestedAccessMode !== undefined && requestedAccessMode !== "coding-plan") {
+        throw new DomainError("model_source_access_mode_invalid", "Antigravity uses subscription access.");
+      }
+      if (requestedProtocol !== undefined && requestedProtocol !== "google") {
+        throw new DomainError("model_source_protocol_invalid", "Antigravity uses the Google protocol.");
+      }
+      return { accessMode: "coding-plan" as const, capability: "custom-unverified-tools" as const,
+        displayName: "Antigravity", modelId: resolveAntigravityModelId(requested), protocol: "google" as const };
+    }
     if (kind === "codex") {
       if (requestedAccessMode !== undefined && requestedAccessMode !== "coding-plan") {
         throw new DomainError("model_source_access_mode_invalid", "Codex uses subscription access.");
@@ -41,6 +52,7 @@ export class PiModelSourceCatalog implements ModelSourceCatalog {
         throw new DomainError("model_source_model_required", "Generic model source model ID is required.");
       }
       const protocol = requestedProtocol ?? "openai";
+      if (protocol === "google") throw new DomainError("model_source_protocol_invalid", "Choose a supported custom protocol.");
       return {
         accessMode,
         capability: "custom-unverified-tools" as const,

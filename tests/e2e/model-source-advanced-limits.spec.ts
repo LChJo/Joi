@@ -62,7 +62,13 @@ test("the advanced limits preserve custom sizes and a numeric Pi compaction thre
     await window.setViewportSize({ height: 900, width: 1280 });
     await window.getByRole("button", { exact: true, name: "设置" }).click();
     await window.getByRole("button", { name: "添加网络" }).click();
-    await window.getByRole("button", { name: "连接 通用平台" }).click();
+    const choices = window.locator(".model-source-choices").getByRole("button");
+    await expect(choices).toHaveCount(9);
+    const heights = await choices.evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().height));
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
+    expect(Math.max(...heights)).toBeLessThanOrEqual(48);
+    await expect(choices.last()).toHaveText("连接 通用平台");
+    await choices.last().click();
     await window.getByRole("button", { name: "OpenAI-compatible", exact: true }).click();
     const createForm = window.locator(".model-source-manager > .joi-network-gate .model-source-form");
     await createForm.locator("summary").click();
