@@ -1,75 +1,56 @@
-name: quality
+name: Rebuild Joi 0.1.10 installers
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    branches: [rebuild/joi-0.1.10]
 
 permissions:
   contents: read
 
-jobs:
-  release-plan:
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.plan.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Check desktop version upgrade
-        id: plan
-        run: node scripts/plan-desktop-release.mjs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+env:
+  SOURCE_COMMIT: 'e6ac7cde2c0116110b62b09b02d6166938c1a0a0'
+  RELEASE_VERSION: '0.1.10'
 
-  verify:
-    needs: release-plan
+jobs:
+  package:
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
-            package: package:win
-            artifact: joi-windows
-            installer: release-joi/*.exe
+            command: package:win
+            artifact: joi-0.1.10-windows
+            installer: 'release-joi/*.exe'
           - os: macos-latest
-            package: package:mac
-            artifact: joi-macos
-            installer: release-joi/*.dmg
+            command: package:mac
+            artifact: joi-0.1.10-macos
+            installer: 'release-joi/*.dmg'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_COMMIT }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache native build dependencies
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/joi-remote -> target
-          cache-on-failure: "true"
+          cache-on-failure: 'true'
+      - name: Verify source and package version
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          node -e 'const p=require("./package.json"), l=require("./package-lock.json"); if ([p.version,l.version,l.packages[""].version].some(v => v !== process.env.RELEASE_VERSION)) process.exit(1)'
       - run: npm ci
-      - run: npm run i18n:check
-      - run: npm run typecheck
-      - run: npm run lint
-      - name: Build production desktop
-        run: node scripts/ci-build.mjs
-      - name: Unit, integration, and renderer tests with coverage
-        run: npm run test:coverage
-      - name: Electron E2E
-        run: npx playwright test
       - name: Build native installer
-        if: needs.release-plan.outputs.publish == 'true'
-        run: npm run ${{ matrix.package }}
+        run: npm run ${{ matrix.command }}
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Upload installer
-        if: needs.release-plan.outputs.publish == 'true'
-        uses: actions/upload-artifact@v7
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.installer }}
@@ -77,29 +58,37 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-  release:
-    needs: [release-plan, verify]
-    if: needs.release-plan.outputs.publish == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+  bundle:
+    needs: package
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    concurrency:
-      group: desktop-release
-      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
       - uses: actions/download-artifact@v8
         with:
-          name: joi-windows
-          path: release-assets
-      - uses: actions/download-artifact@v8
+          pattern: joi-0.1.10-*
+          merge-multiple: true
+          path: installers
+      - name: Verify and checksum both installers
+        working-directory: installers
+        shell: bash
+        run: |
+          shopt -s nullglob
+          windows=(joi-0.1.10-*.exe)
+          macos=(joi-0.1.10-*.dmg)
+          test "${#windows[@]}" -eq 1
+          test "${#macos[@]}" -eq 1
+          sha256sum "${windows[0]}" "${macos[0]}" > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          printf '%s\n' "$SOURCE_COMMIT" > SOURCE_COMMIT.txt
+          {
+            printf 'Source commit: `%s`\n\n' "$SOURCE_COMMIT"
+            printf '```text\n'
+            cat SHA256SUMS.txt
+            printf '```\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
         with:
-          name: joi-macos
-          path: release-assets
-      - name: Publish versioned desktop release
-        run: node scripts/publish-desktop-release.mjs
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: joi-0.1.10-installers
+          path: installers/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
