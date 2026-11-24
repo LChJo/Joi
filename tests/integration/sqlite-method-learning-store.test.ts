@@ -4,6 +4,7 @@ import { buildLearningCases, type LearningCase } from "../../src/main/domain/evo
 import { SqliteMethodLearningStore } from "../../src/main/infrastructure/persistence/sqlite-method-learning-store";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 import { probeSqlReads } from "../support/sql-read-probe.js";
+import type { JsonObject } from "../../src/main/application/ports/method-learning";
 
 describe("production method learning persistence", () => {
   let fixture: RuntimeFixture;
@@ -58,6 +59,61 @@ describe("production method learning persistence", () => {
     expect(query).toBeDefined();
     expect(query).not.toMatch(/SELECT\s+r\.\*/u);
     expect(query).not.toContain("artifacts_json");
+  });
+  it("keeps the original source and split after a goal is edited and reopened", async () => {
+    await authoritativeGoal();
+    const before = store.captureFacts();
+    store.upsertCases(before.flatMap(buildLearningCases));
+    store.acknowledgeFacts(before);
+    fixture.database.transaction(db => db.exec(`
+      UPDATE joi_inbox_messages SET body='Different requirement text',updated_at='2026-10-24' WHERE input_id='g';
+      UPDATE joi_goal_outcomes SET result_revision=2,updated_at='2026-10-24' WHERE input_id='g';
+    `));
+    const restarted = new SqliteMethodLearningStore(fixture.database);
+    const after = restarted.captureFacts();
+    expect(after).toHaveLength(1);
+    expect(after[0]?.sourceGroupId).toBe(before[0]?.sourceGroupId);
+    restarted.upsertCases(after.flatMap(buildLearningCases));
+    expect(new Set(restarted.listCases("a").map(item => item.groupId)).size).toBe(1);
+    expect(new Set(restarted.listCases("a").map(item => item.split)).size).toBe(1);
+  });
+  it("consolidates legacy aliases, excludes development-exposed sources from sealed, and retains prior calls", async () => {
+    await authoritativeGoal();
+    fixture.database.transaction(db => {
+      for (const [goal, bench] of [["duplicate","a"],["unrelated","b"]] as const) {
+        db.prepare("INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,?,'CONSUMED',?,'2026-10-23','2026-10-23')").run(goal,goal,"Fixture",bench);
+      }
+    });
+    const fact = store.captureFacts()[0];
+    const sample = fact===undefined ? undefined : buildLearningCases(fact)[0];
+    if (sample===undefined) throw new Error("Missing legacy case fixture");
+    fixture.database.transaction(db => db.exec("DELETE FROM method_learning_sources"));
+    const cases = [
+      { ...sample, caseId:"legacy-dev",groupId:"former-dev",split:"development" },
+      { ...sample, caseId:"legacy-sealed",groupId:"former-sealed",split:"sealed" },
+      { ...sample, caseId:"legacy-duplicate",goalId:"duplicate",groupId:"former-sealed",split:"sealed" },
+      { ...sample, caseId:"legacy-other",goalId:"unrelated",workbenchId:"b",groupId:"former-sealed",split:"sealed" },
+    ] satisfies LearningCase[];
+    store.upsertCases(cases);
+    store.configureGlobal({enabled:true});
+    store.configureParticipant("a",{enabled:true});
+    const checkpoint = {id:"old-experiment",workbenchId:"a",scope:"WORKBENCH",profile:sample.profile,
+      phase:"EVALUATE",status:"RUNNING",createdAt:"2026-10-23",updatedAt:"2026-10-23",
+      state:{version:2,pendingCall:"old-call",dataset:cases}} as const;
+    expect(store.reserveCall({callId:"old-call",experimentId:checkpoint.id,workbenchId:"a",day:"2026-10-23",
+      at:"2026-10-23T00:00:00Z",checkpoint:{...checkpoint,state:JSON.parse(JSON.stringify(checkpoint.state)) as JsonObject}})).toBe("reserved");
+    const migration = readFileSync("resources/migrations/116_method_learning_source_identity.sql","utf8");
+    fixture.database.transaction(db => db.exec(migration));
+    const projected = store.listCases("a");
+    expect(projected).toHaveLength(3);
+    expect(new Set(projected.map(item=>item.groupId)).size).toBe(1);
+    expect(projected.map(item=>item.split)).toEqual(["development","development","development"]);
+    expect(store.listCases("b")[0]?.groupId).not.toBe(projected[0]?.groupId);
+    expect(store.listCases("b")[0]?.split).toBe("development");
+    expect(store.experiment(checkpoint.id)).toMatchObject({status:"REJECTED",state:{reason:"revalidation_required",dataset:cases}});
+    expect(store.experimentUsage(checkpoint.id)).toEqual({calls:1,tokens:0,tokensComplete:false});
+    fixture.database.transaction(db => db.exec(migration));
+    expect(store.listCases("a")).toEqual(projected);
   });
   it("keeps unrelated settings and file metadata writes off the fact query", async () => {
     await authoritativeGoal();
@@ -152,6 +208,18 @@ describe("production method learning persistence", () => {
     expect(store.goalPins("new")).toEqual([]);
     expect(store.countGoalPins()).toBe(1);
     expect(store.countGoalPins("new")).toBe(0);
+  });
+  it("finds all revision-scoped exposures after newer unrelated bindings exceed the global limit", () => {
+    fixture.database.transaction(db=>{
+      const goal = db.prepare("INSERT INTO joi_inbox_messages(input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'fixture','CONSUMED','a','2026-10-23','2026-10-23')");
+      const binding = db.prepare("INSERT INTO method_learning_goal_pins VALUES (?,'a',?,?,?)");
+      for (let i=0;i<1004;i++) {
+        const id=`cohort-${String(i)}`;
+        goal.run(id,id);
+        binding.run(id,i===0 ? "candidate" : null,JSON.stringify({cohortRevisionId:i<2 ? "candidate" : "unrelated"}),i<2 ? "2026-10-23" : "2026-10-24");
+      }
+    });
+    expect(store.cohortGoalPins("candidate","2026-10-22","2026-10-25").map(pin=>pin.goalId)).toEqual(["cohort-0","cohort-1"]);
   });
   it("keeps new workbenches off and honors global pause and legacy sublimits", () => {
     const call = {callId:"one",experimentId:"e",workbenchId:"a",day:"2026-10-23",at:"2026-10-23"};
@@ -471,6 +539,8 @@ describe("production method learning persistence", () => {
       }
       const projectionMigration = readFileSync("resources/migrations/090_read_projection_versions.sql", "utf8");
       db.exec(projectionMigration.split("CREATE TABLE work_result_artifact_versions")[0] ?? "");
+      const sourceMigration = readFileSync("resources/migrations/116_method_learning_source_identity.sql", "utf8");
+      db.exec(sourceMigration.split("WITH history")[0] ?? "");
       // Receipt and verification writes are the mutable sources in this focused fixture.
       for (const trigger of projectionMigration.matchAll(/CREATE TRIGGER projection_learning_(?:method_learning_fact_receipts|work_result_verifications)_[\s\S]+?END;/gu)) db.exec(trigger[0]);
       const isolated = new SqliteMethodLearningStore({transaction: operation => operation(db)});

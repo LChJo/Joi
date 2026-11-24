@@ -176,6 +176,26 @@ export interface EvolutionMethodDto {
   evaluatedRuns: number;
   candidateGoals: number;
   controlGoals: number;
+  production?: EvolutionProductionEvidenceDto;
+}
+export interface EvolutionProductionEvidenceDto {
+  decisionAt: string;
+  minimumPairs: number;
+  assignedCandidate: number;
+  assignedControl: number;
+  excluded: number;
+  pairs: number;
+  baselineSuccesses: number;
+  candidateSuccesses: number;
+  qualityDelta: number | null;
+  qualityInterval: [number,number] | null;
+  baselineCalls: number | null;
+  candidateCalls: number | null;
+  baselineTokens: number | null;
+  candidateTokens: number | null;
+  learningCost: {phase:string;calls:number;knownTokens:number;tokenReports:number}[];
+  breakEvenGoals: number | null;
+  verdict: "observing" | "traffic_insufficient" | "no_gain" | "promoted" | "reverted";
 }
 /** Numeric and version metadata only; private cases and model traces stay in the local store. */
 export interface EvolutionLearningDto {
@@ -187,8 +207,20 @@ export interface EvolutionLearningDto {
     pause?: { reason: EvolutionReason; at: string; workbenchId: string | null } | null };
   participation: { enabled: boolean; paused: boolean; reason?: "call_failed" | "rolled_back" | "model_response_invalid" };
   cases: { development: number; sealed: number; defects: number; developmentGroups?: number; sealedGroups?: number; reproduced?: number; experiences?: number };
+  readiness?: { splitVersion: number; asOf: string; settledGoals: number; eligibleGoals: number; sourceGroups: number;
+    replayableDevelopmentGroups: number; compatibleSealedGroups: number; missingSealedGroups: number; callsRemainingToday: number };
+  shadow?: { status: "queued" | "running" | "completed" | "stopped"; callLimit: number;
+    verdict: "candidate" | "parent" | "quality_regression" | "no_opportunity" | "source_changed" | "budget_exhausted" | null;
+    baseline: EvolutionShadowArmDto; candidate: EvolutionShadowArmDto };
   experiment: { id: string; calls: number; tokens: number | null; reason: EvolutionReason; retryAt?: string | null;
-    waitingForSamples?: boolean; sealedGroups?: number; requiredSealedGroups?: number; baselineNotReproduced?: boolean } | null;
+    waitingForSamples?: boolean; sealedGroups?: number; requiredSealedGroups?: number; baselineNotReproduced?: boolean;
+    candidateRejection?: "structure" | "rejected_duplicate" | "development_mismatch";
+    sealed?: { evaluationId: string; lockedAt: string; expectedTrials: number; reusableBaselineTrials: number; estimatedNewCalls: number; completedTrials: number;
+      baseline: EvolutionShadowArmDto; candidate: EvolutionShadowArmDto;
+      cost: {phase:string;calls:number;knownTokens:number;tokenReports:number}[] } } | null;
   appliedGoals: number;
   methods: EvolutionMethodDto[];
+}
+export interface EvolutionShadowArmDto {
+  trials: number; success: number; backingReads: number; toolRequests: number; modelCalls: number; tokens: number | null;
 }

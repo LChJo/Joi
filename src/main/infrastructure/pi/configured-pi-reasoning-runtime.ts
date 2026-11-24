@@ -22,6 +22,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
 
   constructor(private readonly dependencies: {
     diagnostics?: RuntimeDiagnostics;
+    recordEvidenceContext?: (turnId: string, toolCallIds: string[]) => void;
     usage?: UsageRecorder;
     nativeSessions?: PiNativeSessionStore;
     resolver: PiConfiguredModelResolver;
@@ -49,6 +50,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
         ...(this.dependencies.memory === undefined ? {} : { memory: this.dependencies.memory }),
         ...(this.dependencies.nativeSessions === undefined ? {} : { nativeSessions: this.dependencies.nativeSessions }),
         ...(this.dependencies.diagnostics === undefined ? {} : { diagnostics: this.dependencies.diagnostics }),
+        ...(this.dependencies.recordEvidenceContext === undefined ? {} : { recordEvidenceContext: this.dependencies.recordEvidenceContext }),
         ...(this.dependencies.usage === undefined ? {} : { usage: this.dependencies.usage }),
         model: resolved.model,
         ...(resolved.compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent: resolved.compactionThresholdPercent }),

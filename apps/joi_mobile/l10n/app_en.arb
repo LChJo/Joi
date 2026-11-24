@@ -3536,6 +3536,256 @@
       }
     }
   },
+  "evolutionRunShadow": "Run development comparison",
+  "@evolutionRunShadow": {
+    "description": "Start the opt-in development shadow experiment.",
+    "placeholders": {}
+  },
+  "evolutionShadowCallLimit": "Comparison call limit",
+  "@evolutionShadowCallLimit": {
+    "description": "Maximum provider calls in one scoped comparison.",
+    "placeholders": {}
+  },
+  "evolutionShadowQueued": "Development comparison queued",
+  "@evolutionShadowQueued": {
+    "description": "A development comparison is waiting for the idle slot.",
+    "placeholders": {}
+  },
+  "evolutionShadowRunning": "Development comparison running",
+  "@evolutionShadowRunning": {
+    "description": "A development comparison is executing.",
+    "placeholders": {}
+  },
+  "evolutionShadowStopped": "Development comparison stopped",
+  "@evolutionShadowStopped": {
+    "description": "Incomplete development comparison.",
+    "placeholders": {}
+  },
+  "evolutionShadowCandidate": "Candidate reduced development cost",
+  "@evolutionShadowCandidate": {
+    "description": "Winner in the bounded development comparison.",
+    "placeholders": {}
+  },
+  "evolutionShadowParent": "Keeping the parent method",
+  "@evolutionShadowParent": {
+    "description": "No adoption in the bounded development comparison.",
+    "placeholders": {}
+  },
+  "evolutionShadowQuality": "Candidate reduced acceptance quality",
+  "@evolutionShadowQuality": {
+    "description": "Development candidate regressed.",
+    "placeholders": {}
+  },
+  "evolutionShadowNoOpportunity": "No eligible repeated evidence page was found",
+  "@evolutionShadowNoOpportunity": {
+    "description": "No available fragment meets the development scenario.",
+    "placeholders": {}
+  },
+  "evolutionShadowSourceChanged": "Model or evidence pin changed",
+  "@evolutionShadowSourceChanged": {
+    "description": "The shadow comparison requires a matching revision.",
+    "placeholders": {}
+  },
+  "evolutionShadowBudget": "Comparison reached its call limit",
+  "@evolutionShadowBudget": {
+    "description": "Experiment-specific budget was exhausted.",
+    "placeholders": {}
+  },
+  "evolutionShadowArms": "Parent / candidate · passed {p0} · backing reads {p1} · tool requests {p2} · model calls {p3} · tokens {p4}",
+  "@evolutionShadowArms": {
+    "description": "Paired counts from the development comparison.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionCandidateInvalidStructure": "Candidate violates the registered method structure",
+  "@evolutionCandidateInvalidStructure": {
+    "description": "Invalid proposal structure.",
+    "placeholders": {}
+  },
+  "evolutionCandidateInvalidDuplicate": "Candidate repeats a rejected method",
+  "@evolutionCandidateInvalidDuplicate": {
+    "description": "Duplicate proposal after a regression.",
+    "placeholders": {}
+  },
+  "evolutionCandidateInvalidBasis": "Candidate does not cite applicable development evidence",
+  "@evolutionCandidateInvalidBasis": {
+    "description": "Proposal support is invalid.",
+    "placeholders": {}
+  },
+  "evolutionSealedProgress": "Sealed trials {p0} / {p1} · reusable baseline trials {p2} · estimated new calls at lock {p3}",
+  "@evolutionSealedProgress": {
+    "description": "Frozen held-out evaluation progress and estimated incremental cost.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionPhaseUsage": "{p0} · {p1} calls · {p2} known tokens · usage available for {p3} calls",
+  "@evolutionPhaseUsage": {
+    "description": "Actual cost by background learning phase.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionProductionEvidence": "Production cohort evidence",
+  "@evolutionProductionEvidence": {
+    "description": "Show aggregated evidence from the registered production cohort.",
+    "placeholders": {}
+  },
+  "evolutionProductionCohort": "Decision {p0} · matched {p1} / {p2} · assigned parent / candidate {p3} · excluded {p4}",
+  "@evolutionProductionCohort": {
+    "description": "Registered decision time and production cohort denominators.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      },
+      "p4": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionProductionQuality": "Production acceptance difference {p0} · uncertainty interval {p1}",
+  "@evolutionProductionQuality": {
+    "description": "Exploratory interval for the difference in production acceptance.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionProductionCost": "Parent / candidate · calls {p0} · tokens {p1} · break-even goals {p2}",
+  "@evolutionProductionCost": {
+    "description": "Measured production usage and payback estimate.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionProductionObserving": "Observing the registered cohort",
+  "@evolutionProductionObserving": {
+    "description": "Cohort is open.",
+    "placeholders": {}
+  },
+  "evolutionProductionTraffic": "Insufficient eligible production traffic",
+  "@evolutionProductionTraffic": {
+    "description": "Cohort closed with insufficient eligible pairs.",
+    "placeholders": {}
+  },
+  "evolutionProductionNoGain": "Production benefit below the threshold",
+  "@evolutionProductionNoGain": {
+    "description": "Cohort did not meet the promotion threshold.",
+    "placeholders": {}
+  },
+  "evolutionProductionPromoted": "Production thresholds met",
+  "@evolutionProductionPromoted": {
+    "description": "Cohort passed the version's registered thresholds.",
+    "placeholders": {}
+  },
+  "evolutionProductionReverted": "Production method rolled back",
+  "@evolutionProductionReverted": {
+    "description": "Method was reverted by a safety gate or explicit feedback.",
+    "placeholders": {}
+  },
+  "evolutionSourceReadiness": "Settled goals {p0} · eligible {p1} · distinct sources {p2} · development sources with replay {p3}",
+  "@evolutionSourceReadiness": {
+    "description": "Counts at successive method learning gates.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      },
+      "p3": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionSealedReadiness": "Compatible held-out sources {p0} · still needed {p1} · calls remaining today {p2}",
+  "@evolutionSealedReadiness": {
+    "description": "Held-out eligibility and remaining daily calls.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionReadinessAsOf": "Split version {p0} · counted {p1}",
+  "@evolutionReadinessAsOf": {
+    "description": "Split version and timestamp of the readiness projection.",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
   "evolutionReproducedGroups": "Reproduced in the latest experiment: {p0} source groups",
   "@evolutionReproducedGroups": {
     "description": "evolution: Reproduced in the latest experiment: {p0} source groups",

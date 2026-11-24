@@ -685,6 +685,35 @@ export interface MessageParameters {
   "evolution.pauseDetail": { "p0": string; "p1": string };
   "evolution.pauseUnknown": undefined;
   "evolution.sourceGroups": { "p0": string; "p1": string };
+  "evolution.runShadow": undefined;
+  "evolution.shadowCallLimit": undefined;
+  "evolution.shadowQueued": undefined;
+  "evolution.shadowRunning": undefined;
+  "evolution.shadowStopped": undefined;
+  "evolution.shadowCandidate": undefined;
+  "evolution.shadowParent": undefined;
+  "evolution.shadowQuality": undefined;
+  "evolution.shadowNoOpportunity": undefined;
+  "evolution.shadowSourceChanged": undefined;
+  "evolution.shadowBudget": undefined;
+  "evolution.shadowArms": { "p0": string; "p1": string; "p2": string; "p3": string; "p4": string };
+  "evolution.candidateInvalidStructure": undefined;
+  "evolution.candidateInvalidDuplicate": undefined;
+  "evolution.candidateInvalidBasis": undefined;
+  "evolution.sealedProgress": { "p0": string; "p1": string; "p2": string; "p3": string };
+  "evolution.phaseUsage": { "p0": string; "p1": string; "p2": string; "p3": string };
+  "evolution.productionEvidence": undefined;
+  "evolution.productionCohort": { "p0": string; "p1": string; "p2": string; "p3": string; "p4": string };
+  "evolution.productionQuality": { "p0": string; "p1": string };
+  "evolution.productionCost": { "p0": string; "p1": string; "p2": string };
+  "evolution.productionObserving": undefined;
+  "evolution.productionTraffic": undefined;
+  "evolution.productionNoGain": undefined;
+  "evolution.productionPromoted": undefined;
+  "evolution.productionReverted": undefined;
+  "evolution.sourceReadiness": { "p0": string; "p1": string; "p2": string; "p3": string };
+  "evolution.sealedReadiness": { "p0": string; "p1": string; "p2": string };
+  "evolution.readinessAsOf": { "p0": string; "p1": string };
   "evolution.reproducedGroups": { "p0": string };
   "evolution.waitingSamples": undefined;
   "evolution.sampleReadiness": { "p0": string; "p1": string };
@@ -2604,6 +2633,35 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.pauseDetail": "Pause reason: {p0} · {p1}",
     "evolution.pauseUnknown": "The stored pause has no detailed cause. Check the model connection before explicitly resuming.",
     "evolution.sourceGroups": "Independent source groups: development {p0} · held out {p1}",
+    "evolution.runShadow": "Run development comparison",
+    "evolution.shadowCallLimit": "Comparison call limit",
+    "evolution.shadowQueued": "Development comparison queued",
+    "evolution.shadowRunning": "Development comparison running",
+    "evolution.shadowStopped": "Development comparison stopped",
+    "evolution.shadowCandidate": "Candidate reduced development cost",
+    "evolution.shadowParent": "Keeping the parent method",
+    "evolution.shadowQuality": "Candidate reduced acceptance quality",
+    "evolution.shadowNoOpportunity": "No eligible repeated evidence page was found",
+    "evolution.shadowSourceChanged": "Model or evidence pin changed",
+    "evolution.shadowBudget": "Comparison reached its call limit",
+    "evolution.shadowArms": "Parent / candidate · passed {p0} · backing reads {p1} · tool requests {p2} · model calls {p3} · tokens {p4}",
+    "evolution.candidateInvalidStructure": "Candidate violates the registered method structure",
+    "evolution.candidateInvalidDuplicate": "Candidate repeats a rejected method",
+    "evolution.candidateInvalidBasis": "Candidate does not cite applicable development evidence",
+    "evolution.sealedProgress": "Sealed trials {p0} / {p1} · reusable baseline trials {p2} · estimated new calls at lock {p3}",
+    "evolution.phaseUsage": "{p0} · {p1} calls · {p2} known tokens · usage available for {p3} calls",
+    "evolution.productionEvidence": "Production cohort evidence",
+    "evolution.productionCohort": "Decision {p0} · matched {p1} / {p2} · assigned parent / candidate {p3} · excluded {p4}",
+    "evolution.productionQuality": "Production acceptance difference {p0} · uncertainty interval {p1}",
+    "evolution.productionCost": "Parent / candidate · calls {p0} · tokens {p1} · break-even goals {p2}",
+    "evolution.productionObserving": "Observing the registered cohort",
+    "evolution.productionTraffic": "Insufficient eligible production traffic",
+    "evolution.productionNoGain": "Production benefit below the threshold",
+    "evolution.productionPromoted": "Production thresholds met",
+    "evolution.productionReverted": "Production method rolled back",
+    "evolution.sourceReadiness": "Settled goals {p0} · eligible {p1} · distinct sources {p2} · development sources with replay {p3}",
+    "evolution.sealedReadiness": "Compatible held-out sources {p0} · still needed {p1} · calls remaining today {p2}",
+    "evolution.readinessAsOf": "Split version {p0} · counted {p1}",
     "evolution.reproducedGroups": "Reproduced in the latest experiment: {p0} source groups",
     "evolution.waitingSamples": "Waiting for independent samples; resumes automatically when ready",
     "evolution.sampleReadiness": "Independent source groups in this experiment: {p0} / {p1}",
@@ -4521,6 +4579,35 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.pauseDetail": "暂停原因：{p0} · {p1}",
     "evolution.pauseUnknown": "历史暂停未记录具体原因，请检查模型连接后显式恢复。",
     "evolution.sourceGroups": "独立来源组：开发 {p0} · 封存 {p1}",
+    "evolution.runShadow": "运行开发对照",
+    "evolution.shadowCallLimit": "开发对照调用上限",
+    "evolution.shadowQueued": "开发对照已排队",
+    "evolution.shadowRunning": "开发对照运行中",
+    "evolution.shadowStopped": "开发对照已停止",
+    "evolution.shadowCandidate": "候选降低了开发对照成本",
+    "evolution.shadowParent": "保留父方法",
+    "evolution.shadowQuality": "候选验收质量下降",
+    "evolution.shadowNoOpportunity": "未找到合格的重复证据页",
+    "evolution.shadowSourceChanged": "模型或证据版本已变化",
+    "evolution.shadowBudget": "已达到本轮调用上限",
+    "evolution.shadowArms": "父方法 / 候选 · 通过 {p0} · 底层读取 {p1} · 工具请求 {p2} · 模型调用 {p3} · Token {p4}",
+    "evolution.candidateInvalidStructure": "候选不符合已注册的方法结构",
+    "evolution.candidateInvalidDuplicate": "候选重复了已淘汰的方法",
+    "evolution.candidateInvalidBasis": "候选引用的开发依据不适用",
+    "evolution.sealedProgress": "封存试验 {p0} / {p1} · 可复用基线 {p2} 次 · 锁定时预计新增 {p3} 次调用",
+    "evolution.phaseUsage": "{p0} · {p1} 次调用 · 已知 Token {p2} · {p3} 次有 Token 记录",
+    "evolution.productionEvidence": "生产队列依据",
+    "evolution.productionCohort": "判定时间 {p0} · 匹配 {p1} / {p2} 对 · 分流父方法 / 候选 {p3} · 排除 {p4}",
+    "evolution.productionQuality": "生产验收差值 {p0} · 不确定区间 {p1}",
+    "evolution.productionCost": "父方法 / 候选 · 调用 {p0} · Token {p1} · 回本所需目标 {p2}",
+    "evolution.productionObserving": "预登记队列观察中",
+    "evolution.productionTraffic": "合格生产流量不足",
+    "evolution.productionNoGain": "生产收益未达阈值",
+    "evolution.productionPromoted": "达到生产晋升阈值",
+    "evolution.productionReverted": "已回退生产方法",
+    "evolution.sourceReadiness": "已收敛 {p0} · 客观验收合格 {p1} · 独立来源 {p2} · 可回放开发来源 {p3}",
+    "evolution.sealedReadiness": "兼容封存组 {p0} · 还缺 {p1} · 今日剩余调用 {p2}",
+    "evolution.readinessAsOf": "拆分版本 {p0} · 盘点于 {p1}",
     "evolution.reproducedGroups": "最近一轮已重放复现：{p0} 个来源组",
     "evolution.waitingSamples": "等待独立样本，补齐后自动继续",
     "evolution.sampleReadiness": "本轮独立来源组：{p0} / {p1}",
@@ -7030,6 +7117,46 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "临时调用失败，冷却后会有限次重试。": "evolution.retryWait",
   "The stored pause has no detailed cause. Check the model connection before explicitly resuming.": "evolution.pauseUnknown",
   "历史暂停未记录具体原因，请检查模型连接后显式恢复。": "evolution.pauseUnknown",
+  "Run development comparison": "evolution.runShadow",
+  "运行开发对照": "evolution.runShadow",
+  "Comparison call limit": "evolution.shadowCallLimit",
+  "开发对照调用上限": "evolution.shadowCallLimit",
+  "Development comparison queued": "evolution.shadowQueued",
+  "开发对照已排队": "evolution.shadowQueued",
+  "Development comparison running": "evolution.shadowRunning",
+  "开发对照运行中": "evolution.shadowRunning",
+  "Development comparison stopped": "evolution.shadowStopped",
+  "开发对照已停止": "evolution.shadowStopped",
+  "Candidate reduced development cost": "evolution.shadowCandidate",
+  "候选降低了开发对照成本": "evolution.shadowCandidate",
+  "Keeping the parent method": "evolution.shadowParent",
+  "保留父方法": "evolution.shadowParent",
+  "Candidate reduced acceptance quality": "evolution.shadowQuality",
+  "候选验收质量下降": "evolution.shadowQuality",
+  "No eligible repeated evidence page was found": "evolution.shadowNoOpportunity",
+  "未找到合格的重复证据页": "evolution.shadowNoOpportunity",
+  "Model or evidence pin changed": "evolution.shadowSourceChanged",
+  "模型或证据版本已变化": "evolution.shadowSourceChanged",
+  "Comparison reached its call limit": "evolution.shadowBudget",
+  "已达到本轮调用上限": "evolution.shadowBudget",
+  "Candidate violates the registered method structure": "evolution.candidateInvalidStructure",
+  "候选不符合已注册的方法结构": "evolution.candidateInvalidStructure",
+  "Candidate repeats a rejected method": "evolution.candidateInvalidDuplicate",
+  "候选重复了已淘汰的方法": "evolution.candidateInvalidDuplicate",
+  "Candidate does not cite applicable development evidence": "evolution.candidateInvalidBasis",
+  "候选引用的开发依据不适用": "evolution.candidateInvalidBasis",
+  "Production cohort evidence": "evolution.productionEvidence",
+  "生产队列依据": "evolution.productionEvidence",
+  "Observing the registered cohort": "evolution.productionObserving",
+  "预登记队列观察中": "evolution.productionObserving",
+  "Insufficient eligible production traffic": "evolution.productionTraffic",
+  "合格生产流量不足": "evolution.productionTraffic",
+  "Production benefit below the threshold": "evolution.productionNoGain",
+  "生产收益未达阈值": "evolution.productionNoGain",
+  "Production thresholds met": "evolution.productionPromoted",
+  "达到生产晋升阈值": "evolution.productionPromoted",
+  "Production method rolled back": "evolution.productionReverted",
+  "已回退生产方法": "evolution.productionReverted",
   "Waiting for independent samples; resumes automatically when ready": "evolution.waitingSamples",
   "等待独立样本，补齐后自动继续": "evolution.waitingSamples",
   "The baseline did not reproduce the defect; no candidate was proposed.": "evolution.baselineNotReproduced",

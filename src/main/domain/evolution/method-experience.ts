@@ -13,6 +13,9 @@ export interface MethodExperience {
   candidateTokens: number | null;
   violations: number;
   runs: number;
+  conditions?: { profile: string; scope: "GLOBAL" | "WORKBENCH"; defects: string[] };
+  observedActions?: { baseline: number; candidate: number; baselineReads:number;candidateReads:number };
+  counterexamples?: { regressions: number; hardViolations: number };
 }
 
 /** Development comparisons are conditional evidence, never held-out or production benefit. */

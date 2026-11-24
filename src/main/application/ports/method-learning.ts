@@ -1,4 +1,5 @@
 import type { LearningCase, LearningFacts } from "../../domain/evolution/learning-case.js";
+import type { DecisionEvidenceRead, DecisionFragment, DecisionFragmentResult } from "../../domain/evolution/learning-decision-fragment.js";
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | JsonObject;
 // Recursive JSON values require an interface boundary.
@@ -7,7 +8,11 @@ export interface MethodLearningControl {
   enabled: boolean; paused: boolean; dailyCallLimit: number; lastCandidateDay: string | null;
   pause?: { reason: "call_failed" | "model_response_invalid" | "model_changed" | "rolled_back" | "disabled"; at: string; workbenchId: string | null } | null;
 }
-export interface MethodLearningParticipant { enabled: boolean; paused: boolean; dailyCallLimit: number; reason: string; }
+export interface MethodLearningParticipant {
+  enabled: boolean; paused: boolean; dailyCallLimit: number; reason: string;
+  shadowRequest?: { requestedAt: string; callLimit: number } | null;
+  shadowNoOpportunity?: number | null;
+}
 export interface MethodExperiment {
   id: string; workbenchId: string; scope: "GLOBAL" | "WORKBENCH"; profile: string;
   phase: "PROTOCOL" | "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE";
@@ -27,17 +32,24 @@ export interface MethodLearningStore {
   configureGlobal(patch: Partial<MethodLearningControl>): MethodLearningControl;
   participant(workbenchId: string): MethodLearningParticipant;
   configureParticipant(workbenchId: string, patch: Partial<MethodLearningParticipant>): MethodLearningParticipant;
-  reserveCall(input: { callId: string; experimentId: string; workbenchId: string; day: string; at: string; checkpoint?: MethodExperiment }): "reserved" | "existing" | "disabled" | "paused" | "budget_exhausted";
+  consumeShadowRequest(workbenchId: string, request: NonNullable<MethodLearningParticipant["shadowRequest"]>, experiment?: MethodExperiment): boolean;
+  reserveCall(input: { callId: string; experimentId: string; workbenchId: string; day: string; at: string; checkpoint?: MethodExperiment; phase?: MethodExperiment["phase"] | "SHADOW" }): "reserved" | "existing" | "disabled" | "paused" | "budget_exhausted";
   completeCall(callId: string, tokens: number | null, at: string): void;
   usage(day: string, workbenchId?: string): { calls: number; tokens: number; tokensComplete: boolean };
   experimentUsage(experimentId: string): { calls: number; tokens: number; tokensComplete: boolean };
+  experimentPhaseUsage(experimentId: string): { phase: string; calls: number; knownTokens: number; tokenReports: number }[];
   captureFacts(limit?: number): LearningFacts[];
   acknowledgeFacts(facts: LearningFacts[]): void;
   goalMetrics(goalId: string): { calls: number; tokens: number | null };
   goalRequirementCount(workbenchId: string, goalId: string): number | null;
+  goalCreatedAt(workbenchId: string, goalId: string): string | null;
   goalSourceMatches(goalId: string, sourceRevisionId: string, modelRevisionId: string): boolean;
   goalEvaluationEligible(goalId: string): boolean;
   currentEvaluationCases(): LearningCase[];
+  sourceReadiness(workbenchId: string): { settledGoals: number; eligibleGoals: number; sourceGroups: number };
+  decisionFragments(workbenchId: string): DecisionFragmentResult[];
+  readDecisionPage(fragment: DecisionFragment, page: DecisionEvidenceRead): string | null;
+  recordEvidenceContext(turnId: string, toolCallIds: string[]): void;
   goalCaseMatchesCurrent(goalId: string, requirementsRevision: number, resultRevision: number, caseId?: string): boolean;
   invalidateGoalExposure(workbenchId: string, goalId: string): void;
   recordEvidenceRead(read: MethodEvidenceRead): void;
@@ -54,5 +66,7 @@ export interface MethodLearningStore {
   pinGoal(pin: MethodGoalPin): MethodGoalPin;
   goalPin(workbenchId: string, goalId: string): MethodGoalPin | null;
   goalPins(revisionId?: string): MethodGoalPin[];
+  cohortGoalPins(revisionId: string, from: string, through: string): MethodGoalPin[];
+  revisionGoalPins(revisionId: string, from: string): MethodGoalPin[];
   countGoalPins(revisionId?: string): number;
 }

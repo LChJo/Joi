@@ -241,6 +241,10 @@ export class EvolutionService {
     });
     return this.status(workbenchId);
   }
+
+  requestShadow(_workbenchId: string, _callLimit: number): EvolutionStatusDto {
+    throw new DomainError("evolution_run_now_invalid", "The development shadow comparison is unavailable.");
+  }
   rollback(workbenchId: string, revisionId: string): EvolutionStatusDto {
     const now = this.dependencies.now();
     const owner = this.#findRevision(revisionId);

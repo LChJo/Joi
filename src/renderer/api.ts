@@ -200,6 +200,9 @@ export class DigitalLifeApi {
   rollbackEvolution(workbenchId: string, revisionId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/rollback`, { method: "POST", body: { revisionId } }); }
   evolutionNegativeFeedback(workbenchId: string, goalId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/feedback`, { method: "POST", body: { goalId } }); }
   runEvolutionNow(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/run-now`, { method: "POST" }); }
+  runEvolutionShadow(workbenchId: string, callLimit: number) {
+    return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/shadow`, {method:"POST",body:{callLimit}});
+  }
   dryRunEvolution(workbenchId: string) { return this.request<EvolutionDryRunReportDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/dry-run`, { method: "POST" }); }
   listAutomations() { return this.request<{ items: AutomationDto[] }>("/api/v1/automations"); }
   getAutomation(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`); }

@@ -78,6 +78,7 @@ export function wireJoi(input: {
     transcodeBitmap: input.transcodeBitmap,
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
+    recordEvidenceContext: (turnId, toolCallIds) => methodLearningStore.recordEvidenceContext(turnId,toolCallIds),
     memory: persistence.historicalMemory,
     nativeSessions: partnerStack.nativeSessions,
     diagnostics,

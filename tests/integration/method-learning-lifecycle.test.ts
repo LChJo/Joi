@@ -4,6 +4,7 @@ import { EvolutionModelCallError, type EvolutionModel } from "../../src/main/app
 import type { JsonObject, MethodExperiment, MethodRevision } from "../../src/main/application/ports/method-learning";
 import { buildLearningCases, learningProfile, type LearningCase } from "../../src/main/domain/evolution/learning-case";
 import { baselineMethodPolicy, policyKey } from "../../src/main/domain/evolution/learning-policy";
+import type { DecisionFragmentResult } from "../../src/main/domain/evolution/learning-decision-fragment";
 import { evolutionScenarios } from "../../src/main/domain/evolution/scenarios";
 import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
 import { SqliteMethodLearningStore } from "../../src/main/infrastructure/persistence/sqlite-method-learning-store";
@@ -77,6 +78,119 @@ describe("method learning lifecycle recovery", () => {
     subject.emergencyStop();
     expect(subject.canceled("evolution:a")).toBe(true);
     expect(subject.canceled("evolution:missing")).toBe(true);
+  });
+  it("runs six isolated shadow trials within the call limit even when no sealed cases exist", async () => {
+    const receipt = {receiptId:"read-1",resultId:"result",sourceRef:"body",start:0,end:2,digest:"page-digest",
+      verification:"PASSED",authority:null,residentReceipts:null};
+    const manifest = {status:"ready",fragment:{version:1,id:"manifest",sourceGroup:"source-group",workbenchId:"a",goalId:"goal",
+      turnId:"turn",requirementsRevision:1,resultRevision:2,sourceRevisionId:"s1",modelRevisionId:"m1",
+      parentRevisionId:null,parent:{...baselineMethodPolicy},requirements:[{id:"private-id",mandatory:true}],
+      reads:[receipt,{...receipt,receiptId:"read-2"}]},grade:{disposition:"complete",citedResultIds:["result"]}} satisfies DecisionFragmentResult;
+    vi.spyOn(store,"decisionFragments").mockReturnValue([manifest]);
+    const read = vi.spyOn(store,"readDecisionPage").mockReturnValue("中🧭");
+    let callsInTrial = 0;
+    call.mockImplementation(input=>{
+      expect(input.contract).toBe("METHOD_SHADOW_V1");
+      expect(input.prompt).not.toContain("private-id");
+      expect(input.prompt).not.toContain("citedResultIds");
+      callsInTrial++;
+      if (callsInTrial <= 2) return Promise.resolve({value:{action:"read_evidence",evidenceId:"page-1"},tokens:9});
+      callsInTrial=0;
+      return Promise.resolve({value:{action:"finish",decision:"complete",evidenceIds:["page-1"]},tokens:9});
+    });
+    const subject=service(true);
+    subject.requestShadow("a",18);
+    expect(store.usage("2026-10-23").calls).toBe(0);
+    expect(subject.pending()).toMatchObject([{ inputId:"evolution:a" }]);
+    await subject.handle("evolution:a");
+    expect(subject.status("a").learning?.shadow).toMatchObject({ status:"completed", verdict:"candidate",
+      baseline:{ trials:3, success:3, backingReads:6, toolRequests:6, modelCalls:9,tokens:81 },
+      candidate:{ trials:3, success:3, backingReads:3, toolRequests:6, modelCalls:9,tokens:81 } });
+    expect(read).toHaveBeenCalledTimes(9);
+    expect(store.revisions()).toEqual([]);
+  });
+  it("keeps a global experiment waiting when every sealed source is from one workbench", () => {
+    const origin = seedCase("global-development","development","b");
+    const sealed = Array.from({length:5},(_,i)=>seedCase(`global-one-bench-${String(i)}`,"sealed"));
+    const item=experiment([origin,...sealed],"PROPOSE",{reason:"insufficient_samples"});
+    store.saveExperiment({...item,scope:"GLOBAL",status:"PAUSED"});
+    const subject=service();
+    subject.scan();
+    expect(store.experiment(item.id)?.status).toBe("PAUSED");
+    seedCase("global-second-bench","sealed","b");
+    subject.scan();
+    expect(store.experiment(item.id)).toMatchObject({status:"RUNNING",phase:"PROPOSE"});
+  });
+  it("does not retrieve a prior development comparison from the same source group", async () => {
+    const item=seedCase("experience-same-root");
+    const scores=[0,1,2].flatMap(attempt=>[
+      {...trial(item.caseId,"baseline",attempt),success:true,modelCalls:3,tokens:9},
+      {...trial(item.caseId,"candidate",attempt),success:false,modelCalls:3,tokens:9},
+    ]);
+    experiment([item],"VALIDATE",json({candidate,trials:scores}),"first-compare");
+    const subject=service();
+    await subject.handle("evolution:a");
+    expect(subject.status("a").learning?.cases.experiences).toBe(1);
+    const same={...item,caseId:"same-root-edited",requirementsRevision:2};
+    store.upsertCases([same]);
+    experiment([same],"PROPOSE",{},"second-compare");
+    call.mockImplementation(input=>{
+      expect((JSON.parse(input.prompt) as {experiences:unknown[]}).experiences).toEqual([]);
+      return Promise.resolve({value:{strategy:{version:2,context:["requirements_map"],planning:[],completion:[]},fixes:[same.caseId]},tokens:3});
+    });
+    await subject.handle("evolution:a");
+    expect(store.experiment("second-compare")).toMatchObject({phase:"VALIDATE"});
+  });
+  it("compares development proposals with and without retrieval and runs the selected method again", async () => {
+    const item=seedCase("independent-study-source");
+    const measured=experiment([],"DEVELOP",json({shadow:{contextVersion:1,fragment:{sourceGroup:"other-source"},verdict:"candidate"},
+      trials:[{...trial("shadow","baseline"),success:true,toolRequests:4},{...trial("shadow","candidate"),success:true,toolRequests:2}]}),"measured-shadow");
+    store.saveExperiment({...measured,status:"COMPLETED"});
+    const baseline=[0,1,2].map(attempt=>({...trial(item.caseId,"baseline",attempt),success:true,modelCalls:4,tokens:12}));
+    const next=experiment([item],"PROPOSE",json({splitVersion:1,trials:baseline}),"retrieval-trials");
+    const considered:boolean[]=[];
+    let candidateFinishes=0;
+    call.mockImplementation(input=>{
+      if (input.mode==="proposal") {
+        const payload=JSON.parse(input.prompt) as {evidenceReuseComparisons:unknown[]};
+        const usesExperience=payload.evidenceReuseComparisons.length>0;
+        considered.push(usesExperience);
+        return Promise.resolve({value:{strategy:{version:2,context:[usesExperience ? "requirements_map" : "handoff_first"],planning:[],completion:[]},
+          fixes:[item.caseId]},tokens:3});
+      }
+      const actions=input.prompt.split("Previous actions: ")[1] ?? "";
+      const evidenceIds=["requirements","verification","workflow"];
+      const id=evidenceIds.find(value=>!actions.includes(`read:${value}`));
+      if (id!==undefined) return Promise.resolve({value:{action:"read_evidence",evidenceId:id},tokens:3});
+      candidateFinishes+=1;
+      return Promise.resolve({value:{action:"finish",decision:item.expected,evidenceIds},tokens:3});
+    });
+    const subject=service(true);
+    for (let step=0;step<4;step++) await subject.handle("evolution:a");
+    expect(considered.sort()).toEqual([false,true]);
+    expect(candidateFinishes).toBe(9);
+    expect(store.experiment(next.id)).toMatchObject({state:{experienceStudy:{selected:"without",reports:[
+      expect.objectContaining({accepted:true,calls:13}),expect.objectContaining({accepted:true,calls:13}),
+    ]}}});
+  });
+  it("registers future canary exposures and records insufficient traffic at the fixed decision time", () => {
+    const preexisting=seedCase("before-canary", "development","a",true);
+    now="2026-10-24T01:00:00.000Z";
+    const canary=revision();
+    const decisionAt="2026-11-23T01:00:00.000Z";
+    store.saveRevision({...canary,state:{...canary.state,cohort:{decisionAt,minimumPairs:5,experimentId:"sealed-run"}}});
+    const subject=service();
+    subject.strategyForGoal("a",preexisting.goalId,originalPin,{requirementsReady:true,requirementCount:2});
+    for (let i=0;i<6;i++) {
+      const item=seedCase(`in-window-${String(i)}`,"development","a",true);
+      subject.strategyForGoal("a",item.goalId,originalPin,{requirementsReady:true,requirementCount:2});
+    }
+    expect(store.cohortGoalPins(canary.id,now,decisionAt)).toHaveLength(6);
+    subject.scan();
+    expect(store.revision(canary.id)).toMatchObject({status:"CANARY",state:{production:{verdict:"observing",decisionAt}}});
+    now=decisionAt;
+    subject.scan();
+    expect(store.revision(canary.id)).toMatchObject({status:"REJECTED",state:{production:{verdict:"traffic_insufficient",minimumPairs:5}}});
   });
   it.each(["abort","off"] as const)("accounts a paid response when %s happens during the call", async change => {
     const item=seedCase("paid"); const seeded=experiment([item]); const subject=service(true);

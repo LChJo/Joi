@@ -5,6 +5,7 @@ export interface LearningFacts {
   goalId: string;
   workbenchId: string;
   sourceGroupId?: string;
+  sourceSplit?: LearningCase["split"];
   requirementsRevision: number;
   resultRevision: number;
   observedAt: string;
@@ -72,6 +73,14 @@ export function learningProfile(requirementCount: number): string {
   return `requirements:${requirementCount > 0 ? "explicit" : "absent"};count:${countBucket}`;
 }
 
+export function learningSourceGroup(sourceKey: string): string {
+  return `group-${fingerprint(sourceKey)}`;
+}
+
+export function learningSourceSplit(sourceKey: string): LearningCase["split"] {
+  return Number.parseInt(learningSourceGroup(sourceKey).slice(-2), 16) % 5 === 0 ? "sealed" : "development";
+}
+
 export function buildLearningCases(facts: LearningFacts): LearningCase[] {
   validateFacts(facts);
   if (![facts.requirementsRevision, facts.resultRevision].every(value => Number.isSafeInteger(value) && value >= 1)) return [];
@@ -87,8 +96,9 @@ export function buildLearningCases(facts: LearningFacts): LearningCase[] {
   if (facts.dependencyViolationCount > 0) defects.push("dependency_order");
   if (facts.redundantReads > 0) defects.push("redundant_read");
   if (defects.length === 0 && !incomplete && facts.completed) defects.push("healthy");
-  const groupId = `group-${fingerprint(facts.sourceGroupId ?? facts.goalId)}`;
-  const split = (Number.parseInt(groupId.slice(-2), 16) % 5 === 0) ? "sealed" : "development";
+  const source = facts.sourceGroupId ?? facts.goalId;
+  const groupId = learningSourceGroup(source);
+  const split = facts.sourceSplit ?? learningSourceSplit(source);
   const profile = learningProfile(facts.requirementCount);
   const snapshot = fingerprint(JSON.stringify([facts.completed, facts.verified, facts.failed, facts.unverified,
     facts.requirementCount, facts.coveredRequirementCount, facts.foreignEvidenceCount,

@@ -54,7 +54,7 @@ describe("production method learning HTTP settings", () => {
     expect(response.status).toBe(200);
     const dto = await response.json() as { learning: EvolutionLearningDto };
     expect(Object.keys(dto.learning).sort()).toEqual([
-      "appliedGoals", "blockers", "cases", "evaluatorVersion", "experiment", "globalBudget", "methods", "participation", "stage", "version",
+      "appliedGoals", "blockers", "cases", "evaluatorVersion", "experiment", "globalBudget", "methods", "participation", "readiness", "stage", "version",
     ]);
     expect(dto.learning.version).toBe(2);
     expect(JSON.stringify(dto)).not.toContain("private-persona-sentinel");
@@ -114,6 +114,9 @@ describe("production method learning HTTP settings", () => {
     await safeLearning(await request("/api/v1/workbenches/a/evolution/resume", "POST"));
     const state = await safeLearning(await request("/api/v1/workbenches/a/evolution/run-now", "POST"));
     expect(state.blockers).toContain("no_reproducible_case");
+    expect(state.readiness).toEqual({ splitVersion:1, asOf:"2026-10-23T01:00:00.000Z", settledGoals:0,
+      eligibleGoals:0, sourceGroups:0, replayableDevelopmentGroups:0, compatibleSealedGroups:0, missingSealedGroups:5,
+      callsRemainingToday:50 });
     expect(state.experiment).toBeNull();
     expect(state.globalBudget.callsUsedToday).toBe(0);
     service.scan();
@@ -121,5 +124,16 @@ describe("production method learning HTTP settings", () => {
     expect(call).not.toHaveBeenCalled();
     expect(pin).not.toHaveBeenCalled();
     expect(store.usage("2026-10-23").calls).toBe(0);
+  });
+  it("requires write authorization and a bounded call limit for a shadow request", async () => {
+    const path = "/api/v1/workbenches/a/evolution/shadow";
+    expect((await request(path,"POST",{callLimit:30},{})).status).toBe(401);
+    expect((await request(path,"POST",{callLimit:61})).status).toBe(400);
+    await safeLearning(await request("/api/v1/evolution/resume","POST"));
+    await safeLearning(await request("/api/v1/workbenches/a/evolution/resume","POST"));
+    const response = await request(path,"POST",{callLimit:30});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({learning:{shadow:{status:"stopped",verdict:"no_opportunity"}}});
+    expect(call).not.toHaveBeenCalled();
   });
 });

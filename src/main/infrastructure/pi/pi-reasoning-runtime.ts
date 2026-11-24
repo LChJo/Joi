@@ -77,6 +77,7 @@ const SYNTHESIS_DISPOSITION_TOOLS = new Set([
 ]);
 
 interface PiReasoningRuntimeOptions {
+  recordEvidenceContext?: (turnId: string, toolCallIds: string[]) => void;
   memory?: HistoricalMemoryReader;
   compactionThresholdPercent?: number;
   sourceName?: string;
@@ -211,6 +212,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       const factories: ExtensionFactory[] = [pi => {
         pi.on("tool_call", event => { runtime?.validatedToolCalls.add(event.toolCallId); });
         pi.on("context", async event => {
+          if (evidenceTurn && this.options.recordEvidenceContext !== undefined) {
+            const resident = event.messages.flatMap(message => message.role === "toolResult" && message.toolName === "work_read_result"
+              && !message.isError ? [message.toolCallId] : []).slice(-32);
+            this.options.recordEvidenceContext(input.turnId,resident);
+          }
           const required = await input.refreshRequiredContext?.() ?? input.requiredContext;
           const background = [required, input.backgroundContext].filter(Boolean).join("\n\n");
           if (background === "" && memory === "") return;

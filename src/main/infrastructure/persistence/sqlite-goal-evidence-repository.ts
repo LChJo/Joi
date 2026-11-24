@@ -1,6 +1,7 @@
 /* SQLite implements the asynchronous port with synchronous transactions. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import type { GoalEvidenceCatalog,GoalEvidenceChange,GoalEvidenceChangesPage,GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope,GoalResultReadReceipt,GoalRoadmapQuery } from "../../application/ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import { parseWorkHandoff,type WorkHandoffStatus } from "../../domain/work/work-handoff.js";
@@ -270,6 +271,9 @@ export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
   async recordResultRead(input: GoalResultReadReceipt): Promise<void> {
     this.database.transaction(db => {
       const receipt = db.prepare(`SELECT rs.revision,COALESCE(q.revision,0) AS requirements,r.body_ref,
+          w.access_mode,r.status AS result_status,r.is_authoritative,r.is_late,
+          COALESCE(v.status,'UNVERIFIED') AS verification,gate.status AS gate_status,gate.question_version,
+          resident.resident_json,
           t.status,g.canceled_at,g.dismissed_at,g.failed_at,
           (t.input_id=${harnessReviewInputIdSql("g.input_id","rs.revision")} OR
             (rs.synthetic_input_id=i.input_id AND rs.revision=i.result_revision
@@ -280,6 +284,9 @@ export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
         LEFT JOIN joi_goal_requirements q ON q.goal_input_id=g.input_id
         JOIN work_results r ON r.result_id=? AND r.workbench_id=t.workbench_id
         JOIN work_items w ON w.work_id=r.work_id AND w.input_id=g.input_id AND w.workbench_id=t.workbench_id
+        LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
+        LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id=g.input_id
+        LEFT JOIN method_learning_residency resident ON resident.turn_id=t.turn_id
         WHERE t.turn_id=? AND t.workbench_id=? AND g.input_id=?
           AND (g.workbench_id=t.workbench_id OR g.workbench_id IS NULL)`)
         .get(input.resultId,input.turnId,input.workbenchId,input.goalInputId);
@@ -291,11 +298,18 @@ export class SqliteGoalEvidenceRepository implements GoalEvidenceRepository {
         throw new DomainError("goal_evidence_turn_inactive","This turn can no longer read evidence.");
       }
       if (receipt.current_owner !== 1) throw new DomainError("goal_evidence_snapshot_stale","The goal's evidence owner changed. Refresh the evidence snapshot.");
-      db.prepare(`INSERT OR IGNORE INTO joi_goal_evidence_reads
+      const inserted = db.prepare(`INSERT OR IGNORE INTO joi_goal_evidence_reads
         (turn_id,tool_call_id,goal_input_id,result_revision,requirements_revision,result_id,source_ref,start_offset,end_offset)
         VALUES (?,?,?,?,?,?,?,?,?)`)
         .run(input.turnId,input.toolCallId,input.goalInputId,receipt.revision ?? 0,receipt.requirements ?? 0,
           input.resultId,receipt.body_ref,input.start,input.end);
+      if (inserted.changes === 1) {
+        const authority = createHash("sha256").update(JSON.stringify([input.workbenchId,input.goalInputId,receipt.revision,
+          receipt.requirements,receipt.access_mode,receipt.result_status,receipt.is_authoritative,receipt.is_late,receipt.verification,
+          receipt.gate_status,receipt.question_version])).digest("hex");
+        db.prepare("INSERT INTO method_learning_decision_receipts VALUES (?,?,?,?)")
+          .run(input.turnId,input.toolCallId,receipt.resident_json ?? null,authority);
+      }
     });
   }
   async readIdentity(input: GoalEvidenceScope & { resultId: string }) {

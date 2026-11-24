@@ -6,13 +6,18 @@ import { evolutionScenarios, scenarioPrompt, type EvolutionScenario } from "../.
 import { simulateMethodAction } from "../../domain/evolution/learning-replay.js";
 import { deriveMethodExperience, type MethodExperience } from "../../domain/evolution/method-experience.js";
 import { EvolutionModelCallError, type EvolutionModel, type EvolutionSourcePin, type EvolutionStore } from "../ports/evolution.js";
-import type { JsonObject, MethodExperiment, MethodRevision, MethodLearningControl, MethodLearningStore, MethodTrialKey } from "../ports/method-learning.js";
+import type { JsonObject, MethodExperiment, MethodGoalPin, MethodRevision, MethodLearningControl, MethodLearningParticipant, MethodLearningStore, MethodTrialKey } from "../ports/method-learning.js";
 import type { RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { emitRuntimeDiagnostic } from "../ports/runtime-diagnostics.js";
-import type { EvolutionLearningDto, EvolutionLearningBlocker, EvolutionReason, EvolutionStatusDto, EvolutionOverviewDto, EvolutionModelFailure, EvolutionMethodDto } from "../../../shared/evolution.js";
+import type { EvolutionLearningDto, EvolutionLearningBlocker, EvolutionReason, EvolutionStatusDto, EvolutionOverviewDto, EvolutionModelFailure, EvolutionMethodDto, EvolutionProductionEvidenceDto } from "../../../shared/evolution.js";
 import { EvolutionService } from "./evolution-service.js";
+import { applyShadowAction, shadowArm, shadowPrompt, shadowVerdict, type ShadowRun, type ShadowTrial, type ShadowView } from "./method-shadow.js";
+import { hasRepeatedDecisionPage } from "../../domain/evolution/learning-decision-fragment.js";
+import { independentSealedCases, sealedCoverage } from "../../domain/evolution/learning-sealed.js";
+import { qualityDifferenceInterval } from "../../domain/evolution/learning-cohort.js";
 
 export const METHOD_EVALUATOR_VERSION = "joi-method-learning-v1";
+const SOURCE_SPLIT_VERSION = 1;
 const DAY = 86_400_000;
 const modules: readonly MethodModule[] = ["context", "planning", "completion"];
 const json = (value: object): JsonObject => JSON.parse(JSON.stringify(value)) as JsonObject;
@@ -22,12 +27,21 @@ const equalPin = (a: EvolutionSourcePin | null | undefined, b: EvolutionSourcePi
     && a.modelId === b.modelId && a.modelRevisionId === b.modelRevisionId;
 };
 const bucket = (id: string) => Array.from(id).reduce((sum, ch) => (Math.imul(sum, 31) + ch.charCodeAt(0)) >>> 0, 0) % 5;
-interface Trial {
+interface Trial extends ShadowTrial {
   scenarioId: string; variant: "baseline" | "candidate"; attempt: number; calls: number; modelCalls: number;
   tokens: number; tokensComplete: boolean; observations: string[]; actions: string[]; success?: boolean; violation?: boolean;
 }
+interface ExperienceStudy {
+  order: ["with" | "without","with" | "without"];
+  startCalls: number;
+  startTokens: number | null;
+  reports: { retrieval:"with" | "without"; candidate:MethodPolicy|null; fixes:string[]; accepted:boolean;
+    successes:number; calls:number; tokens:number|null }[];
+  selected: "with" | "without" | "parent" | null;
+}
 interface ExperimentState {
   version: 2; evaluator: string; pin: EvolutionSourcePin; parent: MethodPolicy; candidate: MethodPolicy | null;
+  splitVersion?: number;
   parentRevisionId: string | null; dataset: LearningCase[]; trials: Trial[]; current: Trial | null;
   protocol: Trial; sequence: number; calls: number; tokens: number | null; invalidStreak: number;
   failure: EvolutionModelFailure | null; reason: EvolutionReason; benefit: "quality" | "efficiency" | null;
@@ -35,12 +49,19 @@ interface ExperimentState {
   transientFailures?: number; retryAt?: string | null;
   experience?: MethodExperience | null;
   waitingSince?: string;
+  shadow?: ShadowRun;
+  sealedManifest?: { version: 1; evaluationId: string; lockedAt: string; caseIds: string[]; groupIds: string[]; policy: string; parent: string;
+    expectedTrials: number; reusableBaselineTrials: number; estimatedNewCalls: number };
+  candidateRejection?: "structure" | "rejected_duplicate" | "development_mismatch";
+  experienceStudy?: ExperienceStudy;
 }
 interface RevisionState {
   version: 2; evaluator: string; pin: EvolutionSourcePin; policy: MethodPolicy; parentRevisionId: string | null;
   module: MethodModule; benefit: "quality" | "efficiency"; baselineSuccesses: number; candidateSuccesses: number;
   evaluatedRuns: number; candidateGoals: string[]; controlGoals: string[]; reason: EvolutionReason;
   datasetIds: string[]; defect: string;
+  cohort?: { decisionAt: string; minimumPairs: number; experimentId: string };
+  production?: EvolutionProductionEvidenceDto;
 }
 const state = (experiment: MethodExperiment): ExperimentState => {
   if (experiment.state.version !== 2 || experiment.state.evaluator !== METHOD_EVALUATOR_VERSION) throw new DomainError("evolution_state_invalid", "The experiment requires revalidation.");
@@ -114,9 +135,16 @@ export class MethodLearningService extends EvolutionService {
     checkpoint.generation = (checkpoint.generation ?? 0) + 1;
     checkpoint.invalidStreak = 0; checkpoint.failure = null;
     checkpoint.transientFailures = 0; checkpoint.retryAt = null;
+    if (checkpoint.shadow !== undefined) {
+      checkpoint.reason = "evaluating"; experiment.status = "RUNNING";
+      this.#save(experiment,checkpoint); return;
+    }
     checkpoint.protocol = emptyTrial(protocolScenario().id, "baseline", 0);
     checkpoint.candidate = null; checkpoint.current = null; checkpoint.trials = []; checkpoint.fixes = [];
     checkpoint.experience = null;
+    delete checkpoint.sealedManifest;
+    delete checkpoint.candidateRejection;
+    delete checkpoint.experienceStudy;
     checkpoint.reason = "evaluating"; checkpoint.allowRepin = true;
     experiment.phase = "PROTOCOL"; experiment.status = "RUNNING";
     this.#save(experiment, checkpoint);
@@ -127,6 +155,21 @@ export class MethodLearningService extends EvolutionService {
     if (this.#learning.store.experiments().some(e => this.#occupiesSlot(e))) throw new DomainError("evolution_run_now_invalid", "An experiment is already in flight.");
     this.#capture();
     if (this.#availableDefects(workbenchId).length > 0) this.#learning.legacyStore.update(workbenchId, s => { s.runRequestedAt = this.#learning.now(); });
+    return this.status(workbenchId);
+  }
+  override requestShadow(workbenchId: string, callLimit: number): EvolutionStatusDto {
+    if (!Number.isSafeInteger(callLimit) || callLimit<6 || callLimit>60) throw new DomainError("evolution_budget_invalid","The shadow run needs a limit between 6 and 60 calls.");
+    const store = this.#learning.store;
+    const participant = store.participant(workbenchId);
+    const control = store.control();
+    if (!participant.enabled || participant.paused || !control.enabled || control.paused || participant.dailyCallLimit===0 || control.dailyCallLimit===0) {
+      throw new DomainError("evolution_run_now_invalid","Enable and resume learning before requesting a shadow comparison.");
+    }
+    if (participant.shadowRequest == null && !store.experiments().some(e=>e.workbenchId===workbenchId && this.#occupiesSlot(e) && state(e).shadow!==undefined)) {
+      const supported = store.decisionFragments(workbenchId).some(item=>item.status==="ready" && hasRepeatedDecisionPage(item.fragment));
+      store.configureParticipant(workbenchId,supported ? {shadowRequest:{requestedAt:this.#learning.now(),callLimit},shadowNoOpportunity:null}
+        : {shadowNoOpportunity:callLimit});
+    }
     return this.status(workbenchId);
   }
   override overview(): EvolutionOverviewDto {
@@ -154,14 +197,17 @@ export class MethodLearningService extends EvolutionService {
       canaryRevisionId: this.#applicable(workbenchId, "CANARY")?.id ?? null };
   }
   #currentExperiment(workbenchId: string): MethodExperiment | undefined {
-    const experiments = this.#learning.store.experiments().filter(e => e.workbenchId === workbenchId);
+    const experiments = this.#learning.store.experiments().filter(e => e.workbenchId === workbenchId && state(e).shadow === undefined);
     return experiments.find(e => this.#occupiesSlot(e)) ?? experiments.filter(e => e.status === "PAUSED").at(-1) ?? experiments.at(-1);
   }
   #project(workbenchId: string): EvolutionLearningDto {
     const store = this.#learning.store;
+    const asOf = this.#learning.now();
+    const day = asOf.slice(0, 10);
     const control = store.control();
-    const usage = store.usage(this.#learning.now().slice(0, 10));
+    const usage = store.usage(day);
     const participant = store.participant(workbenchId);
+    const localUsage = store.usage(day, workbenchId);
     const cases = store.listCases(workbenchId);
     const experiment = this.#currentExperiment(workbenchId);
     const checkpoint = experiment === undefined ? null : state(experiment);
@@ -170,7 +216,7 @@ export class MethodLearningService extends EvolutionService {
     if (!control.enabled || !participant.enabled || control.dailyCallLimit === 0) blockers.push("disabled");
     if (control.paused || participant.paused) blockers.push("paused");
     if (!this.#learning.legacyStore.idle()) blockers.push("not_idle");
-    if (usage.calls >= control.dailyCallLimit || (participant.enabled && store.usage(this.#learning.now().slice(0, 10), workbenchId).calls >= participant.dailyCallLimit)) blockers.push("budget_exhausted");
+    if (usage.calls >= control.dailyCallLimit || (participant.enabled && localUsage.calls >= participant.dailyCallLimit)) blockers.push("budget_exhausted");
     if (this.#defects(workbenchId).length === 0 && experiment?.status !== "RUNNING") blockers.push("no_reproducible_case");
     if (checkpoint?.reason === "insufficient_samples") blockers.push("insufficient_samples");
     const revisions = store.revisions().filter(r => r.scope === "GLOBAL" || r.workbenchId === workbenchId);
@@ -183,12 +229,35 @@ export class MethodLearningService extends EvolutionService {
       const s = revisionState(r);
       return { revisionId: r.id, scope: r.scope, module: s.module, status: r.status, createdAt: r.createdAt, benefit: s.benefit,
         baselineSuccesses: s.baselineSuccesses, candidateSuccesses: s.candidateSuccesses, evaluatedRuns: s.evaluatedRuns,
-        candidateGoals: s.candidateGoals.length, controlGoals: s.controlGoals.length };
+        candidateGoals: s.candidateGoals.length, controlGoals: s.controlGoals.length,
+        ...(s.production===undefined ? {} : {production:s.production}) };
     });
+    const shadowExperiment = store.experiments().filter(e=>e.workbenchId===workbenchId && state(e).shadow!==undefined).at(-1);
+    const shadowCheckpoint = shadowExperiment === undefined ? undefined : state(shadowExperiment);
+    const shadow = shadowCheckpoint?.shadow;
+    const shadowView: ShadowView | undefined = participant.shadowRequest != null
+      ? {status:"queued",callLimit:participant.shadowRequest.callLimit,verdict:null,baseline:shadowArm([],"baseline"),candidate:shadowArm([],"candidate")}
+      : participant.shadowNoOpportunity != null
+        ? {status:"stopped",callLimit:participant.shadowNoOpportunity,verdict:"no_opportunity",baseline:shadowArm([],"baseline"),candidate:shadowArm([],"candidate")}
+      : shadow === undefined || shadowCheckpoint === undefined ? undefined : {
+        status:shadowExperiment?.status === "COMPLETED" ? "completed" : shadowExperiment?.status === "REJECTED" || shadowExperiment?.status === "PAUSED" ? "stopped" : "running",
+        callLimit:shadow.callLimit,verdict:shadow.verdict,
+        baseline:shadowArm([...shadowCheckpoint.trials,...(shadowCheckpoint.current === null ? [] : [shadowCheckpoint.current])],"baseline"),
+        candidate:shadowArm([...shadowCheckpoint.trials,...(shadowCheckpoint.current === null ? [] : [shadowCheckpoint.current])],"candidate") };
+    const replayable = new Set(store.decisionFragments(workbenchId).flatMap(result=>result.status==="ready" ? [result.fragment.sourceGroup] : []));
     if (checkpoint?.reason === "model_changed") blockers.push("model_changed");
     if (checkpoint?.reason === "model_response_invalid") blockers.push("model_response_invalid");
     if (checkpoint?.retryAt != null && checkpoint.retryAt > this.#learning.now()) blockers.push("retry_wait");
     const waitingForSamples = experiment?.status === "PAUSED" && checkpoint?.reason === "insufficient_samples";
+    const activeDataset = experiment !== undefined && (experiment.status === "RUNNING" || experiment.status === "PAUSED");
+    const profile = activeDataset ? experiment.profile : cases.find(c => c.split === "development" && c.defect !== "healthy")?.profile;
+    const reservations = activeDataset || profile === undefined ? [] : this.#reservations();
+    const compatible = profile === undefined ? [] : store.listCases().filter(c => c.profile === profile
+      && (activeDataset ? experiment.scope === "GLOBAL" || c.workbenchId === workbenchId : !this.#profileReserved(c.workbenchId, c.profile, reservations)));
+    const development = new Set(compatible.filter(c => c.split === "development").map(c => c.groupId));
+    const sealedGroups = new Set(compatible.filter(c => c.split === "sealed" && !development.has(c.groupId)).map(c => c.groupId)).size;
+    const sealedTrials = checkpoint?.sealedManifest===undefined ? [] : checkpoint.trials
+      .filter(t=>checkpoint.sealedManifest?.caseIds.includes(t.scenarioId)===true || evolutionScenarios("sealed").some(scenario=>scenario.id===t.scenarioId));
     const stage = control.paused || participant.paused || (experiment?.status === "PAUSED" && !waitingForSamples) ? "PAUSED" : experiment?.status === "RUNNING" ? experiment.phase
       : methods.some(r => r.status === "CANARY") ? "CANARY" : methods.some(r => r.status === "ACTIVE") ? "ACTIVE"
         : cases.some(c => c.defect !== "healthy") ? "DIAGNOSING" : "OBSERVING";
@@ -197,6 +266,10 @@ export class MethodLearningService extends EvolutionService {
         callsUsedToday: usage.calls, tokensToday: usage.tokensComplete ? usage.tokens : null, pause: control.pause ?? null },
       participation: { enabled: participant.enabled, paused: participant.paused,
         ...(participant.reason === "call_failed" || participant.reason === "rolled_back" || participant.reason === "model_response_invalid" ? {reason:participant.reason} : {}) },
+      readiness: { splitVersion:SOURCE_SPLIT_VERSION, asOf, ...store.sourceReadiness(workbenchId), replayableDevelopmentGroups:replayable.size,
+        compatibleSealedGroups:sealedGroups, missingSealedGroups:Math.max(0,5-sealedGroups),
+        callsRemainingToday:control.enabled && participant.enabled ? Math.max(0,Math.min(control.dailyCallLimit-usage.calls,participant.dailyCallLimit-localUsage.calls)) : 0 },
+      ...(shadowView === undefined ? {} : {shadow:shadowView}),
       cases: { development: cases.filter(c => c.split === "development").length, sealed: cases.filter(c => c.split === "sealed").length,
         defects: cases.filter(c => c.defect !== "healthy").length,
         developmentGroups: new Set(cases.filter(c => c.split === "development").map(c => c.groupId)).size,
@@ -209,7 +282,12 @@ export class MethodLearningService extends EvolutionService {
         tokens: experimentUsage !== null && experimentUsage.calls > 0 ? experimentUsage.tokensComplete ? experimentUsage.tokens : null : checkpoint.tokens,
         reason: checkpoint.reason, retryAt: checkpoint.retryAt ?? null, waitingForSamples,
         sealedGroups: new Set(checkpoint.dataset.filter(c => c.split === "sealed").map(c => c.groupId)).size, requiredSealedGroups: 5,
-        baselineNotReproduced: checkpoint.reason === "insufficient_gain" && experiment.phase === "DEVELOP" },
+        baselineNotReproduced: checkpoint.reason === "insufficient_gain" && experiment.phase === "DEVELOP",
+        ...(checkpoint.candidateRejection===undefined ? {} : {candidateRejection:checkpoint.candidateRejection}),
+        ...(checkpoint.sealedManifest===undefined ? {} : {sealed:{evaluationId:checkpoint.sealedManifest.evaluationId,lockedAt:checkpoint.sealedManifest.lockedAt,
+          expectedTrials:checkpoint.sealedManifest.expectedTrials,reusableBaselineTrials:checkpoint.sealedManifest.reusableBaselineTrials,
+          estimatedNewCalls:checkpoint.sealedManifest.estimatedNewCalls,completedTrials:sealedTrials.length,
+          baseline:shadowArm(sealedTrials,"baseline"),candidate:shadowArm(sealedTrials,"candidate"),cost:store.experimentPhaseUsage(experiment.id)}}) },
       appliedGoals: store.revisions().reduce((sum, revision) => sum + store.countGoalPins(revision.id), 0), methods };
   }
   #defects(workbenchId: string): LearningCase[] {
@@ -258,7 +336,14 @@ export class MethodLearningService extends EvolutionService {
       return running.status === "RUNNING" && p.enabled && !p.paused && store.usage(now.slice(0, 10), running.workbenchId).calls < p.dailyCallLimit
         ? [{ inputId: `evolution:${running.workbenchId}`, createdAt: running.createdAt }] : [];
     }
-    for (const id of this.#learning.legacyStore.listWorkbenchIds()) {
+    const ids = this.#learning.legacyStore.listWorkbenchIds();
+    for (const id of ids) {
+      const p = store.participant(id);
+      if (p.shadowRequest != null && p.enabled && !p.paused && store.usage(now.slice(0,10),id).calls<p.dailyCallLimit) {
+        return [{inputId:`evolution:${id}`,createdAt:p.shadowRequest.requestedAt}];
+      }
+    }
+    for (const id of ids) {
       const p = store.participant(id);
       const requested = this.#learning.legacyStore.read(id).runRequestedAt;
       const explicit = requested != null && Date.parse(now) - Date.parse(requested) <= 15 * 60_000;
@@ -268,9 +353,13 @@ export class MethodLearningService extends EvolutionService {
   }
   #untried(id: string): boolean {
     const cases = this.#availableDefects(id);
-    const tried = this.#learning.store.experiments().filter(e => (e.status === "COMPLETED" || (e.status === "REJECTED" && state(e).reason !== "model_response_invalid"))
+    const tried = this.#learning.store.experiments().filter(e => this.#countsAsAttempt(e)
       && (this.#observedPin === undefined || equalPin(state(e).pin, this.#observedPin)));
     return cases.some(c => !tried.some(e => state(e).dataset.some(prior => prior.caseId === c.caseId)));
+  }
+  #countsAsAttempt(experiment: MethodExperiment): boolean {
+    return state(experiment).shadow===undefined && (experiment.status === "COMPLETED" || (experiment.status === "REJECTED"
+      && !["model_response_invalid", "revalidation_required"].includes(state(experiment).reason)));
   }
   #retireArchivedExperiments(): void {
     const active = new Set(this.#learning.legacyStore.listWorkbenchIds());
@@ -286,12 +375,10 @@ export class MethodLearningService extends EvolutionService {
       if (Date.parse(this.#learning.now()) - Date.parse(checkpoint.waitingSince ?? experiment.createdAt) > 30 * DAY) {
         this.#finish(experiment, checkpoint, "insufficient_samples"); continue;
       }
-      const groups = new Set(checkpoint.dataset.map(c => c.groupId));
-      for (const item of this.#learning.store.listCases().filter(c => c.split === "sealed" && c.profile === experiment.profile && (experiment.scope === "GLOBAL" || c.workbenchId === experiment.workbenchId))) {
-        if (!groups.has(item.groupId)) { checkpoint.dataset.push(item); groups.add(item.groupId); }
-        if (checkpoint.dataset.filter(c => c.split === "sealed").length >= 10) break;
-      }
-      if (checkpoint.dataset.filter(c => c.split === "sealed").length >= 5 && !this.#learning.store.experiments().some(e => this.#occupiesSlot(e))) {
+      const development = checkpoint.dataset.filter(c=>c.split==="development");
+      const sealed = independentSealedCases(this.#learning.store.listCases().filter(c=>c.profile===experiment.profile),development,experiment.scope,experiment.workbenchId);
+      checkpoint.dataset=[...development,...sealed];
+      if (sealedCoverage(sealed,experiment.scope) && !this.#learning.store.experiments().some(e => this.#occupiesSlot(e))) {
         checkpoint.reason = "evaluating"; experiment.phase = checkpoint.candidate === null ? "PROPOSE" : "EVALUATE"; experiment.status = "RUNNING";
       }
       this.#save(experiment, checkpoint);
@@ -321,7 +408,11 @@ export class MethodLearningService extends EvolutionService {
     this.#running = true;
     try {
       let experiment = this.#learning.store.experiments().find(e => e.status === "RUNNING");
-      experiment ??= await this.#start(id);
+      if (experiment===undefined) {
+        const request = this.#learning.store.participant(id).shadowRequest;
+        experiment = request == null ? await this.#start(id) : await this.#startShadow(id,request);
+      }
+      if (experiment===undefined) return;
       const started = Date.now();
       for (let i = 0; i < (this.#learning.stepsPerHandle ?? 20) && Date.now() - started < 120_000; i += 1) {
         if (Boolean(signal?.aborted) || !this.#learning.legacyStore.idle() || this.canceled(inputId)) break;
@@ -331,12 +422,33 @@ export class MethodLearningService extends EvolutionService {
       }
     } finally { this.#running = false; }
   }
+  async #startShadow(workbenchId: string, request: NonNullable<MethodLearningParticipant["shadowRequest"]>): Promise<MethodExperiment | undefined> {
+    const store = this.#learning.store;
+    const pin = await this.#learning.model.pin();
+    if (this.canceled(`evolution:${workbenchId}`) || !this.#learning.legacyStore.idle()) return undefined;
+    const ready = store.decisionFragments(workbenchId).filter(item=>item.status==="ready").filter(item=>hasRepeatedDecisionPage(item.fragment));
+    const matching = ready.find(item=>item.fragment.sourceRevisionId===pin.sourceRevisionId && item.fragment.modelRevisionId===pin.modelRevisionId);
+    const selection = matching ?? ready[0];
+    if (selection===undefined) {store.consumeShadowRequest(workbenchId,request);return undefined;}
+    const {fragment,grade} = selection;
+    const now = this.#learning.now();
+    const experiment: MethodExperiment = {id:`${this.#learning.id()}:${now}`,workbenchId,scope:"WORKBENCH",
+      profile:learningProfile(fragment.requirements.length),phase:"DEVELOP",status:matching===undefined ? "REJECTED" : "RUNNING",
+      createdAt:now,updatedAt:now,state:{}};
+    const checkpoint: ExperimentState = {version:2,evaluator:METHOD_EVALUATOR_VERSION,splitVersion:SOURCE_SPLIT_VERSION,pin,
+      parent:fragment.parent,candidate:null,parentRevisionId:fragment.parentRevisionId,dataset:[],trials:[],current:null,
+      protocol:emptyTrial(protocolScenario().id,"baseline",0),sequence:0,calls:0,tokens:0,invalidStreak:0,failure:null,
+      reason:matching===undefined ? "model_changed" : "evaluating",benefit:null,pendingCall:null,fixes:[],
+      shadow:{contextVersion:1,fragment,grade,callLimit:request.callLimit,verdict:matching===undefined ? "source_changed" : null}};
+    experiment.state=json(checkpoint);
+    return store.consumeShadowRequest(workbenchId,request,experiment) ? experiment : undefined;
+  }
   async #start(workbenchId: string): Promise<MethodExperiment> {
     const pin = await this.#learning.model.pin();
     this.#observedPin = pin;
     const now = this.#learning.now();
     const all = this.#learning.store.listCases();
-    const tried = this.#learning.store.experiments().filter(e => (e.status === "COMPLETED" || (e.status === "REJECTED" && state(e).reason !== "model_response_invalid")) && equalPin(state(e).pin, pin));
+    const tried = this.#learning.store.experiments().filter(e => this.#countsAsAttempt(e) && equalPin(state(e).pin, pin));
     const target = this.#availableDefects(workbenchId).find(c => !tried.some(e => state(e).dataset.some(prior => prior.caseId === c.caseId))) ?? this.#availableDefects(workbenchId)[0];
     if (target === undefined) throw new DomainError("evolution_case_invalid", "No reproducible case is available.");
     const reservations = this.#reservations();
@@ -346,7 +458,9 @@ export class MethodLearningService extends EvolutionService {
       for (const item of [target, ...rows.filter(c => c.defect === target.defect), ...rows].filter(c => rows.some(row => row.caseId === c.caseId))) if (!selected.has(item.groupId)) selected.set(item.groupId, item);
       return [...selected.values()];
     };
-    let dataset = [...unique(filtered.filter(c => c.split === "development")).slice(0, 10), ...unique(filtered.filter(c => c.split === "sealed")).slice(0, 10)];
+    const development = unique(filtered.filter(c => c.split === "development")).slice(0, 10);
+    const potential = independentSealedCases(filtered,development,"GLOBAL",workbenchId);
+    let dataset = [...development, ...potential];
     const scope = new Set(dataset.map(c => c.workbenchId)).size >= 2 ? "GLOBAL" : "WORKBENCH";
     if (scope === "WORKBENCH") dataset = dataset.filter(c => c.workbenchId === workbenchId);
     const parent = this.#applicable(workbenchId, "ACTIVE", target.profile);
@@ -354,7 +468,7 @@ export class MethodLearningService extends EvolutionService {
     const parentPolicy = prior !== null && equalPin(prior.pin, pin) ? prior.policy : parseMethodPolicy(baselineMethodPolicy);
     const experiment: MethodExperiment = { id: `${this.#learning.id()}:${now}`, workbenchId, scope, profile: target.profile,
       phase: "PROTOCOL", status: "RUNNING", createdAt: now, updatedAt: now, state: {} };
-    const checkpoint: ExperimentState = { version: 2, evaluator: METHOD_EVALUATOR_VERSION, pin, parent: parentPolicy,
+    const checkpoint: ExperimentState = { version: 2, evaluator: METHOD_EVALUATOR_VERSION, splitVersion: SOURCE_SPLIT_VERSION, pin, parent: parentPolicy,
       candidate: null, parentRevisionId: prior !== null && equalPin(prior.pin, pin) ? parent?.id ?? null : null,
       dataset, trials: [], current: null, protocol: emptyTrial(protocolScenario().id, "baseline", 0), sequence: 0,
       calls: 0, tokens: 0, invalidStreak: 0, failure: null, reason: "evaluating", benefit: null, pendingCall: null, fixes: [], generation: 0 };
@@ -376,8 +490,9 @@ export class MethodLearningService extends EvolutionService {
     return scenarios.flatMap(scenario => variants.flatMap(variant => [0, 1, 2].map(attempt => ({ scenario, variant, attempt }))));
   }
   #cacheKey(s: ExperimentState, trial: Trial): MethodTrialKey {
+    const tool = s.splitVersion===undefined ? "isolated-evidence-v1" : `isolated-evidence-v1:split-${String(s.splitVersion)}`;
     return { source: s.pin.sourceRevisionId, model: s.pin.modelRevisionId,
-      tool: "isolated-evidence-v1", evaluator: METHOD_EVALUATOR_VERSION,
+      tool, evaluator: METHOD_EVALUATOR_VERSION,
       parent: policyKey(trial.variant === "baseline" ? s.parent : s.candidate ?? s.parent), caseId: trial.scenarioId, attempt: trial.attempt };
   }
   async #step(experiment: MethodExperiment, signal?: AbortSignal): Promise<boolean> {
@@ -387,20 +502,38 @@ export class MethodLearningService extends EvolutionService {
       this.#learning.store.completeCall(s.pendingCall, null, this.#learning.now()); s.pendingCall = null; s.tokens = null;
       if (s.current !== null) { s.current.tokensComplete = false; s.current.calls = 0; s.current.actions = []; s.current.observations = []; }
     }
+    if (s.shadow!==undefined) {
+      if (s.trials.length===6) {
+        s.shadow.verdict=shadowVerdict(s.trials); s.reason=s.shadow.verdict==="quality_regression" ? "quality_regression" : "insufficient_gain";
+        experiment.status="COMPLETED"; this.#save(experiment,s); return false;
+      }
+      if (s.calls>=s.shadow.callLimit) {
+        s.shadow.verdict="budget_exhausted"; this.#finish(experiment,s,"budget_exhausted"); return false;
+      }
+      if (!this.#learning.store.decisionFragments(experiment.workbenchId).some(entry=>entry.status==="ready" && entry.fragment.id===s.shadow?.fragment.id)) {
+        s.shadow.verdict="source_changed"; this.#finish(experiment,s,"revalidation_required"); return false;
+      }
+      s.current ??= emptyTrial(s.shadow.fragment.id,s.trials.length%2===0 ? "baseline" : "candidate",Math.floor(s.trials.length/2));
+    }
     const pin = await this.#learning.model.pin();
     if (!equalPin(pin, s.pin)) {
-      if (s.allowRepin === true && experiment.phase === "PROTOCOL") {
+      if (s.shadow!==undefined) {
+        s.shadow.verdict="source_changed"; this.#finish(experiment,s,"model_changed"); return false;
+      } else if (s.allowRepin === true && experiment.phase === "PROTOCOL") {
         s.pin = pin; s.parent = parseMethodPolicy(baselineMethodPolicy); s.parentRevisionId = null;
         s.candidate = null; s.trials = []; s.current = null; s.protocol = emptyTrial(protocolScenario().id, "baseline", 0);
         s.experience = null;
         s.allowRepin = false;
       } else { s.reason = "model_changed"; experiment.status = "PAUSED"; this.#pause("model_changed", experiment.workbenchId); this.#save(experiment, s); return false; }
     }
+    if (experiment.phase==="EVALUATE" && !this.#lockSealed(experiment,s)) return false;
+    if (experiment.phase==="PROPOSE" && s.experienceStudy===undefined) this.#beginExperienceStudy(experiment,s);
     if (experiment.phase !== "PROTOCOL" && experiment.phase !== "PROPOSE" && s.current === null) {
       const task = this.#tasks(experiment, s).find(task => !s.trials.some(t => t.scenarioId === task.scenario.id && t.variant === task.variant && t.attempt === task.attempt));
       if (task === undefined) { this.#advance(experiment, s); return true; }
       const trial = emptyTrial(task.scenario.id, task.variant, task.attempt);
-      const cached = this.#learning.store.cacheTrial(this.#cacheKey(s, trial));
+      const fresh = trial.variant==="candidate" && (experiment.phase==="EVALUATE" || s.experienceStudy!==undefined);
+      const cached = fresh ? null : this.#learning.store.cacheTrial(this.#cacheKey(s, trial));
       if (cached !== null) { s.trials.push(cached as unknown as Trial); this.#save(experiment, s); return true; }
       s.current = trial;
     }
@@ -410,13 +543,14 @@ export class MethodLearningService extends EvolutionService {
     const trial = experiment.phase === "PROTOCOL" ? s.protocol : s.current;
     if (trial !== null) trial.modelCalls += 1;
     experiment.state = json(s); experiment.updatedAt = now;
-    const reserved = this.#learning.store.reserveCall({ callId, experimentId: experiment.id, workbenchId: experiment.workbenchId, day: now.slice(0, 10), at: now, checkpoint: experiment });
+    const reserved = this.#learning.store.reserveCall({ callId, experimentId: experiment.id, workbenchId: experiment.workbenchId, day: now.slice(0, 10), at: now, checkpoint: experiment,
+      phase:s.shadow===undefined ? experiment.phase : "SHADOW" });
     if (reserved !== "reserved") return false;
     emitRuntimeDiagnostic(this.#learning.diagnostics, "joi.evolution.batch_step_started", { phase: experiment.phase, batchId: experiment.id, callId, workbenchId: experiment.workbenchId });
     try {
       const prompt = this.#prompt(experiment, s);
       if (s.invalidStreak > 0) prompt.systemPrompt += "\nThe previous response was rejected by the isolated tool contract. Return exactly one tool exposed by this request. Method operation names are instructions, never additional tools.";
-      const raw = await this.#learning.model.call({ pin, ...prompt, contract: "METHOD_V2", idempotencyId: callId, workbenchId: experiment.workbenchId,
+      const raw = await this.#learning.model.call({ pin, ...prompt, contract: s.shadow===undefined ? "METHOD_V2" : "METHOD_SHADOW_V1", idempotencyId: callId, workbenchId: experiment.workbenchId,
         ...(signal === undefined ? {} : { signal }) });
       const wrapped = raw !== null && typeof raw === "object" ? raw as { value?: unknown; tokens?: unknown } : {};
       const value = "value" in wrapped ? wrapped.value : raw;
@@ -427,9 +561,25 @@ export class MethodLearningService extends EvolutionService {
       if (trial !== null) { trial.tokens += tokens ?? 0; trial.tokensComplete &&= tokens !== null; }
       const currentPin = await this.#learning.model.pin();
       if (!this.#ownsCall(experiment.id, s, callId)) return false;
-      if (!equalPin(currentPin, s.pin)) { s.reason = "model_changed"; experiment.status = "PAUSED"; this.#pause("model_changed", experiment.workbenchId); this.#save(experiment, s); return false; }
+      if (!equalPin(currentPin, s.pin)) {
+        if (s.shadow!==undefined) { s.shadow.verdict="source_changed"; this.#finish(experiment,s,"model_changed"); return false; }
+        s.reason = "model_changed"; experiment.status = "PAUSED"; this.#pause("model_changed", experiment.workbenchId); this.#save(experiment, s); return false;
+      }
       if (signal?.aborted === true || this.canceled(`evolution:${experiment.workbenchId}`)) { this.#save(experiment, s); return false; }
-      if (experiment.phase === "PROPOSE") this.#proposal(experiment, s, value);
+      if (s.shadow!==undefined) {
+        const shadow = s.shadow;
+        const attempt = requireTrial(s.current);
+        attempt.calls++;
+        applyShadowAction(shadow,attempt,value,page=>this.#learning.store.readDecisionPage(shadow.fragment,page));
+        if (attempt.calls>=8 && attempt.success===undefined) attempt.success=false;
+        if (attempt.success!==undefined) {s.trials.push(attempt);s.current=null;}
+        if (s.trials.length===6) {
+          shadow.verdict=shadowVerdict(s.trials);
+          experiment.status="COMPLETED";s.reason=shadow.verdict==="quality_regression" ? "quality_regression" : "insufficient_gain";
+        } else if (s.calls>=shadow.callLimit) {
+          shadow.verdict="budget_exhausted";experiment.status="REJECTED";s.reason="budget_exhausted";
+        }
+      } else if (experiment.phase === "PROPOSE") this.#proposal(experiment, s, value);
       else this.#simulation(experiment, s, value);
       s.invalidStreak = 0; s.failure = null;
       s.transientFailures = 0; s.retryAt = null; s.reason = experiment.status === "RUNNING" ? "evaluating" : s.reason;
@@ -440,6 +590,9 @@ export class MethodLearningService extends EvolutionService {
       if (s.pendingCall !== null) { this.#learning.store.completeCall(callId, tokens, this.#learning.now()); s.pendingCall = null;
         s.tokens = s.tokens === null || tokens === null ? null : s.tokens + tokens;
         if (trial !== null) { trial.tokens += tokens ?? 0; trial.tokensComplete &&= tokens !== null; } }
+      if (s.shadow!==undefined && error instanceof DomainError && error.code==="evolution_shadow_stale") {
+        s.shadow.verdict="source_changed"; this.#finish(experiment,s,"revalidation_required"); return false;
+      }
       const invalid = error instanceof DomainError && error.code === "evolution_response_invalid";
       s.reason = invalid ? "model_response_invalid" : "call_failed";
       s.failure = error instanceof EvolutionModelCallError ? error.failure : null;
@@ -462,6 +615,35 @@ export class MethodLearningService extends EvolutionService {
     }
     return true;
   }
+  #lockSealed(experiment: MethodExperiment, s: ExperimentState): boolean {
+    const chosen = s.dataset.filter(c=>c.split==="sealed");
+    const all = this.#learning.store.listCases();
+    const development = new Set([...s.dataset,...all].filter(c=>c.split==="development").map(c=>c.groupId));
+    const allowed = all.filter(c=>c.split==="sealed" && c.profile===experiment.profile && !development.has(c.groupId)
+      && (experiment.scope==="GLOBAL" || c.workbenchId===experiment.workbenchId));
+    const key = (item:LearningCase) => JSON.stringify([item.caseId,item.groupId,item.workbenchId,item.split]);
+    const live = new Set(allowed.map(key));
+    const valid = sealedCoverage(chosen,experiment.scope) && chosen.every(c=>live.has(key(c)))
+      && new Set(chosen.map(c=>c.groupId)).size===chosen.length && s.candidate!==null;
+    if (!valid) {this.#finish(experiment,s,"revalidation_required");return false;}
+    if (s.sealedManifest!==undefined) {
+      const manifest=s.sealedManifest;
+      if (manifest.parent===policyKey(s.parent) && manifest.policy===policyKey(s.candidate ?? s.parent)
+        && JSON.stringify(manifest.caseIds)===JSON.stringify(chosen.map(c=>c.caseId))
+        && JSON.stringify(manifest.groupIds)===JSON.stringify(chosen.map(c=>c.groupId))) return true;
+      this.#finish(experiment,s,"revalidation_required");return false;
+    }
+    const tasks = this.#tasks(experiment,s);
+    const cached = tasks.filter(task=>task.variant==="baseline" &&
+      this.#learning.store.cacheTrial(this.#cacheKey(s,emptyTrial(task.scenario.id,"baseline",task.attempt)))!==null);
+    const cachedKeys = new Set(cached.map(task=>JSON.stringify([task.scenario.id,task.attempt])));
+    s.sealedManifest={version:1,evaluationId:`${experiment.id}:evaluation:${String(s.generation ?? 0)}`,
+      lockedAt:this.#learning.now(),caseIds:chosen.map(c=>c.caseId),groupIds:chosen.map(c=>c.groupId),
+      policy:policyKey(s.candidate ?? s.parent),parent:policyKey(s.parent),expectedTrials:tasks.length,reusableBaselineTrials:cached.length,
+      estimatedNewCalls:tasks.reduce((sum,task)=>sum+(task.variant==="baseline" && cachedKeys.has(JSON.stringify([task.scenario.id,task.attempt])) ? 0 : task.scenario.requiredIds.length+1),0)};
+    this.#save(experiment,s);
+    return true;
+  }
   #ownsCall(experimentId: string, checkpoint: ExperimentState, callId: string): boolean {
     const persisted = this.#learning.store.experiment(experimentId);
     if (persisted?.status !== "RUNNING") return false;
@@ -469,10 +651,13 @@ export class MethodLearningService extends EvolutionService {
     return (current.generation ?? 0) === (checkpoint.generation ?? 0) && current.pendingCall === callId;
   }
   #prompt(experiment: MethodExperiment, s: ExperimentState): { mode: "proposal" | "simulation" | "protocol"; systemPrompt: string; prompt: string } {
+    if (s.shadow!==undefined) return shadowPrompt(s.shadow,requireTrial(s.current));
     if (experiment.phase === "PROPOSE") {
       const development = s.dataset.filter(c => c.split === "development");
+      const retrieve=s.experienceStudy?.order[s.experienceStudy.reports.length]!=="without";
       return { mode: "proposal", systemPrompt: "Propose exactly one registered method-module change. User requirements, permissions, independent acceptance and side-effect gates are immutable. Use only provided development observations. Experiences are conditional development comparisons, not proof of independent or production benefit. Avoid methods rejected for quality, cost or hard violations under the same conditions. Never infer held-out content.",
-        prompt: JSON.stringify({ parent: s.parent, experiences: this.#experiences(experiment, s).slice(-4), development: development.map(c => ({ caseId: c.caseId, defect: c.defect,
+        prompt: JSON.stringify({ parent: s.parent, experiences:retrieve ? this.#experiences(experiment,s).slice(-4) : [],
+          evidenceReuseComparisons:retrieve ? this.#shadowExperiences(experiment,s).slice(-2) : [], development: development.map(c => ({ caseId: c.caseId, defect: c.defect,
           observations: s.trials.filter(t => t.scenarioId === c.caseId).map(t => ({ success: t.success, actions: t.actions, observations: t.observations, calls: t.modelCalls })) })) }) };
     }
     const trial = experiment.phase === "PROTOCOL" ? s.protocol : requireTrial(s.current);
@@ -492,7 +677,20 @@ export class MethodLearningService extends EvolutionService {
     });
   }
   #experiences(experiment: MethodExperiment, checkpoint: ExperimentState): (MethodExperience & {outcome: EvolutionReason})[] {
-    return this.#relatedExperiments(experiment, checkpoint).flatMap(prior => prior.experience == null ? [] : [{...prior.experience, outcome: prior.reason}]);
+    const current = new Set(checkpoint.dataset.filter(c=>c.split==="development").map(c=>c.groupId));
+    return this.#relatedExperiments(experiment, checkpoint).flatMap(prior => prior.experience == null || prior.splitVersion!==checkpoint.splitVersion
+      || prior.dataset.some(c=>c.split==="development" && current.has(c.groupId)) ? [] : [{...prior.experience, outcome: prior.reason}]);
+  }
+  #shadowExperiences(experiment: MethodExperiment,s: ExperimentState) {
+    const groups=new Set(s.dataset.filter(item=>item.split==="development").map(item=>item.groupId));
+    return this.#learning.store.experiments().filter(previous=>previous.workbenchId===experiment.workbenchId && previous.status==="COMPLETED")
+      .flatMap(previous=>{
+        const prior=state(previous),shadow=prior.shadow;
+        if (shadow?.verdict==null || !equalPin(prior.pin,s.pin) || groups.has(shadow.fragment.sourceGroup)
+          || policyKey(prior.parent)!==policyKey(s.parent)) return [];
+        return [{scope:"workbench",conditions:"unchanged scoped evidence pages in a single turn",verdict:shadow.verdict,
+          baseline:shadowArm(prior.trials,"baseline"),candidate:shadowArm(prior.trials,"candidate")}];
+      });
   }
   #scenario(s: ExperimentState, id: string): EvolutionScenario {
     const item = s.dataset.find(c => c.caseId === id);
@@ -500,17 +698,52 @@ export class MethodLearningService extends EvolutionService {
     if (result === undefined) throw new DomainError("evolution_case_invalid", "The trial has no immutable case.");
     return result;
   }
+  #beginExperienceStudy(experiment:MethodExperiment,s:ExperimentState):void {
+    if (s.splitVersion!==SOURCE_SPLIT_VERSION) return;
+    const groups=new Set(s.dataset.filter(item=>item.split==="development").map(item=>item.groupId));
+    const store=this.#learning.store;
+    const measured=this.#shadowExperiences(experiment,s)
+      .some(prior=>prior.verdict==="candidate" && prior.candidate.toolRequests<prior.baseline.toolRequests);
+    const day=this.#learning.now().slice(0,10);
+    const available=Math.min(store.control().dailyCallLimit-store.usage(day).calls,
+      store.participant(experiment.workbenchId).dailyCallLimit-store.usage(day,experiment.workbenchId).calls);
+    const ceiling=2+groups.size*3*6*3;
+    if (measured && available>=ceiling) s.experienceStudy={order:bucket(experiment.id)%2===0 ? ["with","without"] : ["without","with"],
+      reports:[],selected:null,startCalls:s.calls,startTokens:s.tokens};
+  }
+  #recordExperienceArm(experiment:MethodExperiment,s:ExperimentState, accepted:boolean):boolean {
+    const study=s.experienceStudy;
+    const retrieval=study?.order[study.reports.length];
+    if (study===undefined || retrieval===undefined || study.selected!==null) return false;
+    const arm=shadowArm(s.trials,"candidate");
+    study.reports.push({retrieval,candidate:s.candidate,fixes:s.fixes,accepted,successes:arm.success,calls:s.calls-study.startCalls,
+      tokens:study.startTokens===null || s.tokens===null ? null : s.tokens-study.startTokens});
+    study.startCalls=s.calls;study.startTokens=s.tokens;
+    s.candidate=null;s.current=null;s.fixes=[];s.trials=s.trials.filter(trial=>trial.variant==="baseline");
+    delete s.candidateRejection;
+    if (study.reports.length===1) {experiment.phase="PROPOSE";this.#save(experiment,s);return true;}
+    const selected=study.reports.filter(report=>report.accepted).sort((a,b)=>b.successes-a.successes || a.calls-b.calls
+      || (a.retrieval==="without" ? -1 : 1))[0];
+    study.selected=selected?.retrieval ?? "parent";
+    if (selected===undefined) this.#finish(experiment,s,"insufficient_gain");
+    else {s.candidate=selected.candidate;s.fixes=selected.fixes;experiment.phase="VALIDATE";this.#save(experiment,s);}
+    return true;
+  }
   #proposal(experiment: MethodExperiment, s: ExperimentState, value: unknown): void {
+    s.candidateRejection="structure";
     try {
       if (value === null || typeof value !== "object") throw new Error("invalid");
       const proposal = value as { strategy?: unknown; fixes?: unknown };
       const candidate = parseMethodPolicy(proposal.strategy, s.parent);
+      s.candidateRejection="rejected_duplicate";
       if (this.#relatedExperiments(experiment, s).some(prior => ["quality_regression", "cost_regression", "hard_violation"].includes(prior.reason)
         && prior.candidate !== null && policyKey(prior.candidate) === policyKey(candidate))) throw new Error("invalid");
+      s.candidateRejection="development_mismatch";
       if (!Array.isArray(proposal.fixes) || proposal.fixes.length === 0 || proposal.fixes.length > 10
         || !proposal.fixes.every(id => typeof id === "string" && s.dataset.some(c => c.caseId === id && c.split === "development"))) throw new Error("invalid");
       s.candidate = candidate; s.fixes = proposal.fixes as string[]; experiment.phase = "VALIDATE";
-    } catch { this.#finish(experiment, s, "invalid_candidate"); }
+      delete s.candidateRejection;
+    } catch { if (!this.#recordExperienceArm(experiment,s,false)) this.#finish(experiment, s, "invalid_candidate"); }
   }
   #simulation(experiment: MethodExperiment, s: ExperimentState, value: unknown): void {
     const trial = experiment.phase === "PROTOCOL" ? s.protocol : requireTrial(s.current);
@@ -527,8 +760,8 @@ export class MethodLearningService extends EvolutionService {
     s.current = next;
     if (next.success !== undefined) {
       s.trials.push(next); s.current = null;
-      this.#learning.store.saveTrial(this.#cacheKey(s, next), json(next));
-      if (trial.variant === "candidate" && next.violation === true) this.#finish(experiment, s, "hard_violation");
+      if (next.variant!=="candidate" || (experiment.phase!=="EVALUATE" && s.experienceStudy===undefined)) this.#learning.store.saveTrial(this.#cacheKey(s, next), json(next));
+      if (trial.variant === "candidate" && next.violation === true && !this.#recordExperienceArm(experiment,s,false)) this.#finish(experiment, s, "hard_violation");
     }
   }
   #protocolAction(scenario: EvolutionScenario, trial: Trial, value: unknown): boolean {
@@ -566,17 +799,31 @@ export class MethodLearningService extends EvolutionService {
       const failures = s.dataset.filter(c => c.split === "development" && (s.trials.filter(t => t.scenarioId === c.caseId && !t.success).length >= 2 || c.defect === "redundant_read"));
       if (failures.length === 0) { this.#finish(experiment, s, "insufficient_gain"); return; }
       experiment.phase = "PROPOSE";
-      if (new Set(s.dataset.filter(c=>c.split === "sealed").map(c=>c.groupId)).size < 5) { s.reason="insufficient_samples"; s.waitingSince=this.#learning.now(); experiment.status="PAUSED"; }
+      if (!sealedCoverage(s.dataset.filter(c=>c.split==="sealed"),experiment.scope)) { s.reason="insufficient_samples"; s.waitingSince=this.#learning.now(); experiment.status="PAUSED"; }
     } else if (experiment.phase === "VALIDATE") {
-      const comparisons = this.#comparisons(s, s.dataset.filter(c => c.split === "development").map(asScenario));
-      if (s.candidate !== null) s.experience=deriveMethodExperience({parent:s.parent,candidate:s.candidate,comparisons});
-      if (comparisons.some(c => c.candidate.filter(Boolean).length < c.baseline.filter(Boolean).length)) { this.#finish(experiment, s, "quality_regression"); return; }
+      const development=s.dataset.filter(c=>c.split==="development");
+      const comparisons = this.#comparisons(s, development.map(asScenario));
       const paired = comparisons.filter(c=>c.baselineTokens!==undefined && c.candidateTokens!==undefined);
-      if (comparisons.reduce((n,c)=>n+c.candidateCalls,0) > comparisons.reduce((n,c)=>n+c.baselineCalls,0)*1.1
-        || paired.reduce((n,c)=>n+(c.candidateTokens ?? 0),0) > paired.reduce((n,c)=>n+(c.baselineTokens ?? 0),0)*1.1) {
+      const qualityRegressed=comparisons.some(c=>c.candidate.filter(Boolean).length<c.baseline.filter(Boolean).length);
+      const costRegressed=comparisons.reduce((n,c)=>n+c.candidateCalls,0)>comparisons.reduce((n,c)=>n+c.baselineCalls,0)*1.1
+        || paired.reduce((n,c)=>n+(c.candidateTokens ?? 0),0)>paired.reduce((n,c)=>n+(c.baselineTokens ?? 0),0)*1.1;
+      if (this.#recordExperienceArm(experiment,s,!qualityRegressed && !costRegressed)) return;
+      if (s.candidate !== null) {
+        const derived=deriveMethodExperience({parent:s.parent,candidate:s.candidate,comparisons});
+        const ids=new Set(development.map(item=>item.caseId));
+        const actions=(variant:Trial["variant"])=>s.trials.filter(trial=>trial.variant===variant && ids.has(trial.scenarioId)).flatMap(trial=>trial.actions);
+        const baseline=actions("baseline"),candidate=actions("candidate");
+        s.experience=derived===null ? null : {...derived,
+          conditions:{profile:experiment.profile,scope:experiment.scope,defects:[...new Set(development.filter(item=>item.defect!=="healthy").map(item=>item.defect))]},
+          observedActions:{baseline:baseline.length,candidate:candidate.length,baselineReads:baseline.filter(action=>action.startsWith("read:")).length,
+            candidateReads:candidate.filter(action=>action.startsWith("read:")).length},
+          counterexamples:{regressions:comparisons.filter(row=>row.candidate.filter(Boolean).length<row.baseline.filter(Boolean).length).length,hardViolations:derived.violations}};
+      }
+      if (qualityRegressed) { this.#finish(experiment, s, "quality_regression"); return; }
+      if (costRegressed) {
         this.#finish(experiment,s,"cost_regression"); return;
       }
-      if (s.dataset.filter(c => c.split === "sealed").length < 5) { s.reason = "insufficient_samples"; s.waitingSince=this.#learning.now(); experiment.status = "PAUSED"; this.#save(experiment, s); return; }
+      if (!sealedCoverage(s.dataset.filter(c=>c.split==="sealed"),experiment.scope)) { s.reason = "insufficient_samples"; s.waitingSince=this.#learning.now(); experiment.status = "PAUSED"; this.#save(experiment, s); return; }
       experiment.phase = "EVALUATE";
     } else {
       const safety = this.#comparisons(s, evolutionScenarios("sealed"));
@@ -592,6 +839,7 @@ export class MethodLearningService extends EvolutionService {
           benefit: verdict.benefit, baselineSuccesses: heldOut.reduce((n, c) => n + c.baseline.filter(Boolean).length, 0),
           candidateSuccesses: heldOut.reduce((n, c) => n + c.candidate.filter(Boolean).length, 0), evaluatedRuns: heldOut.length * 6,
           candidateGoals: [], controlGoals: [], reason: "canary", datasetIds: s.dataset.map(c => c.caseId), defect: s.dataset.find(c => c.defect !== "healthy")?.defect ?? "healthy",
+          cohort:{decisionAt:new Date(Date.parse(this.#learning.now())+30*DAY).toISOString(),minimumPairs:5,experimentId:experiment.id},
         } satisfies RevisionState) };
       this.#learning.store.saveRevision(revision); s.reason = "canary"; s.benefit = verdict.benefit; experiment.status = "COMPLETED";
     }
@@ -633,7 +881,10 @@ export class MethodLearningService extends EvolutionService {
     const profile = learningProfile(count);
     const participant = store.participant(workbenchId);
     const active = this.#applicable(workbenchId, "ACTIVE", profile);
-    const canary = this.#applicable(workbenchId, "CANARY", profile);
+    const trial = this.#applicable(workbenchId,"CANARY",profile);
+    const decisionAt = trial===undefined ? undefined : revisionState(trial).cohort?.decisionAt;
+    const canary = trial!==undefined && decisionAt!==undefined && (this.#learning.now()>=decisionAt
+      || (store.goalCreatedAt(workbenchId,goalId) ?? "")<trial.createdAt) ? undefined : trial;
     const control = store.control();
     const eligible = control.enabled && !control.paused && control.dailyCallLimit > 0 && participant.enabled && !participant.paused && participant.dailyCallLimit > 0;
     const selected = !eligible ? undefined : canary !== undefined && bucket(goalId) === 0 ? canary : active;
@@ -665,6 +916,7 @@ export class MethodLearningService extends EvolutionService {
   #revert(revision: MethodRevision): void {
     if (revision.status === "REVERTED") return;
     const s = revisionState(revision);
+    if (s.production!==undefined) s.production.verdict="reverted";
     revision.status = "REVERTED"; s.reason = "rolled_back"; revision.updatedAt = this.#learning.now(); revision.state = json(s); this.#learning.store.saveRevision(revision);
     const parent = s.parentRevisionId === null ? null : this.#learning.store.revision(s.parentRevisionId);
     if (parent !== null && (parent.status === "ACTIVE" || (parent.status === "REJECTED" && revisionState(parent).reason === "promoted")) && equalPin(revisionState(parent).pin, s.pin)) { parent.status = "ACTIVE"; parent.updatedAt = this.#learning.now(); this.#learning.store.saveRevision(parent); }
@@ -684,9 +936,14 @@ export class MethodLearningService extends EvolutionService {
     }
     for (const revision of revisions) {
       const s = revisionState(revision);
-      const pins = store.goalPins().filter(p => p.at >= revision.createdAt && (revision.scope === "GLOBAL" || p.workbenchId === revision.workbenchId));
+      const scoped = revision.status==="CANARY" ? store.cohortGoalPins(revision.id,revision.createdAt,s.cohort?.decisionAt ?? this.#learning.now())
+        : store.revisionGoalPins(revision.id,revision.createdAt);
+      const pins = (revision.status==="ACTIVE" || s.cohort===undefined ? scoped.reverse() : scoped)
+        .filter(p=>revision.scope==="GLOBAL" || p.workbenchId===revision.workbenchId);
       const compatible = pins.filter(p => { const value = JSON.parse(p.policy) as { pin?: EvolutionSourcePin; evaluatorVersion?: string; cohortRevisionId?: string | null };
-        return facts.has(p.goalId) && value.pin != null && equalPin(value.pin, s.pin) && value.evaluatorVersion === METHOD_EVALUATOR_VERSION
+        const fact = facts.get(p.goalId);
+        return fact!==undefined && (revision.status!=="CANARY" || s.cohort===undefined || fact.observedAt<=s.cohort.decisionAt)
+          && value.pin != null && equalPin(value.pin, s.pin) && value.evaluatorVersion === METHOD_EVALUATOR_VERSION
           && (revision.status !== "CANARY" || value.cohortRevisionId === revision.id)
           && store.goalSourceMatches(p.goalId, s.pin.sourceRevisionId, s.pin.modelRevisionId); });
       const independent = (rows: typeof pins) => {
@@ -700,7 +957,12 @@ export class MethodLearningService extends EvolutionService {
       const candidates = independent(compatible.filter(p => p.revisionId === revision.id));
       const controls = independent(compatible.filter(p => p.revisionId === s.parentRevisionId));
       const failed = (goalId: string) => facts.get(goalId)?.expected !== "complete";
-      s.candidateGoals = candidates.map(p => p.goalId); s.controlGoals = controls.map(p => p.goalId);
+      s.candidateGoals = candidates.map(p => p.goalId);
+      if (revision.status==="CANARY") s.controlGoals = controls.map(p => p.goalId);
+      if (revision.status==="CANARY" && s.cohort!==undefined) {
+        this.#monitorRegisteredCohort(revision,s,pins,candidates,controls,facts,hardViolations);
+        continue;
+      }
       if (candidates.some(p => hardViolations.has(p.goalId)) || candidates.slice(0, 10).filter(p => failed(p.goalId)).length >= 2) { this.#revert(revision); continue; }
       if (revision.status === "CANARY") {
         if (Date.parse(this.#learning.now()) - Date.parse(revision.createdAt) > 30 * DAY) { revision.status = "REJECTED"; s.reason = "insufficient_samples"; }
@@ -741,5 +1003,66 @@ export class MethodLearningService extends EvolutionService {
       }
       revision.state = json(s); revision.updatedAt = this.#learning.now(); store.saveRevision(revision);
     }
+  }
+  #monitorRegisteredCohort(revision:MethodRevision,s:RevisionState,pins:MethodGoalPin[],candidates:MethodGoalPin[],controls:MethodGoalPin[],
+    facts:Map<string,LearningCase>,hardViolations:Set<string>):void {
+    const cohort=s.cohort;
+    if (cohort===undefined) return;
+    const store=this.#learning.store;
+    const fail = (pin: MethodGoalPin) => facts.get(pin.goalId)?.expected!=="complete";
+    const assignedCandidate = pins.filter(pin=>pin.revisionId===revision.id).length;
+    const assignedControl = pins.filter(pin=>pin.revisionId===s.parentRevisionId).length;
+    const candidateGroups = new Set(candidates.map(pin=>facts.get(pin.goalId)?.groupId));
+    const available = controls.filter(pin=>!candidateGroups.has(facts.get(pin.goalId)?.groupId));
+    const pairs = candidates.flatMap(candidate=>{
+      const fact=facts.get(candidate.goalId);
+      const index=available.findIndex(control=>control.workbenchId===candidate.workbenchId && facts.get(control.goalId)?.profile===fact?.profile);
+      const control=index<0 ? undefined : available.splice(index,1)[0];
+      return control===undefined ? [] : [{candidate,control}];
+    });
+    const costs = pairs.map(pair=>({baseline:store.goalMetrics(pair.control.goalId),candidate:store.goalMetrics(pair.candidate.goalId)}));
+    const baselineSuccesses = pairs.filter(pair=>!fail(pair.control)).length;
+    const candidateSuccesses = pairs.filter(pair=>!fail(pair.candidate)).length;
+    const baselineCalls = costs.reduce((sum,item)=>sum+item.baseline.calls,0);
+    const candidateCalls = costs.reduce((sum,item)=>sum+item.candidate.calls,0);
+    const pairedTokens=costs.filter(item=>item.baseline.tokens!==null && item.candidate.tokens!==null);
+    const baselineTokens=pairedTokens.reduce((sum,item)=>sum+(item.baseline.tokens ?? 0),0);
+    const candidateTokens=pairedTokens.reduce((sum,item)=>sum+(item.candidate.tokens ?? 0),0);
+    const measured=costs.length>0 && costs.every(item=>item.baseline.calls>0 && item.candidate.calls>0);
+    const completeTokens=measured && pairedTokens.length===costs.length;
+    const learningCost=store.experimentPhaseUsage(cohort.experimentId);
+    const qualityDelta=pairs.length===0 ? null : (candidateSuccesses-baselineSuccesses)/pairs.length;
+    const report: EvolutionProductionEvidenceDto = {decisionAt:cohort.decisionAt,minimumPairs:cohort.minimumPairs,assignedCandidate,assignedControl,
+      excluded:pins.length-pairs.length*2,pairs:pairs.length,baselineSuccesses,candidateSuccesses,qualityDelta,
+      qualityInterval:qualityDifferenceInterval(candidateSuccesses,baselineSuccesses,pairs.length),
+      baselineCalls:measured ? baselineCalls : null,candidateCalls:measured ? candidateCalls : null,
+      baselineTokens:completeTokens ? baselineTokens : null,candidateTokens:completeTokens ? candidateTokens : null,learningCost,breakEvenGoals:null,verdict:"observing"};
+    s.production=report;
+    if (candidates.some(pin=>hardViolations.has(pin.goalId)) || candidates.filter(fail).length>=2) {
+      revision.state=json(s); this.#revert(revision); return;
+    }
+    if (this.#learning.now()>=cohort.decisionAt) {
+      const qualifies=pairs.length>=cohort.minimumPairs && measured;
+      if (qualifies && candidateSuccesses<baselineSuccesses) {revision.state=json(s);this.#revert(revision);return;}
+      const undisputedCost=candidateCalls<=baselineCalls && candidateTokens<=baselineTokens;
+      const qualityBenefit=(qualityDelta ?? 0)>=0.05 && candidateCalls<=baselineCalls*1.1 && candidateTokens<=baselineTokens*1.1;
+      const efficiencyBenefit=undisputedCost && (candidateCalls<=baselineCalls*0.85 || (completeTokens && candidateTokens<=baselineTokens*0.85));
+      const gain=qualifies && (s.benefit==="quality" ? qualityBenefit : efficiencyBenefit);
+      if (gain) {
+        for (const prior of store.revisions().filter(r=>r.status==="ACTIVE" && r.scope===revision.scope && r.profile===revision.profile
+          && (r.scope==="GLOBAL" || r.workbenchId===revision.workbenchId))) {prior.status="REJECTED";store.saveRevision(prior);}
+        revision.status="ACTIVE";s.reason="promoted";report.verdict="promoted";
+        if (s.benefit==="efficiency" && learningCost.length>0) {
+          if (baselineCalls>candidateCalls) report.breakEvenGoals=Math.ceil(learningCost.reduce((sum,phase)=>sum+phase.calls,0)*pairs.length/(baselineCalls-candidateCalls));
+          else if (completeTokens && baselineTokens>candidateTokens && learningCost.every(phase=>phase.calls===phase.tokenReports)) {
+            report.breakEvenGoals=Math.ceil(learningCost.reduce((sum,phase)=>sum+phase.knownTokens,0)*pairs.length/(baselineTokens-candidateTokens));
+          }
+        }
+      } else {
+        revision.status="REJECTED";s.reason=qualifies ? "insufficient_gain" : "insufficient_samples";
+        report.verdict=qualifies ? "no_gain" : "traffic_insufficient";
+      }
+    }
+    revision.state=json(s);revision.updatedAt=this.#learning.now();store.saveRevision(revision);
   }
 }

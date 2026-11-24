@@ -64,8 +64,8 @@
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "08ad622ece2036165b51c2766a9f46f653ef1a5c932196a4f2ecf9b0aa7e4e21",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "7ff2e3dcbc0c683486dc0c8fddc30231bf7e3920c6911c7930a82469be8bda2c",
+      "observedAt": "2026-11-24T05:42:24.999Z",
       "range": {
         "startLine": 1,
         "endLine": 643
@@ -120,8 +120,8 @@
       "location": {
         "path": "src/main/composition/wire-joi.ts"
       },
-      "hash": "c8ffccd314547812b2ad2c31fda2a8dc68466ea2fbb44cfcbd38b4057318475a",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "8c6274a7360fcfa161b195e5e952c0735652413c3b954f29487cde62c2e1a961",
+      "observedAt": "2026-11-24T05:42:25.002Z",
       "range": {
         "startLine": 1,
         "endLine": 142
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "234adf8eabf67653b12aed4e4588c1444446671d2c71860a7b69f6c558afac9b",
-      "observedAt": "2026-11-24T03:37:40.268Z",
+      "hash": "69a73ef7d6d875deacda479fbc0fbb1c43916f05daa4e76c0faa3680dbbcebea",
+      "observedAt": "2026-11-24T05:42:25.003Z",
       "range": {
         "startLine": 1,
-        "endLine": 791
+        "endLine": 795
       }
     },
     {
@@ -1072,8 +1072,8 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
       },
-      "hash": "2d6de0b4759a4e2184208689a64201f383b31b0a29e12e9a98cd62d00157dac1",
-      "observedAt": "2026-11-19T16:56:26.780Z",
+      "hash": "13f304c85ebafca2c7366620a60e433480940a8a0daab7a05a3d03d02df55593",
+      "observedAt": "2026-11-24T05:42:25.004Z",
       "range": {
         "startLine": 1,
         "endLine": 439
@@ -1436,8 +1436,8 @@
       "location": {
         "path": "src/main/interfaces/http/api-dependencies.ts"
       },
-      "hash": "be102bd813a266031040a6e5ea87eb99f47aa79b71fcafd8bd8dbd2e72b509c8",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "1dd76bd17cbc25f95924a828b8d1572409ef381b5009964551016d61233e4439",
+      "observedAt": "2026-11-24T05:42:25.005Z",
       "range": {
         "startLine": 1,
         "endLine": 224
@@ -1492,8 +1492,8 @@
       "location": {
         "path": "tests/contract/http-route-manifest.test.ts"
       },
-      "hash": "9e900c7a7b7aa0bc74b5d87b50e454e5cce169265b8f023d87dc85aa64d3a7b8",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "d6b9bf673c8a76a9af883512436262ff9e43c8d127f1670af4f389235cfbadfb",
+      "observedAt": "2026-11-24T05:42:25.006Z",
       "range": {
         "startLine": 1,
         "endLine": 180
@@ -1660,8 +1660,8 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "f5c27a93e48b5aeecaaa448cd19df4521fcc946c7af662ad70e5536de8fa52c8",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "b53369d3bd820a30e18260fe61253fd8b138a4d11f30704a9ccc5d63497ff0d2",
+      "observedAt": "2026-11-24T05:42:25.007Z",
       "range": {
         "startLine": 1,
         "endLine": 10416
@@ -1688,8 +1688,8 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "6860481005d81395f603d362143bdf937bc04a26758617ce0e419200e781b653",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "48a3a7849db5978adb8db93b3c3062a290da4ec6ebf8d52c629526896e8a7998",
+      "observedAt": "2026-11-24T05:42:25.007Z",
       "range": {
         "startLine": 1,
         "endLine": 7353
@@ -1842,8 +1842,8 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "ccad912b7a1ff1ee17cab80e15ba9d9042603621b48006f64a66331fde50209a",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "20941911286991437945312da8042f35afa625ae9b864d71fac888631ab2550f",
+      "observedAt": "2026-11-24T05:42:25.008Z",
       "range": {
         "startLine": 1,
         "endLine": 9281
@@ -2458,11 +2458,11 @@
       "location": {
         "path": "src/main/application/evolution/method-learning-service.ts"
       },
-      "hash": "9159b1f6d4024504bfaf8ed9df59fc12e3208688ce826aca7778f0df30059e07",
-      "observedAt": "2026-11-15T17:31:20.897Z",
+      "hash": "ae0a5a6280d89061ec806298f3bc61e988cb74654e1d6043ccb42dafa5632e34",
+      "observedAt": "2026-11-24T05:42:25.009Z",
       "range": {
         "startLine": 1,
-        "endLine": 746
+        "endLine": 1068
       }
     },
     {
@@ -2472,8 +2472,8 @@
       "location": {
         "path": "src/main/domain/evolution/method-experience.ts"
       },
-      "hash": "dd89c12b119dae6ca286d509fc46347cdcb9f96bb74e5fd718e1d1efc135a0ec",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "7cb34adab3d8588de9ca79d0b1211c49397dde5a70b4092dee3fff2f7e2dbd10",
+      "observedAt": "2026-11-24T05:42:25.010Z",
       "range": {
         "startLine": 1,
         "endLine": 42
@@ -2500,11 +2500,11 @@
       "location": {
         "path": "src/renderer/EvolutionSettings.tsx"
       },
-      "hash": "ed1f17a24fb0e54d1a4a79d3dc3e0046185b7fd241cdbb624313af76b1f8d2b6",
-      "observedAt": "2026-11-15T14:59:09.571Z",
+      "hash": "db41d5b0708128fa60aa1c2f437b987407247fbca264e1d25fa0a2b622c67587",
+      "observedAt": "2026-11-24T05:42:25.011Z",
       "range": {
         "startLine": 1,
-        "endLine": 172
+        "endLine": 244
       }
     },
     {
@@ -2514,11 +2514,11 @@
       "location": {
         "path": "src/shared/evolution.ts"
       },
-      "hash": "236affae2fd98c4d8e42d7af687fd6ed658d928bb124dc30caef78c765c4f3da",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "186b74be7041b402bc35cbccaf6ecc473d9e83213c82ed7075d5611844f57b6a",
+      "observedAt": "2026-11-24T05:42:25.011Z",
       "range": {
         "startLine": 1,
-        "endLine": 195
+        "endLine": 226
       }
     },
     {
@@ -2528,8 +2528,8 @@
       "location": {
         "path": "tests/integration/method-learning-lifecycle.test.ts"
       },
-      "hash": "693e35e2f9ce536b14322a9f4a9b152448294b6d0b063c2394f86e4d61a0766a",
-      "observedAt": "2026-11-15T17:31:20.898Z",
+      "hash": "11e7a90861a20755d613ff5735a43ad2d4ed17909bef396230092352985d86a4",
+      "observedAt": "2026-11-24T05:42:25.012Z",
       "range": {
         "startLine": 1,
         "endLine": 471
@@ -2556,8 +2556,8 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-evolution-model.ts"
       },
-      "hash": "49c8b16b2648aa036cb54b5aa80e09bded56ebf6fe609c6751644af84b46c893",
-      "observedAt": "2026-11-15T17:29:12.963Z",
+      "hash": "5bbd2307e2a6fb2f4bed40e8537836f51577878f2360831a8e28e40b1ccf62a8",
+      "observedAt": "2026-11-24T05:42:25.013Z",
       "range": {
         "startLine": 1,
         "endLine": 77
@@ -3046,8 +3046,8 @@
         "path": "src/main/infrastructure/pi/configured-pi-reasoning-runtime.ts"
       },
       "claim": "The primary facade pins model/source revisions and SDK settings, refreshes selected skill tools each turn, and supplies selected skill metadata through a separate context field.",
-      "hash": "c635e68451d4b2955fe3391d72b1f26022a3d3210c6a26e6001d54dc90da8f7b",
-      "observedAt": "2026-11-18T17:12:39.599Z",
+      "hash": "3c5a8546e29f11542368ed2f9cf9f729efc8cc7bc6ba3073eef49b651b29ab9b",
+      "observedAt": "2026-11-24T05:42:25.014Z",
       "range": {
         "startLine": 1,
         "endLine": 92
@@ -3676,8 +3676,8 @@
         "path": "tests/integration/joi-orchestration-migration.test.ts"
       },
       "claim": "Disposable SQLite migrations recover published results that predate historical memory without replaying work, and preserve preference ordering, queued writer order, draft Ask recovery, Routine sequencing and goal map history.",
-      "hash": "32aff004f43f4840370243ba7d81b6ea014c0227e3387d0f983ed312e57e826c",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "f3593feba3096e65009773712176d0bae1b3fd23e9f7b64149e20c2a406989bd",
+      "observedAt": "2026-11-24T05:42:25.015Z",
       "range": {
         "startLine": 1,
         "endLine": 1122
@@ -4795,6 +4795,104 @@
       "range": {
         "startLine": 1,
         "endLine": 221
+      }
+    },
+    {
+      "id": "3d00ba06-9bca-419e-b217-8cb0327b25fa",
+      "kind": "source-code",
+      "claim": "Evolution settings show source-readiness counts, an explicit bounded shadow action, sealed evaluation costs and anonymous production cohort verdicts.",
+      "location": {
+        "path": "src/renderer/EvolutionSettings.tsx"
+      },
+      "hash": "db41d5b0708128fa60aa1c2f437b987407247fbca264e1d25fa0a2b622c67587",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 244
+      }
+    },
+    {
+      "id": "20cfe0b2-95da-4fe7-9a33-0f49d4fbf832",
+      "kind": "source-code",
+      "claim": "The authenticated write route validates shadow-call budget and queues an isolated workbench experiment.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/evolution-routes.ts"
+      },
+      "hash": "3d58226fba583464e68d6f6c9e1819a7e2c2c343eb28dc033edcc08ce653b25e",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 62
+      }
+    },
+    {
+      "id": "04429b26-e823-4eba-8073-59b5edba43fe",
+      "kind": "source-code",
+      "claim": "Shadow prompts expose scoped structural inputs and local page aliases. Independent acceptance remains outside the model input. Metrics distinguish backing reads, tool requests, model calls and Tokens.",
+      "location": {
+        "path": "src/main/application/evolution/method-shadow.ts"
+      },
+      "hash": "45c110c277a4944895f8ba3909724f1bde4ce306b4fae30f8c10ef2e28ef9d71",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 91
+      }
+    },
+    {
+      "id": "330aa536-e497-4ece-9864-10970b7bc8a9",
+      "kind": "source-code",
+      "claim": "Held-out cases are deduplicated by stable group, exclude development sources, and support the multi-workbench coverage gate.",
+      "location": {
+        "path": "src/main/domain/evolution/learning-sealed.ts"
+      },
+      "hash": "5aab5cce4dc1b1383e52d9a0b522ba1a2ef6c4b599da12ad6ba076c4c01744e4",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 19
+      }
+    },
+    {
+      "id": "a002d1bf-9fff-490e-acbd-605b800ff0c8",
+      "kind": "source-code",
+      "claim": "Rebuilds bounded development fragments from immutable versions, result membership and validated read intervals, with authoritative labels isolated from the model.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-method-decision-fragments.ts"
+      },
+      "hash": "54dc69a2846242d07a48233d29f77a795e1efb14c2ea923f268d773a886e29f5",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 106
+      }
+    },
+    {
+      "id": "69d71db1-414b-43b1-8556-54b1a7d0deca",
+      "kind": "source-code",
+      "claim": "Stable historical root groups preserve development exposure, audit data and settled calls across split upgrades.",
+      "location": {
+        "path": "resources/migrations/116_method_learning_source_identity.sql"
+      },
+      "hash": "3fb2fc93b0db6044e4b3294b01b49f7ff08e60795cb67376061a818d1d10deb9",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 69
+      }
+    },
+    {
+      "id": "b523f163-c865-44b7-8fec-ac347f257afa",
+      "kind": "source-code",
+      "claim": "Stage costs and revision-scoped indexes support registered cohort pagination.",
+      "location": {
+        "path": "resources/migrations/118_method_learning_phase_and_cohorts.sql"
+      },
+      "hash": "440244a692f6bf2ba0c53ee1af091ba2c7f4cd32d6594612ebe464f0d3b693dd",
+      "observedAt": "2026-11-24T05:22:26.616Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 7
       }
     }
   ]

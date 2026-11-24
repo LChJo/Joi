@@ -43,6 +43,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/workbenches/:workbenchId/evolution/rollback",
   "POST /api/v1/workbenches/:workbenchId/evolution/feedback",
   "POST /api/v1/workbenches/:workbenchId/evolution/run-now",
+  "POST /api/v1/workbenches/:workbenchId/evolution/shadow",
   "POST /api/v1/workbenches/:workbenchId/evolution/dry-run",
   "POST /api/v1/result-exports",
   "GET /api/v1/result-exports/:id",

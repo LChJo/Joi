@@ -1,7 +1,7 @@
 import { formatNumber, noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionLearningBlocker, EvolutionLearningDto, EvolutionLearningStage, EvolutionOverviewDto, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionLearningBlocker, EvolutionLearningDto, EvolutionLearningStage, EvolutionOverviewDto, EvolutionProductionEvidenceDto, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
 import type { MessageKey } from "../shared/i18n/index";
 import { EVOLUTION_BUDGET_PRESETS } from "../shared/evolution";
 
@@ -31,15 +31,53 @@ const learningBlockers = {
   model_changed: "evolution.blockerModel", daily_candidate_limit: "evolution.blockerCandidate",
   retry_wait: "evolution.retryWait",
 } as const satisfies Record<EvolutionLearningBlocker, MessageKey>;
+const shadowVerdicts = {
+  candidate:"evolution.shadowCandidate",parent:"evolution.shadowParent",quality_regression:"evolution.shadowQuality",
+  no_opportunity:"evolution.shadowNoOpportunity",source_changed:"evolution.shadowSourceChanged",budget_exhausted:"evolution.shadowBudget",
+} as const satisfies Record<NonNullable<NonNullable<EvolutionLearningDto["shadow"]>["verdict"]>,MessageKey>;
+const candidateRejects = {
+  structure:"evolution.candidateInvalidStructure",rejected_duplicate:"evolution.candidateInvalidDuplicate",
+  development_mismatch:"evolution.candidateInvalidBasis",
+} as const;
+const productionVerdicts = {
+  observing:"evolution.productionObserving",traffic_insufficient:"evolution.productionTraffic",no_gain:"evolution.productionNoGain",
+  promoted:"evolution.productionPromoted",reverted:"evolution.productionReverted",
+} as const;
+
+function LearningCost({ rows }: { rows: EvolutionProductionEvidenceDto["learningCost"] }) {
+  return rows.length===0 ? null : <ul>{rows.map(row=><li key={row.phase}>{t("evolution.phaseUsage",{
+    p0:row.phase in learningStages ? t(learningStages[row.phase as EvolutionLearningStage]) : row.phase,
+    p1:formatNumber(row.calls),p2:formatNumber(row.knownTokens),p3:`${formatNumber(row.tokenReports)} / ${formatNumber(row.calls)}`,
+  })}</li>)}</ul>;
+}
+
+function ProductionEvidence({ report }: { report: EvolutionProductionEvidenceDto }) {
+  const number=(value:number|null)=>value===null ? "—" : formatNumber(value);
+  const percent=(value:number)=>`${formatNumber(Math.round(value*100))}%`;
+  return <details><summary>{t("evolution.productionEvidence")}</summary>
+    <p>{t(productionVerdicts[report.verdict])}</p>
+    <p>{t("evolution.productionCohort",{p0:new Date(report.decisionAt).toLocaleString(),p1:formatNumber(report.pairs),
+      p2:formatNumber(report.minimumPairs),p3:`${number(report.assignedControl)} / ${number(report.assignedCandidate)}`,p4:number(report.excluded)})}</p>
+    <p>{t("evolution.productionQuality",{p0:report.qualityDelta===null ? "—" : percent(report.qualityDelta),
+      p1:report.qualityInterval===null ? "—" : report.qualityInterval.map(percent).join(" … ")})}</p>
+    <p>{t("evolution.productionCost",{p0:`${number(report.baselineCalls)} / ${number(report.candidateCalls)}`,
+      p1:`${number(report.baselineTokens)} / ${number(report.candidateTokens)}`,p2:number(report.breakEvenGoals)})}</p>
+    <LearningCost rows={report.learningCost} />
+  </details>;
+}
 
 function LearningEvolutionPanel({ api, status, learning, overview, updateStatus, updateOverview, loadingNotice }: {
   api: DigitalLifeApi; status: EvolutionStatusDto; learning: EvolutionLearningDto; overview: EvolutionOverviewDto | null;
   updateStatus: (value: EvolutionStatusDto) => void; updateOverview: (value: EvolutionOverviewDto) => void; loadingNotice: string | null;
 }) {
   const [saving, setSaving] = useState(false);
+  const [shadowLimit,setShadowLimit] = useState(30);
   const [notice, setNotice] = useNotice();
   const global = overview?.learning?.globalBudget ?? learning.globalBudget;
+  const readiness = learning.readiness;
+  const shadow = learning.shadow;
   const methods = learning.methods.filter((method) => method.status === "ACTIVE" || method.status === "CANARY");
+  const priorCohort = learning.methods.filter(method=>method.status!=="ACTIVE" && method.status!=="CANARY" && method.production!==undefined).at(-1)?.production;
   const act = async <T,>(operation: () => Promise<T>, success?: (value: T) => MessageKey) => {
     if (saving) return;
     setSaving(true);
@@ -78,9 +116,18 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
       {learning.experiment === null ? null : <div className="evolution-result">
         <span>{t(running ? "evolution.runningEvaluation" : "evolution.latestEvaluation")}</span>
         <p>{t(learning.experiment.baselineNotReproduced ? "evolution.baselineNotReproduced" : labels[learning.experiment.reason])}</p>
+        {learning.experiment.candidateRejection===undefined ? null : <p>{t(candidateRejects[learning.experiment.candidateRejection])}</p>}
         <small>{t("evolution.evaluationCalls", { p0: formatNumber(learning.experiment.calls) })} · {tokens(learning.experiment.tokens)}</small>
         {learning.experiment.retryAt == null ? null : <p>{t("evolution.retryAt",{p0:new Date(learning.experiment.retryAt).toLocaleString()})}</p>}
         {!learning.experiment.waitingForSamples ? null : <p>{t("evolution.sampleReadiness",{p0:formatNumber(learning.experiment.sealedGroups ?? 0),p1:formatNumber(learning.experiment.requiredSealedGroups ?? 5)})}</p>}
+        {learning.experiment.sealed===undefined ? null : <details><summary>{t("evolution.sealedProgress",{
+          p0:formatNumber(learning.experiment.sealed.completedTrials),p1:formatNumber(learning.experiment.sealed.expectedTrials),
+          p2:formatNumber(learning.experiment.sealed.reusableBaselineTrials),p3:formatNumber(learning.experiment.sealed.estimatedNewCalls),
+        })}</summary>
+          <p>{t("evolution.methodEvaluation",{p0:formatNumber(learning.experiment.sealed.baseline.success),
+            p1:formatNumber(learning.experiment.sealed.candidate.success),p2:formatNumber(learning.experiment.sealed.completedTrials)})}</p>
+          <LearningCost rows={learning.experiment.sealed.cost} />
+        </details>}
       </div>}
       <dl className="evolution-case-metrics">
         <div><dt>{t("evolution.developmentCases")}</dt><dd>{formatNumber(learning.cases.development)}</dd></div>
@@ -88,6 +135,13 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
         <div><dt>{t("evolution.reproducibleProblems")}</dt><dd>{formatNumber(learning.cases.defects)}</dd></div>
       </dl>
       {learning.cases.developmentGroups === undefined ? null : <p className="evolution-description">{t("evolution.sourceGroups",{p0:formatNumber(learning.cases.developmentGroups),p1:formatNumber(learning.cases.sealedGroups ?? 0)})}</p>}
+      {readiness === undefined ? null : <div className="evolution-description">
+        <p>{t("evolution.sourceReadiness", {p0:formatNumber(readiness.settledGoals),p1:formatNumber(readiness.eligibleGoals),
+          p2:formatNumber(readiness.sourceGroups),p3:formatNumber(readiness.replayableDevelopmentGroups)})}</p>
+        <p>{t("evolution.sealedReadiness", {p0:formatNumber(readiness.compatibleSealedGroups),p1:formatNumber(readiness.missingSealedGroups),
+          p2:formatNumber(readiness.callsRemainingToday)})}</p>
+        <small>{t("evolution.readinessAsOf", {p0:formatNumber(readiness.splitVersion),p1:new Date(readiness.asOf).toLocaleString()})}</small>
+      </div>}
       {learning.cases.reproduced === undefined ? null : <p className="evolution-description">{t("evolution.reproducedGroups",{p0:formatNumber(learning.cases.reproduced)})}</p>}
       {learning.cases.experiences === undefined ? null : <p className="evolution-description">{t("evolution.experienceCount",{p0:formatNumber(learning.cases.experiences)})}</p>}
       <p className="evolution-description">{t(learning.cases.sealed === 0 ? "evolution.noIndependentCasesHint" : "evolution.independentCasesHint")}</p>
@@ -98,6 +152,23 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
           return value;
         }, (value) => value.runRequestedAt === null ? "evolution.blockerNoCase" : "evolution.evaluationRequestedItStartsWhenTheWorkbenchIsIdle")}>{t("evolution.evaluateNow")}</button>
         <span>{t("evolution.manualEvaluationHint")}</span></div>
+      {readiness === undefined ? null : <div className="evolution-evaluate-action">
+        <label>{t("evolution.shadowCallLimit")} <input type="number" min={6} max={60} step={1} value={shadowLimit || ""}
+          onChange={event=>setShadowLimit(Number(event.target.value))} /></label>
+        <button className="button ghost" type="button" disabled={saving || disabled || paused || readiness.replayableDevelopmentGroups===0
+          || readiness.callsRemainingToday===0 || shadow?.status==="queued" || shadow?.status==="running" || !Number.isInteger(shadowLimit) || shadowLimit<6 || shadowLimit>60}
+          onClick={()=>void act(async()=>updateStatus(await api.runEvolutionShadow(status.workbenchId,shadowLimit)))}>{t("evolution.runShadow")}</button>
+      </div>}
+      {shadow === undefined ? null : <div className="evolution-result">
+        <p>{t(shadow.verdict!==null ? shadowVerdicts[shadow.verdict]
+          : shadow.status==="queued" ? "evolution.shadowQueued" : shadow.status==="running" ? "evolution.shadowRunning" : "evolution.shadowStopped")}</p>
+        {shadow.baseline.modelCalls+shadow.candidate.modelCalls===0 ? null : <small>{t("evolution.shadowArms",{
+          p0:`${formatNumber(shadow.baseline.success)}/${formatNumber(shadow.baseline.trials)} · ${formatNumber(shadow.candidate.success)}/${formatNumber(shadow.candidate.trials)}`,
+          p1:`${formatNumber(shadow.baseline.backingReads)} / ${formatNumber(shadow.candidate.backingReads)}`,
+          p2:`${formatNumber(shadow.baseline.toolRequests)} / ${formatNumber(shadow.candidate.toolRequests)}`,
+          p3:`${formatNumber(shadow.baseline.modelCalls)} / ${formatNumber(shadow.candidate.modelCalls)}`,
+          p4:`${tokens(shadow.baseline.tokens)} / ${tokens(shadow.candidate.tokens)}`})}</small>}
+      </div>}
     </section>
 
     <section className="evolution-methods" aria-labelledby="evolution-methods-heading">
@@ -114,7 +185,9 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
             <p>{t("evolution.methodExposure", { p0: formatNumber(method.candidateGoals), p1: formatNumber(method.controlGoals) })}</p>
           </details><button className="button ghost" type="button" disabled={saving}
             onClick={() => void act(async () => { updateStatus(await api.rollbackEvolution(status.workbenchId, method.revisionId)); })}>{t("evolution.rollBackCurrentPolicyAndPause")}</button></div>
+          {method.production===undefined ? null : <ProductionEvidence report={method.production} />}
         </li>)}</ul>}
+      {priorCohort===undefined ? null : <ProductionEvidence report={priorCohort} />}
     </section>
 
     <section className="evolution-settings" aria-labelledby="evolution-settings-heading">

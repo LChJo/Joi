@@ -1025,6 +1025,71 @@
       "p1": "string"
     }
   },
+  "runShadow": { "message": "Run development comparison", "description": "Start the opt-in development shadow experiment." },
+  "shadowCallLimit": { "message": "Comparison call limit", "description": "Maximum provider calls in one scoped comparison." },
+  "shadowQueued": { "message": "Development comparison queued", "description": "A development comparison is waiting for the idle slot." },
+  "shadowRunning": { "message": "Development comparison running", "description": "A development comparison is executing." },
+  "shadowStopped": { "message": "Development comparison stopped", "description": "Incomplete development comparison." },
+  "shadowCandidate": { "message": "Candidate reduced development cost", "description": "Winner in the bounded development comparison." },
+  "shadowParent": { "message": "Keeping the parent method", "description": "No adoption in the bounded development comparison." },
+  "shadowQuality": { "message": "Candidate reduced acceptance quality", "description": "Development candidate regressed." },
+  "shadowNoOpportunity": { "message": "No eligible repeated evidence page was found", "description": "No available fragment meets the development scenario." },
+  "shadowSourceChanged": { "message": "Model or evidence pin changed", "description": "The shadow comparison requires a matching revision." },
+  "shadowBudget": { "message": "Comparison reached its call limit", "description": "Experiment-specific budget was exhausted." },
+  "shadowArms": {
+    "message": "Parent / candidate · passed {p0} · backing reads {p1} · tool requests {p2} · model calls {p3} · tokens {p4}",
+    "description": "Paired counts from the development comparison.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string", "p3": "string", "p4": "string" }
+  },
+  "candidateInvalidStructure": { "message": "Candidate violates the registered method structure", "description": "Invalid proposal structure." },
+  "candidateInvalidDuplicate": { "message": "Candidate repeats a rejected method", "description": "Duplicate proposal after a regression." },
+  "candidateInvalidBasis": { "message": "Candidate does not cite applicable development evidence", "description": "Proposal support is invalid." },
+  "sealedProgress": {
+    "message": "Sealed trials {p0} / {p1} · reusable baseline trials {p2} · estimated new calls at lock {p3}",
+    "description": "Frozen held-out evaluation progress and estimated incremental cost.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string", "p3": "string" }
+  },
+  "phaseUsage": {
+    "message": "{p0} · {p1} calls · {p2} known tokens · usage available for {p3} calls",
+    "description": "Actual cost by background learning phase.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string", "p3": "string" }
+  },
+  "productionEvidence": { "message": "Production cohort evidence", "description": "Show aggregated evidence from the registered production cohort." },
+  "productionCohort": {
+    "message": "Decision {p0} · matched {p1} / {p2} · assigned parent / candidate {p3} · excluded {p4}",
+    "description": "Registered decision time and production cohort denominators.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string", "p3": "string", "p4": "string" }
+  },
+  "productionQuality": {
+    "message": "Production acceptance difference {p0} · uncertainty interval {p1}",
+    "description": "Exploratory interval for the difference in production acceptance.",
+    "placeholders": { "p0": "string", "p1": "string" }
+  },
+  "productionCost": {
+    "message": "Parent / candidate · calls {p0} · tokens {p1} · break-even goals {p2}",
+    "description": "Measured production usage and payback estimate.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string" }
+  },
+  "productionObserving": { "message": "Observing the registered cohort", "description": "Cohort is open." },
+  "productionTraffic": { "message": "Insufficient eligible production traffic", "description": "Cohort closed with insufficient eligible pairs." },
+  "productionNoGain": { "message": "Production benefit below the threshold", "description": "Cohort did not meet the promotion threshold." },
+  "productionPromoted": { "message": "Production thresholds met", "description": "Cohort passed the version's registered thresholds." },
+  "productionReverted": { "message": "Production method rolled back", "description": "Method was reverted by a safety gate or explicit feedback." },
+  "sourceReadiness": {
+    "message": "Settled goals {p0} · eligible {p1} · distinct sources {p2} · development sources with replay {p3}",
+    "description": "Counts at successive method learning gates.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string", "p3": "string" }
+  },
+  "sealedReadiness": {
+    "message": "Compatible held-out sources {p0} · still needed {p1} · calls remaining today {p2}",
+    "description": "Held-out eligibility and remaining daily calls.",
+    "placeholders": { "p0": "string", "p1": "string", "p2": "string" }
+  },
+  "readinessAsOf": {
+    "message": "Split version {p0} · counted {p1}",
+    "description": "Split version and timestamp of the readiness projection.",
+    "placeholders": { "p0": "string", "p1": "string" }
+  },
   "reproducedGroups": {
     "message": "Reproduced in the latest experiment: {p0} source groups",
     "description": "evolution: Reproduced in the latest experiment: {p0} source groups",

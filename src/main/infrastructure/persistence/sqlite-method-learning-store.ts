@@ -1,9 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import type { JsonObject, MethodEvidenceRead, MethodExperiment, MethodGoalPin, MethodLearningControl, MethodLearningParticipant, MethodLearningStore, MethodRevision, MethodTrialKey } from "../../application/ports/method-learning.js";
-import { buildLearningCases, type LearningCase, type LearningFacts } from "../../domain/evolution/learning-case.js";
+import { buildLearningCases, learningSourceGroup, learningSourceSplit, type LearningCase, type LearningFacts } from "../../domain/evolution/learning-case.js";
 import { DomainError } from "../../domain/errors.js";
 import { validateTokenUsage } from "../../domain/statistics/statistics.js";
+import { loadDecisionFragments, readDecisionPage } from "./sqlite-method-decision-fragments.js";
 
 interface Database { transaction<T>(operation: (db: DatabaseSync) => T): T; }
 type Row = Record<string, unknown>;
@@ -14,6 +15,15 @@ function required<T>(value: T | null): T {
 }
 const trialKey = (key: MethodTrialKey): string => JSON.stringify([key.source,key.model,key.tool,key.evaluator,key.parent,key.caseId,key.attempt]);
 const factsFingerprint = (fact: LearningFacts): string => JSON.stringify([fact.requirementsRevision,fact.resultRevision,fact.observedAt,Number(fact.completed),Number(fact.canceled),fact.verified,fact.failed,fact.unverified,fact.requirementCount,fact.coveredRequirementCount,fact.foreignEvidenceCount,fact.dependencyViolationCount,fact.redundantReads,Number(fact.executionFailed),Number(fact.environmentFailed)]);
+const hashSource = (value: string): string => createHash("sha256").update(value).digest("hex");
+const normalizedSourceKey = (key: string): string => key.startsWith("legacy:") ? hashSource(key) : key;
+const scopedCases = `SELECT c.case_id,c.case_json,s.source_key,s.split FROM method_learning_cases c
+  LEFT JOIN method_learning_sources s ON s.goal_id=json_extract(c.case_json,'$.goalId')`;
+function projectCase(row: Row): LearningCase {
+  const item = required(parse<LearningCase>(row,"case_json"));
+  if (typeof row.source_key !== "string") return item;
+  return { ...item, groupId: learningSourceGroup(normalizedSourceKey(row.source_key)), split: row.split === "sealed" ? "sealed" : "development" };
+}
 function assertWorkbench(db: DatabaseSync, id: string): void {
   if (!db.prepare("SELECT 1 FROM workbenches WHERE workbench_id=? AND status='ACTIVE'").get(id)) throw new DomainError("workbench_not_found", "Workbench was not found.");
 }
@@ -50,6 +60,7 @@ function persistExperiment(db: DatabaseSync, value: MethodExperiment): void {
 export class SqliteMethodLearningStore implements MethodLearningStore {
   #factRevision: string | undefined;
   readonly #facts = new Map<string, LearningFacts[]>();
+  readonly #decisions = new Map<string, ReturnType<MethodLearningStore["decisionFragments"]>>();
   #evaluationCases: LearningCase[] | undefined;
 
   constructor(private readonly database: Database) {}
@@ -58,6 +69,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
     if (row.revision !== this.#factRevision) {
       this.#factRevision = row.revision;
       this.#facts.clear();
+      this.#decisions.clear();
       this.#evaluationCases = undefined;
     }
   }
@@ -75,6 +87,20 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
       db.prepare("INSERT INTO method_learning_participants VALUES (?,?) ON CONFLICT(workbench_id) DO UPDATE SET state_json=excluded.state_json").run(id,JSON.stringify(value)); return value;
     });
   }
+  consumeShadowRequest(id: string, request: NonNullable<MethodLearningParticipant["shadowRequest"]>, experiment?: MethodExperiment): boolean {
+    return this.database.transaction(db=>{
+      const current=participant(db,id);
+      const pending=current.shadowRequest;
+      if (pending?.requestedAt!==request.requestedAt || pending.callLimit!==request.callLimit || !current.enabled || current.paused) return false;
+      if (experiment!==undefined) {
+        if (experiment.workbenchId!==id) throw new DomainError("evolution_checkpoint_invalid","Shadow request and experiment workbench differ.");
+        persistExperiment(db,experiment);
+      }
+      db.prepare("UPDATE method_learning_participants SET state_json=? WHERE workbench_id=?")
+        .run(JSON.stringify({...current,shadowRequest:null,shadowNoOpportunity:experiment===undefined ? request.callLimit : null}),id);
+      return true;
+    });
+  }
   reserveCall(input: Parameters<MethodLearningStore["reserveCall"]>[0]): ReturnType<MethodLearningStore["reserveCall"]> {
     return this.database.transaction(db => {
       if (input.checkpoint !== undefined && (input.checkpoint.id !== input.experimentId || input.checkpoint.workbenchId !== input.workbenchId)) throw new DomainError("evolution_checkpoint_invalid", "Checkpoint does not belong to this reservation.");
@@ -88,7 +114,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
       if (!global.enabled || !local.enabled) return "disabled";
       if (global.paused || local.paused) return "paused";
       if (callCount(db,input.day) >= global.dailyCallLimit || callCount(db,input.day,input.workbenchId) >= local.dailyCallLimit) return "budget_exhausted";
-      db.prepare("INSERT INTO method_learning_calls(call_id,experiment_id,workbench_id,day,created_at) VALUES (?,?,?,?,?)").run(input.callId,input.experimentId,input.workbenchId,input.day,input.at);
+      db.prepare("INSERT INTO method_learning_calls(call_id,experiment_id,workbench_id,day,created_at,phase) VALUES (?,?,?,?,?,?)").run(input.callId,input.experimentId,input.workbenchId,input.day,input.at,input.phase ?? null);
       db.prepare(`INSERT INTO outbox(outbox_id,kind,payload_json,status,available_at,created_at,claim_owner) VALUES (?,'evolution.model',?,'CLAIMED',?,?,'method-learning')`).run(input.callId,JSON.stringify({workbenchId:input.workbenchId,callId:input.callId,experimentId:input.experimentId}),input.at,input.at);
       if (input.checkpoint !== undefined) persistExperiment(db,input.checkpoint);
       return "reserved";
@@ -113,8 +139,24 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
       return {calls:Number(row.calls),tokens:Number(row.tokens),tokensComplete:Number(row.calls)===Number(row.known)};
     });
   }
+  experimentPhaseUsage(id: string): ReturnType<MethodLearningStore["experimentPhaseUsage"]> {
+    return this.database.transaction(db=>db.prepare(`SELECT COALESCE(phase,'UNKNOWN') AS phase,count(*) AS calls,
+      count(tokens) AS tokenReports,COALESCE(sum(tokens),0) AS knownTokens
+      FROM method_learning_calls WHERE experiment_id=? GROUP BY phase ORDER BY phase`).all(id).map(row=>({
+      phase:String(row.phase),calls:Number(row.calls),knownTokens:Number(row.knownTokens),tokenReports:Number(row.tokenReports),
+    })));
+  }
   captureFacts(limit = 50): LearningFacts[] {
-    return this.database.transaction(db => this.readFacts(db,limit,null,true,true));
+    return this.database.transaction(db => {
+      const facts = this.readFacts(db,limit,null,true,true);
+      const record = db.prepare("INSERT OR IGNORE INTO method_learning_sources VALUES (?,?,?,1)");
+      for (const fact of facts) {
+        if (fact.sourceGroupId !== undefined && fact.sourceSplit !== undefined && buildLearningCases(fact).length > 0) {
+          record.run(fact.goalId, fact.sourceGroupId, fact.sourceSplit);
+        }
+      }
+      return facts;
+    });
   }
   private readFacts(db: DatabaseSync, limit: number | null, goal: string | null, changedOnly: boolean, activeOnly: boolean): LearningFacts[] {
       this.refreshFactRevision(db);
@@ -127,7 +169,9 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         FROM work_results r LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
         LEFT JOIN partner_runs run ON run.run_id=r.run_id WHERE r.is_authoritative=1 AND r.is_late=0
       ), facts AS (
-        SELECT i.input_id AS goalId,i.workbench_id AS workbenchId,i.body AS privateSourceBody,COALESCE(q.revision,0) AS requirementsRevision,
+        SELECT i.input_id AS goalId,i.workbench_id AS workbenchId,
+          CASE WHEN source.goal_id IS NULL THEN i.body END AS privateSourceBody,source.source_key,source.split,
+          COALESCE(q.revision,0) AS requirementsRevision,
           COALESCE(o.result_revision,s.revision,0) AS resultRevision,MAX(i.updated_at,COALESCE(o.updated_at,''),COALESCE(s.updated_at,'')) AS observedAt,
           CASE WHEN o.disposition='COMPLETED' THEN 1 ELSE 0 END AS completed,
           CASE WHEN i.canceled_at IS NOT NULL OR i.dismissed_at IS NOT NULL THEN 1 ELSE 0 END AS canceled,
@@ -155,6 +199,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
             OR (w.status='FAILED' AND NOT EXISTS(SELECT 1 FROM latest r WHERE r.work_id=w.work_id AND r.position=1 AND r.status='COMPLETED' AND r.verification='FAILED')))) AS executionFailed,
           ((SELECT COUNT(*) FROM work_items w JOIN latest r ON r.work_id=w.work_id AND r.position=1 WHERE w.input_id=i.input_id AND r.status IN ('WAITING_AUTH','WAITING_INPUT','UNKNOWN'))>0) AS environmentFailed
         FROM joi_inbox_messages i JOIN workbenches b ON b.workbench_id=i.workbench_id AND (?=0 OR b.status='ACTIVE')
+        LEFT JOIN method_learning_sources source ON source.goal_id=i.input_id
         LEFT JOIN joi_current_goal_outcomes o ON o.input_id=i.input_id LEFT JOIN joi_goal_requirements q ON q.goal_input_id=i.input_id
         LEFT JOIN joi_goal_requirement_snapshots qs ON qs.goal_input_id=q.goal_input_id AND qs.revision=q.revision
         LEFT JOIN joi_goal_result_sets s ON s.original_input_id=i.input_id
@@ -171,9 +216,22 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
           AND NOT EXISTS(SELECT 1 FROM joi_goal_requirement_sources src WHERE src.goal_input_id=i.input_id AND src.kind<>'LEGACY' AND src.source_revision>COALESCE(q.processed_source_revision,0))
       ), stamped AS (SELECT *,json_array(requirementsRevision,resultRevision,observedAt,completed,canceled,verified,failed,unverified,requirementCount,coveredRequirementCount,foreignEvidenceCount,dependencyViolationCount,redundantReads,executionFailed,environmentFailed) AS fingerprint FROM facts)
       SELECT f.* FROM stamped f LEFT JOIN method_learning_fact_receipts p ON p.goal_id=f.goalId WHERE (?=0 OR p.fingerprint IS NULL OR p.fingerprint<>f.fingerprint) ORDER BY f.observedAt,f.goalId LIMIT ?`).all(Number(activeOnly),goal,goal,Number(changedOnly),limit===null ? -1 : Math.min(50,Math.max(1,Math.floor(limit)))) as Row[];
+      const legacySource = db.prepare(`SELECT
+        MIN(CASE WHEN alias.workbench_id=? THEN known.source_key END) AS source_key,
+        MAX(known.split='development') AS development
+        FROM method_learning_legacy_sources alias JOIN method_learning_sources known ON known.goal_id=alias.goal_id
+        WHERE alias.legacy_group=?`);
       const facts = rows.map(row => {
-        const sourceGroupId = createHash("sha256").update(String(row.privateSourceBody).normalize("NFC").replace(/\s+/gu," ").trim()).digest("hex");
-        return {goalId:String(row.goalId),workbenchId:String(row.workbenchId),sourceGroupId,requirementsRevision:Number(row.requirementsRevision),resultRevision:Number(row.resultRevision),observedAt:String(row.observedAt),completed:row.completed===1,canceled:row.canceled===1,verified:Number(row.verified),failed:Number(row.failed),unverified:Number(row.unverified),requirementCount:Number(row.requirementCount),coveredRequirementCount:Number(row.coveredRequirementCount),foreignEvidenceCount:Number(row.foreignEvidenceCount),dependencyViolationCount:Number(row.dependencyViolationCount),redundantReads:Number(row.redundantReads),executionFailed:Number(row.executionFailed)>0,environmentFailed:Number(row.environmentFailed)>0};
+        const goalId = String(row.goalId);
+        const workbenchId = String(row.workbenchId);
+        const bodyKey = row.source_key === null ? hashSource(String(row.privateSourceBody).normalize("NFC").replace(/\s+/gu," ").trim()) : null;
+        const legacy = bodyKey === null ? undefined : legacySource.get(workbenchId,learningSourceGroup(bodyKey));
+        const sourceKey = bodyKey === null ? String(row.source_key) : typeof legacy?.source_key === "string"
+          ? legacy.source_key : hashSource(JSON.stringify([workbenchId,bodyKey]));
+        const sourceGroupId = normalizedSourceKey(sourceKey);
+        const sourceSplit = bodyKey === null ? (row.split === "sealed" ? "sealed" : "development")
+          : legacy?.development === 1 ? "development" : learningSourceSplit(bodyKey);
+        return {goalId,workbenchId,sourceGroupId,sourceSplit,requirementsRevision:Number(row.requirementsRevision),resultRevision:Number(row.resultRevision),observedAt:String(row.observedAt),completed:row.completed===1,canceled:row.canceled===1,verified:Number(row.verified),failed:Number(row.failed),unverified:Number(row.unverified),requirementCount:Number(row.requirementCount),coveredRequirementCount:Number(row.coveredRequirementCount),foreignEvidenceCount:Number(row.foreignEvidenceCount),dependencyViolationCount:Number(row.dependencyViolationCount),redundantReads:Number(row.redundantReads),executionFailed:Number(row.executionFailed)>0,environmentFailed:Number(row.environmentFailed)>0};
       });
       if (this.#facts.size >= 128) this.#facts.clear();
       this.#facts.set(key, facts);
@@ -213,6 +271,12 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
       return typeof row?.total === "number" ? row.total : null;
     });
   }
+  goalCreatedAt(workbench: string, goal: string): string | null {
+    return this.database.transaction(db=>{
+      const row=db.prepare("SELECT created_at FROM joi_inbox_messages WHERE input_id=? AND workbench_id=? AND goal_input_id IS NULL").get(goal,workbench);
+      return typeof row?.created_at==="string" ? row.created_at : null;
+    });
+  }
   goalSourceMatches(goal: string, source: string, model: string): boolean {
     return this.database.transaction(db => db.prepare(`SELECT 1 FROM joi_inbox_messages i WHERE i.input_id=? AND i.goal_input_id IS NULL
       AND NOT EXISTS(SELECT 1 FROM joi_turns t JOIN joi_inbox_messages ti ON ti.input_id=t.input_id
@@ -224,6 +288,37 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
   }
   currentEvaluationCases(): LearningCase[] {
     return this.database.transaction(db => this.collectEvaluationCases(db,null));
+  }
+  sourceReadiness(workbenchId: string): ReturnType<MethodLearningStore["sourceReadiness"]> {
+    return this.database.transaction(db => {
+      const settled = db.prepare(`SELECT count(*) AS total FROM joi_current_goal_outcomes o
+        JOIN joi_inbox_messages i ON i.input_id=o.input_id AND i.workbench_id=? AND i.goal_input_id IS NULL
+        WHERE o.disposition IN ('COMPLETED','ACCEPTED_WITH_GAPS')`).get(workbenchId);
+      const eligible = this.collectEvaluationCases(db,null).filter(item => item.workbenchId === workbenchId);
+      return { settledGoals:Number(settled?.total ?? 0), eligibleGoals:new Set(eligible.map(item=>item.goalId)).size,
+        sourceGroups:new Set(eligible.map(item=>item.groupId)).size };
+    });
+  }
+  decisionFragments(workbenchId: string): ReturnType<MethodLearningStore["decisionFragments"]> {
+    return this.database.transaction(db=>{
+      this.refreshFactRevision(db);
+      let result=this.#decisions.get(workbenchId);
+      if (result===undefined) {
+        result=loadDecisionFragments(db,workbenchId);
+        if (this.#decisions.size>=32) this.#decisions.clear();
+        this.#decisions.set(workbenchId,result);
+      }
+      return structuredClone(result);
+    });
+  }
+  readDecisionPage(...[fragment,page]: Parameters<MethodLearningStore["readDecisionPage"]>): string | null {
+    return this.database.transaction(db=>readDecisionPage(db,fragment,page));
+  }
+  recordEvidenceContext(turnId: string, toolCallIds: string[]): void {
+    this.database.transaction(db=>db.prepare(`INSERT INTO method_learning_residency
+      SELECT turn_id,? FROM joi_turns WHERE turn_id=? AND status IN ('RUNNING','WAITING')
+      ON CONFLICT(turn_id) DO UPDATE SET resident_json=excluded.resident_json`)
+      .run(JSON.stringify([...new Set(toolCallIds.slice(-32))]),turnId));
   }
   goalCaseMatchesCurrent(goal: string, requirementsRevision: number, resultRevision: number, caseId?: string): boolean {
     return this.database.transaction(db => this.collectEvaluationCases(db,goal).some(item => item.requirementsRevision===requirementsRevision
@@ -244,7 +339,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         AND NOT EXISTS(SELECT 1 FROM joi_goal_requirement_sources src WHERE src.goal_input_id=i.input_id AND src.source_revision>q.processed_source_revision)
         AND NOT EXISTS(SELECT 1 FROM joi_goal_execution_gates gate WHERE gate.goal_input_id=i.input_id AND gate.status IN ('REVIEWING','WAITING_INPUT'))`).all(goal,goal);
     if (metadata.length===0) return remember([]);
-    const stored = db.prepare("SELECT case_id,case_json FROM method_learning_cases WHERE (? IS NULL OR json_extract(case_json,'$.goalId')=?) ORDER BY observed_at,case_id").all(goal,goal);
+    const stored = db.prepare(`${scopedCases} WHERE (? IS NULL OR json_extract(c.case_json,'$.goalId')=?) ORDER BY c.observed_at,c.case_id`).all(goal,goal);
     if (stored.length===0) return remember([]);
     const fingerprints = new Map(metadata.map(row=>[String(row.input_id),String(row.fingerprint)]));
     const currentIds = new Set<string>();
@@ -253,7 +348,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         || fingerprints.get(fact.goalId)!==factsFingerprint(fact)) continue;
       for (const item of buildLearningCases(fact)) currentIds.add(item.caseId);
     }
-    return remember(stored.filter(row=>currentIds.has(String(row.case_id))).map(row=>required(parse<LearningCase>(row,"case_json"))));
+    return remember(stored.filter(row=>currentIds.has(String(row.case_id))).map(projectCase));
   }
   invalidateGoalExposure(workbench: string, goal: string): void {
     this.database.transaction(db => {
@@ -287,7 +382,9 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         ORDER BY observed_at DESC,case_id DESC LIMIT -1 OFFSET 200)`).run(id);
     });
   }
-  listCases(id?: string): LearningCase[] { return this.database.transaction(db => db.prepare("SELECT case_json FROM method_learning_cases WHERE (? IS NULL OR workbench_id=?) ORDER BY observed_at,case_id").all(id ?? null,id ?? null).map(row => required(parse<LearningCase>(row,"case_json")))); }
+  listCases(id?: string): LearningCase[] {
+    return this.database.transaction(db => db.prepare(`${scopedCases} WHERE (? IS NULL OR c.workbench_id=?) ORDER BY c.observed_at,c.case_id`).all(id ?? null,id ?? null).map(projectCase));
+  }
   saveExperiment(value: MethodExperiment): void {
     this.database.transaction(db => persistExperiment(db,value));
   }
@@ -309,6 +406,28 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
   goalPins(revisionId?: string): MethodGoalPin[] {
     return this.database.transaction(db => db.prepare("SELECT * FROM method_learning_goal_pins WHERE (? IS NULL OR revision_id=?) ORDER BY created_at DESC,goal_id DESC LIMIT 1000").all(revisionId ?? null,revisionId ?? null)
       .map(row => ({workbenchId:String(row.workbench_id),goalId:String(row.goal_id),revisionId:row.revision_id === null ? null : String(row.revision_id),policy:String(row.policy),at:String(row.created_at)})));
+  }
+  cohortGoalPins(revisionId: string, from: string, through: string): MethodGoalPin[] {
+    return this.readScopedPins("CASE WHEN json_valid(policy) THEN json_extract(policy,'$.cohortRevisionId') END",revisionId,from,through);
+  }
+  revisionGoalPins(revisionId: string, from: string): MethodGoalPin[] {
+    return this.readScopedPins("revision_id",revisionId,from,"9999");
+  }
+  private readScopedPins(filter: string, revisionId: string, from: string, through: string): MethodGoalPin[] {
+    return this.database.transaction(db=>{
+      const result: MethodGoalPin[]=[];
+      const statement=db.prepare(`SELECT * FROM method_learning_goal_pins WHERE ${filter}=? AND created_at>=? AND created_at<=?
+        AND (created_at,goal_id)>(?,?) ORDER BY created_at,goal_id LIMIT 250`);
+      let afterAt=from, afterGoal="";
+      for (;;) {
+        const page = statement.all(revisionId,from,through,afterAt,afterGoal);
+        for (const row of page) result.push({workbenchId:String(row.workbench_id),goalId:String(row.goal_id),
+          revisionId:typeof row.revision_id==="string" ? row.revision_id : null,policy:String(row.policy),at:String(row.created_at)});
+        const last=result.at(-1);
+        if (page.length<250 || last===undefined) return result;
+        afterAt=last.at;afterGoal=last.goalId;
+      }
+    });
   }
   countGoalPins(revisionId?: string): number { return this.database.transaction(db => Number(db.prepare("SELECT COUNT(*) AS total FROM method_learning_goal_pins WHERE (? IS NULL OR revision_id=?)").get(revisionId ?? null,revisionId ?? null)?.total ?? 0)); }
   private readPin(db: DatabaseSync, workbench: string, goal: string): MethodGoalPin | null {
