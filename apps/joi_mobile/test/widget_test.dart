@@ -268,6 +268,8 @@ void main() {
     ['WRITE_RUNNING', '', '写入执行中'],
     ['WRITE_QUEUED', 'CAPACITY', '等待执行容量'],
     ['FUTURE_PHASE', 'FUTURE_REASON', '执行中'],
+    ['', '', '已回答，等待接续', 'QUEUED'],
+    ['', '', '已接续', 'CONTINUED'],
   ]) {
     testWidgets(
       'agent record displays ${sample[2]} from the host execution projection',
@@ -275,9 +277,10 @@ void main() {
         final agent = {
           'agentId': 'a',
           'partnerName': '搭档',
-          'status': 'RUNNING',
+          'status': sample.length == 3 ? 'RUNNING' : 'WAITING',
           'executionPhase': sample[0],
           'waitReason': sample[1],
+          if (sample.length > 3) 'questionContinuation': sample[3],
         };
         final controller =
             FakeRemoteController(

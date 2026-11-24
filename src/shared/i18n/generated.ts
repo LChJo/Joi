@@ -1029,6 +1029,8 @@ export interface MessageParameters {
   "home.waitingForExecutionCapacity": undefined;
   "home.waitingForWorkspaceReadAccess": undefined;
   "home.waitingToWrite": undefined;
+  "home.questionContinuationQueued": undefined;
+  "home.questionContinued": undefined;
   "home.analyzing": undefined;
   "home.writing": undefined;
   "home.valueWorkCompleted": { "p0": string };
@@ -2983,6 +2985,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.waitingForExecutionCapacity": "Waiting for execution capacity",
     "home.waitingForWorkspaceReadAccess": "Waiting for workspace read access",
     "home.waitingToWrite": "Waiting to write",
+    "home.questionContinuationQueued": "Answered, waiting to resume",
+    "home.questionContinued": "Continued",
     "home.analyzing": "Analyzing",
     "home.writing": "Writing",
     "home.valueWorkCompleted": "{p0} work completed",
@@ -4935,6 +4939,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.waitingForExecutionCapacity": "等待执行容量",
     "home.waitingForWorkspaceReadAccess": "等待工作区可读",
     "home.waitingToWrite": "等待写入",
+    "home.questionContinuationQueued": "已回答，等待接续",
+    "home.questionContinued": "已接续",
     "home.analyzing": "分析中",
     "home.writing": "写入执行中",
     "home.valueWorkCompleted": "{p0} 工作完成",
@@ -7737,6 +7743,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "等待工作区可读": "home.waitingForWorkspaceReadAccess",
   "Waiting to write": "home.waitingToWrite",
   "等待写入": "home.waitingToWrite",
+  "Answered, waiting to resume": "home.questionContinuationQueued",
+  "已回答，等待接续": "home.questionContinuationQueued",
+  "Continued": "home.questionContinued",
+  "已接续": "home.questionContinued",
   "Analyzing": "home.analyzing",
   "分析中": "home.analyzing",
   "Writing": "home.writing",

@@ -5,6 +5,7 @@ import type { EvolutionService } from "../evolution/evolution-service.js";
 import type { WorkbenchCatalog } from "../ports/workbench-context.js";
 import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
+import { GOAL_SYNTHESIS_YIELD } from "../ports/joi-task.js";
 import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
 import { composeJoiContinuationBackground } from "./joi-continuation-prompt.js";
 import { sourceFailureNeedsCorrection, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
@@ -220,7 +221,7 @@ export class JoiCoordinator {
       selectInitial(turnId: string): Promise<SourcePin>;
     };
     store: JoiCoordinatorStore;
-    work?: Pick<WorkOrchestrationService, "resume">;
+    work?: Pick<WorkOrchestrationService, "resume"> & Partial<Pick<WorkOrchestrationService, "readBrief">>;
   }) {}
 
   /** Spread into buildJoiSystemPrompt arguments; empty when no workspace service or binding exists. */
@@ -231,6 +232,7 @@ export class JoiCoordinator {
 
   async handle(inputId: string, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled before it started.");
+    if (inputId.startsWith("joi_result_input:goal:") && await this.dependencies.store.deferObsoleteSynthesis?.(inputId)) return;
     const input = await this.dependencies.store.loadInput(inputId);
     if (input === null) throw new DomainError("joi_input_not_found", "joi input was not found.");
     if (input.status === "CONSUMED") return;
@@ -455,6 +457,7 @@ export class JoiCoordinator {
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
     let repair: ReasoningRepair | undefined;
+    let partnerReviewContext: string | undefined;
     if (isGoalSynthesis) prompt += `\n\n${SYNTHESIS_TEXT_DECISION_INSTRUCTIONS}`;
     if (input.resolvedAction !== undefined && contract !== undefined) {
       prompt += `\nPersisted user action: actionId=${input.resolvedAction.actionId} workId=${input.resolvedAction.workId}. Review current requirements and work_read_brief, then apply work_resume with this stable actionId and complete updated instructions; do not replay a resolved action.`;
@@ -472,7 +475,25 @@ export class JoiCoordinator {
       turnAttachmentIds = attachmentContext.attachmentIds;
     }
     try {
+      const focusedReview = input.partnerQuestionReview;
+      const unread = contract?.nextUnreadSource;
+      if (focusedReview !== undefined && contract !== undefined && requirementsStore !== undefined
+        && contract.revision > 0 && contract.sourceRevision === contract.processedSourceRevision + 1
+        && unread?.sourceRevision === contract.sourceRevision && unread.totalChars <= 4_000) {
+        const brief = await this.dependencies.work?.readBrief?.(goalId, workbenchId, focusedReview.workId);
+        if (brief?.instructions !== undefined && brief.requirementsRevision === contract.revision) {
+          const source = await requirementsStore.readSource({ goalInputId: goalId, workbenchId, sourceRevision: unread.sourceRevision, offset: 0 });
+          if (source.nextOffset === undefined) {
+            partnerReviewContext = `Persisted partner-answer review receipts (data): ${JSON.stringify({ ...focusedReview, brief, source })}`;
+            prompt += `\nThe current Work and complete latest trusted input page are supplied in the private context, equivalent to work_list_goal, work_read_brief and goal_read_inputs here. If either receipt is missing, retrieve it with the normal tools. Enter goal_update_requirements with expectedRevision=${String(contract.revision)} and processedSourceRevision=${String(source.sourceRevision)}. If the answer only resolves the Work question, keep unmentioned requirements and use empty changes; then call goal_resume and work_resume in order, with the returned requirements revision and original actionId. End after successful work_resume. If requirements or permissions need a wider review, use the normal review tools and gates.`;
+          }
+        }
+      }
+      const reviewContext = partnerReviewContext;
+      const turnBackground = reviewContext === undefined ? backgroundContext : [reviewContext, backgroundContext].filter(Boolean).join("\n\n");
+      const turnBackgroundVariants = reviewContext === undefined ? backgroundContextVariants : backgroundContextVariants.map(variant => `${reviewContext}\n\n${variant}`);
       for (;;) {
+        if (isGoalSynthesis && await this.dependencies.store.deferObsoleteSynthesis?.(inputId, turnId)) return;
         if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
         attemptedSources.add(pin.sourceId);
         const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin,
@@ -494,8 +515,8 @@ export class JoiCoordinator {
               : { requiredContext: renderTurnRequirements(contract) }),
             ...(refreshRequiredContext === undefined ? {} : { refreshRequiredContext }),
             workbenchId,
-            ...(backgroundContext === undefined ? {} : { backgroundContext }),
-            ...(backgroundContextVariants.length === 0 ? {} : { backgroundContextVariants }),
+            ...(turnBackground === undefined ? {} : { backgroundContext: turnBackground }),
+            ...(turnBackgroundVariants.length === 0 ? {} : { backgroundContextVariants: turnBackgroundVariants }),
             ...(turnAttachmentIds === undefined ? {} : { attachmentIds: turnAttachmentIds }),
             ...(input.goalInputId === undefined ? {} : { goalInputId: input.goalInputId }),
             ...(turnImages === undefined ? {} : { images: turnImages }),
@@ -895,6 +916,8 @@ export class JoiCoordinator {
       } catch {
         // The session may not exist yet; nothing to abort.
       }
+      if (isGoalSynthesis && signal?.reason === GOAL_SYNTHESIS_YIELD
+        && await this.dependencies.store.deferObsoleteSynthesis?.(inputId, turnId)) return;
       if (!signal?.aborted) {
         const failureKind = this.dependencies.failureClassifier?.classify(error) ?? null;
         if (failureKind === "protocol" && !(error instanceof DomainError && error.code === "custom_model_tool_capability_unverified")) {

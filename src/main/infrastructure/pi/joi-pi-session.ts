@@ -7,7 +7,7 @@ import { withPiSummaryUsage } from "./pi-summary-usage.js";
 import { normalizeImportedHandoff } from "./conversation-session.js";
 import { isCheckpointMessage } from "./pi-compaction.js";
 import { joiPiSystemPrompt, type JoiPiPromptOptions } from "./joi-pi-system-prompt.js";
-import { assertPiRequestCapacity } from "./pi-model-budget.js";
+import { fitPiSessionRequestOptions } from "./pi-model-budget.js";
 import { WORKBENCH_HISTORY_TOOL } from "./pi-historical-memory-tools.js";
 
 const retainedEvidenceReference = "Reference evidence was read in an earlier execution. Check the source reference again if needed.";
@@ -87,14 +87,10 @@ export async function createJoiPiSession(agent: { state: Pick<AgentState,"model"
   const provider = models.getProvider(agent.state.model.provider);
   if (provider !== undefined) runtime.registerNativeProvider(provider);
   const modelRuntime = new Proxy(runtime,{ get(target,key) {
-    if (key === "streamSimple") return (...args: Parameters<Models["streamSimple"]>) => {
-      assertPiRequestCapacity(...args);
-      return summaryModels.streamSimple(...args);
-    };
-    if (key === "completeSimple") return (...args: Parameters<Models["completeSimple"]>) => {
-      assertPiRequestCapacity(...args);
-      return models.completeSimple(...args);
-    };
+    if (key === "streamSimple") return (...[model, context, options]: Parameters<Models["streamSimple"]>) =>
+      summaryModels.streamSimple(model, context, fitPiSessionRequestOptions(model, context, options));
+    if (key === "completeSimple") return (...[model, context, options]: Parameters<Models["completeSimple"]>) =>
+      models.completeSimple(model, context, fitPiSessionRequestOptions(model, context, options));
     if (key === "checkAuth" || key === "getAuth") return models[key].bind(models);
     if (key === "hasConfiguredAuth") return () => false;
     const value: unknown = Reflect.get(target,key,target);

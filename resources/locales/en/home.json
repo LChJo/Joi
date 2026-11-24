@@ -1330,6 +1330,16 @@
     "description": "home: Waiting to write",
     "sourceText": "等待写入"
   },
+  "questionContinuationQueued": {
+    "message": "Answered, waiting to resume",
+    "description": "Agent card after a user answers its blocking question",
+    "sourceText": "已回答，等待接续"
+  },
+  "questionContinued": {
+    "message": "Continued",
+    "description": "Historical Agent card whose answered question continued in another execution",
+    "sourceText": "已接续"
+  },
   "analyzing": {
     "message": "Analyzing",
     "description": "home: Analyzing",

@@ -434,9 +434,41 @@ describe("Workbench Agent and joi home projections", () => {
       expect(agents.items).toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "WAITING" })]);
 
       fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_user_action_requests
+          (action_id,input_id,work_id,run_id,kind,status,reason_code,prompt,decision,resolved_at,created_at,updated_at)
+          VALUES ('question-action','goal-waiting-agent','work-waiting-agent','run-waiting-agent','PARTNER_QUESTION','RESOLVED','question_required','Choose','RESUME',?,?,?)`).run(now, now, now);
+      });
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ status: "WAITING", questionContinuation: "QUEUED" })]);
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_user_action_requests SET status = 'APPLIED' WHERE action_id = 'question-action'").run();
+        connection.prepare("UPDATE work_items SET status = 'READY' WHERE work_id = 'work-waiting-agent'").run();
+        connection.prepare("UPDATE partner_runs SET status = 'FAILED' WHERE run_id = 'run-waiting-agent'").run();
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id,dispatch_plan_id,work_id,partner_revision_id,registry_revision,action_id,status,created_at,updated_at)
+          VALUES ('next-attempt','plan-waiting-agent','work-waiting-agent',?,1,'question-action','PENDING',?,?)`).run(partner.partnerRevisionId, now, now);
+      });
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ status: "WAITING", questionContinuation: "QUEUED" })]);
+
+      fixture.database.transaction((connection) => {
+        const startedAt = new Date(Date.parse(now) + 1000).toISOString();
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('next-run','next-attempt','question-action',?,'work-waiting-agent',?,'LOCAL_PI','local:next','RUNNING',?,?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, startedAt, startedAt);
+      });
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ status: "COMPLETED", questionContinuation: "CONTINUED" })]);
+      fixture.database.transaction((connection) => connection.prepare("UPDATE dispatch_attempts SET instance_id = ?, status = 'RUNNING' WHERE dispatch_attempt_id = 'next-attempt'").run(resident.instanceId));
+      const running = (await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 })).items;
+      expect(running).toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "RUNNING" })]);
+      expect(running[0]?.questionContinuation).toBeUndefined();
+
+      fixture.database.transaction((connection) => {
         connection.prepare("UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-waiting-agent'").run(now);
-        connection.prepare("UPDATE dispatch_attempts SET status = 'COMPLETED', updated_at = ? WHERE dispatch_attempt_id = 'attempt-waiting-agent'").run(now);
-        connection.prepare("UPDATE partner_runs SET status = 'COMPLETED', updated_at = ? WHERE run_id = 'run-waiting-agent'").run(now);
+        connection.prepare("UPDATE dispatch_attempts SET status = 'COMPLETED', updated_at = ? WHERE dispatch_attempt_id = 'next-attempt'").run(now);
+        connection.prepare("UPDATE partner_runs SET status = 'COMPLETED', updated_at = ? WHERE run_id = 'next-run'").run(now);
       });
       expect((await repository.listAgents({ workbenchId: workbench.workbenchId, limit: 50 })).items)
         .toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "IDLE" })]);

@@ -53,7 +53,7 @@ export function sessionAssistant(content: unknown[],engine = "history"): AgentMe
     stopReason: content.some(block => (block as { type?: string }).type === "toolCall") ? "toolUse" : "stop",timestamp: Date.now() } as AgentMessage;
 }
 export function conversationPrompt(request: PartnerRunRequest): string {
-  return [request.taskProjection,request.conversationAttachmentContext].filter(Boolean).join("\n\n");
+  return [request.taskProjection,request.conversationAttachmentContext,request.questionContinuation?.context].filter(Boolean).join("\n\n");
 }
 
 /** Legacy projections contain no private tool bodies; the import never fabricates them. */

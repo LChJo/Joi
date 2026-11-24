@@ -1,4 +1,5 @@
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import { UserQuestionService } from "../../src/main/application/joi/user-question-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
@@ -10,6 +11,11 @@ import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-requirements-repository.js";
+import { createWorkResult } from "../../src/main/domain/work/work-result.js";
+import { createModelSource } from "../../src/main/domain/model-sources/model-source.js";
+import type { PrimaryReasoningRuntime } from "../../src/main/application/ports/primary-reasoning-runtime.js";
+import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
 
 async function setup() {
   const fixture = await createRuntimeFixture();
@@ -45,6 +51,77 @@ async function setup() {
 }
 
 describe("goal question queue", () => {
+  it.each(["choice", "custom", "multiple-work"] as const)("prepares a focused partner review only for a single bound choice (%s)", async kind => {
+    const s = await setup();
+    try {
+      if (kind !== "multiple-work") await new SqliteWorkPlanRepository(s.fixture.database).cancel("work-b", s.fixture.clock.now().toISOString());
+      await s.repository.requireClarification(s.goal.inputId, "question_required", "Choose the output format", {
+        actionId: "action-a", kind: "PARTNER_QUESTION", runId: "run-a", workId: "work-a",
+      }, undefined, { question: "Choose the output format", options: [{ id: "short", label: "Short" }, { id: "full", label: "Full" }], allowCustom: true });
+      const question = (await s.list())[0];
+      if (question === undefined) throw new Error("Missing question");
+      await s.questions.answer(question.scope, question.questionId, { version: question.version, selectedOptionIds: ["short"],
+        ...(kind === "custom" ? { text: "Change the intended audience" } : {}) });
+      const resumed = await s.repository.loadInput(String(s.resumes()[0]?.input_id));
+      expect(resumed?.partnerQuestionReview).toEqual(kind === "choice" ? { actionId: "action-a", workId: "work-a" } : undefined);
+    } finally { s.questions.close(); await s.fixture.close(); }
+  });
+
+  it("delivers the focused review to the first reasoning call and resumes through the versioned gate", async () => {
+    const s = await setup();
+    const workbenchId = s.workbench.workbenchId;
+    const goalInputId = s.goal.inputId;
+    const requirements = new SqliteGoalRequirementsRepository(s.fixture.database);
+    const plans = new SqliteWorkPlanRepository(s.fixture.database);
+    try {
+      await plans.cancel("work-b", s.fixture.clock.now().toISOString());
+      await requirements.ensure({ goalInputId, workbenchId });
+      const source = await requirements.readSource({ goalInputId, workbenchId, sourceRevision: 1, offset: 0 });
+      await requirements.update({ goalInputId, workbenchId, expectedRevision: 0, processedSourceRevision: 1, retirements: [], upserts: [
+        { id: "delivery", text: source.text, kind: "OBJECTIVE", scope: "GLOBAL", mandatory: true, source: { sourceRevision: 1, start: 0, end: source.text.length } },
+      ] });
+      s.fixture.database.transaction(db => db.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = 'work-a'")
+        .run(JSON.stringify({ briefVersion: 3, requirementsRevision: 1, instructions: "Write the report in the chosen format.", acceptanceChecks: [{ kind: "BODY_PRESENT" }] })));
+      await s.repository.requireClarification(goalInputId, "question_required", "Choose the output format", {
+        actionId: "action-a", kind: "PARTNER_QUESTION", runId: "run-a", workId: "work-a",
+      }, undefined, { question: "Choose the output format", options: [{ id: "short", label: "Short" }, { id: "full", label: "Full" }] });
+      const question = (await s.list())[0];
+      if (question === undefined) throw new Error("Missing question");
+      await s.questions.answer(question.scope, question.questionId, { version: question.version, selectedOptionIds: ["short"] });
+      const resumeId = String(s.resumes()[0]?.input_id);
+      const now = s.fixture.clock.now().toISOString();
+      s.fixture.database.transaction(db => db.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES ('fixture-ref','api_key',?,1,?)`)
+        .run(new Uint8Array([1]), now));
+      await new SqliteModelSourceRepository(s.fixture.database).create({ local: false, order: 0, primary: true,
+        source: createModelSource({ createdAt: now, credentialRef: "fixture-ref", credentialVersion: 1, displayName: "Fixture",
+          kind: "deepseek", modelCapability: "release-tested", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }) });
+      const work = new WorkOrchestrationService({ clock: s.fixture.clock, ids: s.fixture.ids, requirements, repository: plans, reassignment: plans,
+        goalGate: plans, partners: s.fixture.partners, policy: { evaluate: () => Promise.resolve({ allowed: true }) } });
+      const startTurn = vi.fn<PrimaryReasoningRuntime["startTurn"]>(async turn => {
+        expect(turn.backgroundContext).toContain("Persisted partner-answer review receipts");
+        expect(turn.backgroundContext).toContain("Write the report in the chosen format.");
+        expect(turn.prompt).not.toContain("Persisted partner-answer review receipts");
+        expect(turn.prompt).toContain("expectedRevision=1 and processedSourceRevision=2");
+        await expect(s.repository.resumeGoal({ inputId: resumeId, turnId: turn.turnId, requirementsRevision: 1 })).rejects.toMatchObject({ code: "goal_requirements_pending" });
+        const reviewed = await requirements.update({ goalInputId, workbenchId, expectedRevision: 1, processedSourceRevision: 2, upserts: [], retirements: [] });
+        await s.repository.resumeGoal({ inputId: resumeId, turnId: turn.turnId, requirementsRevision: reviewed.revision });
+        turn.onEvent?.({ type: "tool_started", toolCallId: "work-resume", toolName: "work_resume", turnId: turn.turnId });
+        await work.resume({ workbenchId, turnId: turn.turnId, workId: "work-a", actionId: "action-a", requirementsRevision: reviewed.revision,
+          instructions: "Write the short report in the chosen format." });
+        turn.onEvent?.({ type: "tool_finished", toolCallId: "work-resume", toolName: "work_resume", turnId: turn.turnId, isError: false });
+      });
+      await new JoiCoordinator({ clock: s.fixture.clock, ids: s.fixture.ids, workbenches: s.fixture.workbenches, requirements, work,
+        router: { decide: () => Promise.reject(new Error("Already assigned")) }, store: s.repository,
+        sources: { selectInitial: turnId => Promise.resolve({ modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", turnId }) },
+        runtime: { startTurn, isRunning: () => false, abort: vi.fn(), followUp: vi.fn(), steer: vi.fn(),
+          restore: () => Promise.resolve(false), rollbackTurn: () => Promise.resolve(false), waitForIdle: () => Promise.resolve() } }).handle(resumeId);
+      expect(startTurn).toHaveBeenCalledTimes(1);
+      expect((await s.repository.loadInput(resumeId))?.status).toBe("CONSUMED");
+      expect(s.fixture.database.transaction(db => db.prepare("SELECT status FROM dispatch_attempts WHERE action_id = 'action-a'").get())?.status).toBe("PENDING");
+    } finally { s.questions.close(); await s.fixture.close(); }
+  });
+
   it.each(["ACTIVE","ANSWERED"] as const)("ASK-04/07 cancels a %s question for individual Work and advances the gate without fabricating an answer", async state => {
     const s = await setup();
     try {
@@ -119,6 +196,14 @@ describe("goal question queue", () => {
   it("keeps FIFO and one OPEN projection, then resumes once with both exact Work answers", async () => {
     const s = await setup();
     try {
+      const results = new SqliteWorkResultRepository(s.fixture.database);
+      const pin = s.fixture.database.transaction(db => db.prepare("SELECT partner_revision_id FROM partner_runs WHERE run_id='run-a'").get());
+      if (typeof pin?.partner_revision_id !== "string") throw new Error("missing source revision");
+      for (const id of ["a","b"]) await results.record(createWorkResult({
+        actionId: `dispatch-${id}`, artifacts: [{ name: `partial-${id}.txt`, size: 10 }], body: `Prior progress for Work ${id}`, createdAt: s.fixture.clock.now().toISOString(),
+        isLate: false, partnerRevisionId: pin.partner_revision_id, resultId: `paused-result-${id}`, runId: `run-${id}`,
+        status: "WAITING_INPUT", verification: { status: "NOT_REQUIRED" }, workbenchId: s.workbench.workbenchId, workId: `work-${id}`,
+      }));
       await s.ask("a"); await s.ask("b"); await s.ask("b");
       const queued = await s.list();
       expect(queued.map(q => q.status)).toEqual(["ACTIVE","QUEUED"]);
@@ -151,11 +236,31 @@ describe("goal question queue", () => {
         repository: workRepository,reassignment: workRepository,goalGate: workRepository,policy: { evaluate: () => Promise.resolve({ allowed: true }) },
       });
       for (const [id,answer] of [["a","答案 A"],["b","答案 B"]] as const) {
-        const input = { workbenchId: s.workbench.workbenchId,turnId: "resume-both",workId: `work-${id}`,actionId: `action-${id}`,instructions: `按已确认回答继续原工作，保留原权限与验收要求：${answer}` };
+        const input = { workbenchId: s.workbench.workbenchId,turnId: "resume-both",workId: `work-${id}`,
+          ...(id === "b" ? { actionId: "action-b" } : {}), instructions: "Continue the remaining Work using the saved answer." };
         const attempt = await work.resume(input);
+        expect(attempt.actionId).toBe(`action-${id}`);
         expect(await work.resume(input)).toEqual(attempt);
         const brief = s.fixture.database.transaction(db => db.prepare("SELECT intent_json FROM work_items WHERE work_id=?").get(`work-${id}`));
-        expect(brief?.intent_json).toContain(answer);
+        expect(brief?.intent_json).toContain(input.instructions);
+        const dispatch = vi.fn<ConstructorParameters<typeof SqlitePartnerDispatchDelivery>[0]["instances"]["dispatch"]>(({ request }) =>
+          Promise.resolve({ actionId: request.actionId, workId: request.workId, externalRunId: `local:${id}`, status: "COMPLETED", artifacts: [], body: "Done" }));
+        const never = () => Promise.reject(new Error("Only the already-claimed local dispatch may run"));
+        const delivery = new SqlitePartnerDispatchDelivery({ database: s.fixture.database, clock: s.fixture.clock,
+          results, contexts: new SqliteWorkbenchContextRepository(s.fixture.database),
+          partners: new SqlitePartnerRegistryRepository(s.fixture.database), contextAssembler: { assemble: never },
+          gateway: { recover: never, startWithResult: never }, instances: { dispatch },
+          leases: { acquire: () => Promise.resolve(null), release: () => Promise.resolve() },
+        });
+        await delivery.run({ actionId: attempt.actionId, attemptCount: 0, dispatchAttemptId: attempt.dispatchAttemptId,
+          kind: "LOCAL_PI", outboxId: attempt.outbox.outboxId, workId: `work-${id}` });
+        expect(dispatch).toHaveBeenCalledOnce();
+        const continuation = dispatch.mock.calls[0]?.[0].request.questionContinuation;
+        expect(continuation?.origin).toEqual({ actionId: `dispatch-${id}` });
+        expect(continuation?.context).toContain(answer);
+        expect(continuation?.context).toContain(`Prior progress for Work ${id}`);
+        expect(continuation?.context).toContain(`partial-${id}.txt`);
+        expect(continuation?.context).not.toContain(id === "a" ? "答案 B" : "答案 A");
       }
       expect(s.fixture.database.transaction(db => db.prepare("SELECT action_id,status FROM joi_user_action_requests ORDER BY action_id").all())).toEqual([
         { action_id: "action-a",status: "APPLIED" },{ action_id: "action-b",status: "APPLIED" },

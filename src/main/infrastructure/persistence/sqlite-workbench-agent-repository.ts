@@ -64,6 +64,8 @@ function required(row: Row, key: string): string {
 
 function mapStatus(row: Row): WorkbenchAgentStatusDto {
   if (row.goal_execution_status === "CANCELED") return "CANCELED";
+  if (row.question_continuation === "QUEUED") return "WAITING";
+  if (row.question_continuation === "CONTINUED") return "COMPLETED";
   if (row.execution_phase === "WRITE_QUEUED") return "WAITING";
   if (row.goal_execution_status === "RUNNING") return "RUNNING";
   if (row.goal_execution_status === "WAITING_INPUT" || row.goal_execution_status === "WAITING_AUTH") return "WAITING";
@@ -95,6 +97,7 @@ function mapCard(row: Row): WorkbenchAgentCardDto {
   const status = mapStatus(row);
   const engine = row.backing_kind === "A2A_RUN" ? "pi-core" : mapStoredEngine(row.engine, row.cli_protocol);
   return {
+    ...(row.question_continuation === "QUEUED" || row.question_continuation === "CONTINUED" ? { questionContinuation: row.question_continuation } : {}),
     ...(status === "FAILED" && row.incomplete_result === 1 ? { resultAssessment: "INSUFFICIENT" as const } : {}),
     ...(typeof row.execution_phase === "string" ? { executionPhase: row.execution_phase as WorkbenchAgentCardDto["executionPhase"] & string } : {}),
     ...(typeof row.wait_reason === "string" ? { waitReason: row.wait_reason as WorkbenchAgentCardDto["waitReason"] & string } : {}),
@@ -174,6 +177,18 @@ function cardSelect(goalScoped: boolean, paged = false): string {
     CROSS JOIN partner_runs lr ON la.dispatch_attempt_id = lr.dispatch_attempt_id
     WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at,
   ${goalScoped ? "CASE WHEN goal_work.status = 'CANCELED' THEN 'CANCELED' ELSE chosen.status END" : "NULL"} AS goal_execution_status,
+   CASE WHEN s.backing_kind = 'LOCAL_INSTANCE' AND chosen.status IN ('WAITING_INPUT', 'FAILED') AND goal_work.status <> 'CANCELED'
+     THEN (SELECT CASE
+       WHEN action.status = 'RESOLVED' AND chosen.status = 'WAITING_INPUT' AND goal_work.status = 'WAITING' THEN 'QUEUED'
+       WHEN next_attempt.status IN ('PENDING', 'DISPATCHED', 'ACCEPTED') AND next_run.run_id IS NULL THEN 'QUEUED'
+       WHEN next_run.run_id IS NOT NULL THEN 'CONTINUED' END
+       FROM joi_user_action_requests action
+       LEFT JOIN dispatch_attempts next_attempt ON next_attempt.action_id = action.action_id AND next_attempt.work_id = chosen.work_id
+       LEFT JOIN partner_runs next_run ON next_run.dispatch_attempt_id = next_attempt.dispatch_attempt_id
+       WHERE action.input_id = goal_work.input_id AND action.work_id = chosen.work_id AND action.run_id = chosen.run_id
+         AND action.kind = 'PARTNER_QUESTION' AND action.decision = 'RESUME' AND action.status IN ('RESOLVED', 'APPLIED')
+       ORDER BY action.updated_at DESC, action.action_id DESC LIMIT 1)
+   END AS question_continuation,
   CASE WHEN chosen.status = 'FAILED' AND result.is_late = 0
       AND verification.status = 'FAILED'
       AND (length(trim(body.body, char(9) || char(10) || char(13) || ' ')) > 0 OR json_array_length(result.artifacts_json) > 0)
@@ -190,7 +205,7 @@ function cardSelect(goalScoped: boolean, paged = false): string {
     ORDER BY CASE WHEN qr.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH') THEN 0 ELSE 1 END,
       qr.created_at DESC, qr.run_id DESC LIMIT 1
   ) END
-  ${goalScoped ? "LEFT JOIN work_items goal_work ON goal_work.work_id = chosen.work_id" : ""}
+   LEFT JOIN work_items goal_work ON goal_work.work_id = chosen.work_id
   LEFT JOIN work_results result ON chosen.status = 'FAILED' AND result.run_id = chosen.run_id AND result.is_authoritative = 1
   LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
   LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id`;

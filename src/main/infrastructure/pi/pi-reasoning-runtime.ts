@@ -296,9 +296,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           const results = new Set(runMessages.flatMap(message => message.role === "toolResult" ? [message.toolCallId] : []));
           const dangling = calls.filter(call => !results.has(call.id)).length;
           if (dangling > 0) emitRuntimeDiagnostic(this.options.diagnostics, "joi.turn.dangling_tool_call", { danglingCount: dangling, observedToolCount: calls.length, inputId: input.inputId, turnId: input.turnId, workbenchId: input.workbenchId });
-          const last = [...active.session.messages].reverse().find(message => message.role === "assistant");
-          if (last?.role === "assistant" && last.stopReason === "error") throw reasoningStreamFailure(last.errorMessage);
-          if ((settled.aborted || last?.role === "assistant" && last.stopReason === "aborted") && !active.cancelled) throw reasoningStreamFailure("Primary reasoning was aborted.");
+          // Pi can omit a failed attempt from model context while keeping its canonical entry.
+          const last = runMessages.findLast(message => message.role === "assistant");
+          if (last?.stopReason === "error") throw reasoningStreamFailure(last.errorMessage);
+          if ((settled.aborted || last?.stopReason === "aborted") && !active.cancelled) throw reasoningStreamFailure("Primary reasoning was aborted.");
           active.session.sessionManager.appendCustomEntry("joi.primary_result", {
             turnId: input.turnId, repair: input.repair, sourceRevisionId: input.sourceRevisionId, modelRevisionId: input.modelRevisionId, events: active.events,
           });

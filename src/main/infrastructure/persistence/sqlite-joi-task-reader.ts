@@ -3,7 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiTaskInbox, JoiTaskPendingInput, JoiTaskStaleTurn, JoiTurnRetryState } from "../../application/ports/joi-task.js";
-import { JOI_RUNNABLE_INPUT_SQL } from "./sqlite-joi-runnable.js";
+import { GOAL_SYNTHESIS_WAITING_FOR_RESULTS_SQL, JOI_RUNNABLE_INPUT_SQL, STALE_GOAL_SYNTHESIS_SQL } from "./sqlite-joi-runnable.js";
 import { joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 
@@ -36,21 +36,26 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
                i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
                (i.goal_input_id IS NOT NULL AND i.workbench_id IS NOT NULL AND i.result_revision IS NOT NULL
                  AND i.input_id GLOB 'joi_result_input:goal:*') AS synthesis_turn,
+               EXISTS (SELECT 1 FROM joi_goal_execution_gates gate
+                 WHERE gate.goal_input_id = i.goal_input_id AND gate.status = 'REVIEWING'
+                   AND gate.resume_input_id = i.input_id AND gate.answered_at IS NOT NULL) AS goal_resume,
                CASE WHEN EXISTS (
                  SELECT 1 FROM joi_user_action_requests action
                   WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
                ) THEN 0 ELSE 1 END AS requires_model_source
           FROM joi_inbox_messages i WHERE ${JOI_RUNNABLE_INPUT_SQL}
+          AND NOT (${STALE_GOAL_SYNTHESIS_SQL}) AND NOT (${GOAL_SYNTHESIS_WAITING_FOR_RESULTS_SQL})
       )
-      SELECT * FROM (SELECT * FROM runnable WHERE synthesis_turn = 0 ORDER BY created_at, input_id LIMIT 50)
+      SELECT * FROM (SELECT * FROM runnable WHERE synthesis_turn = 0 ORDER BY goal_resume DESC, created_at, input_id LIMIT 50)
       UNION ALL
       SELECT * FROM (SELECT * FROM runnable WHERE synthesis_turn = 1 ORDER BY created_at, input_id LIMIT 50)
-      ORDER BY created_at, input_id`).all()) as Row[])
+      ORDER BY goal_resume DESC, created_at, input_id`).all()) as Row[])
       .map((row) => ({
         createdAt: textValue(row, "created_at"),
         inputId: textValue(row, "input_id"),
         ...(typeof row.goal_input_id === "string" ? { goalInputId: row.goal_input_id } : {}),
         ...(row.synthesis_turn === 1 ? { synthesis: true } : {}),
+        ...(row.goal_resume === 1 ? { goalResume: true } : {}),
         requiresModelSource: row.requires_model_source !== 0,
         retryState: joiTurnRetryState(row),
       }));
@@ -97,6 +102,11 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
 
   async failTurn(inputId: string, turnId: string): Promise<void> {
     await this.dependencies.failTurn(inputId, turnId);
+  }
+
+  async canYieldSynthesis(inputId: string): Promise<boolean> {
+    return this.dependencies.database.transaction(connection => connection.prepare(`SELECT 1 FROM joi_turns
+      WHERE input_id = ? AND status = 'RUNNING' AND side_effect_started = 1 LIMIT 1`).get(inputId) === undefined);
   }
 
   async isCanceled(inputId: string): Promise<boolean> {

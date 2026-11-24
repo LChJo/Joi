@@ -474,6 +474,9 @@ export class WorkOrchestrationService {
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
+    if (context.answeredQuestionActionId !== undefined && input.actionId !== undefined && input.actionId !== context.answeredQuestionActionId) {
+      throw new DomainError("work_resume_action_mismatch", "Use the saved answer action for this Work.");
+    }
     if (input.evidenceResultIds !== undefined) {
       if (this.dependencies.evidence === undefined || context.inputId === undefined) throw new DomainError("work_evidence_unavailable", "Evidence validation is unavailable.");
       await this.dependencies.evidence.assertReferences({ goalInputId: context.inputId, workbenchId: input.workbenchId, resultIds: input.evidenceResultIds });
@@ -497,7 +500,7 @@ export class WorkOrchestrationService {
       ? null
       : await this.dependencies.instances.get(context.lastInstanceId);
     const createdAt = this.dependencies.clock.now().toISOString();
-    const actionId = input.actionId ?? this.dependencies.ids.next("action");
+    const actionId = context.answeredQuestionActionId ?? input.actionId ?? this.dependencies.ids.next("action");
     const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
     const attempt: PlannedDispatchAttempt = {
       partnerId: pin.partnerId, partnerRevisionId: pin.partnerRevisionId, registryRevision: pin.registryRevision,
@@ -510,7 +513,7 @@ export class WorkOrchestrationService {
         payload: {
           actionId,
           dispatchAttemptId,
-          ...(lastInstance !== null && lastInstance.status === "IDLE"
+          ...(lastInstance !== null && lastInstance.status === "IDLE" && context.lastPartnerRevisionId === pin.partnerRevisionId
             ? { instanceId: lastInstance.instanceId }
             : { sessionPolicy: "RESIDENT" as const }),
           workId: input.workId,

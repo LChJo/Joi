@@ -24,6 +24,33 @@ export const JOI_RUNNABLE_INPUT_SQL = `
          OR (gate.status = 'REVIEWING' AND gate.resume_input_id IS NOT i.input_id))
   )`;
 
+/** Use inbox alias i and only retire synthesis snapshots backed by a result set. */
+export const STALE_GOAL_SYNTHESIS_SQL = `
+  i.result_revision IS NOT NULL AND i.input_id GLOB 'joi_result_input:goal:*' AND EXISTS (
+    SELECT 1 FROM joi_goal_result_sets rs
+    LEFT JOIN joi_goal_requirements gr ON gr.goal_input_id = rs.original_input_id
+    WHERE rs.original_input_id = i.goal_input_id AND (
+      rs.revision <> i.result_revision
+      OR COALESCE(gr.revision, 0) <> COALESCE(i.requirements_revision, 0)
+      OR (rs.synthetic_input_id IS NOT NULL AND rs.synthetic_input_id <> i.input_id)
+    )
+  )`;
+
+/** Shared by result discovery and synthesis admission using result alias r and event alias e. */
+export const UNSYNTHESIZED_PARTNER_RESULT_SQL = `
+  r.is_authoritative = 1 AND r.is_late = 0 AND r.status IN ('COMPLETED', 'FAILED', 'UNKNOWN')
+  AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members m WHERE m.event_id = e.event_id)`;
+
+export const GOAL_SYNTHESIS_WAITING_FOR_RESULTS_SQL = `
+  i.result_revision IS NOT NULL AND i.input_id GLOB 'joi_result_input:goal:*' AND (
+    EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.goal_input_id AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+    OR EXISTS (
+      SELECT 1 FROM work_items w CROSS JOIN partner_result_events e ON e.work_id = w.work_id
+      JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status
+      WHERE w.input_id = i.goal_input_id AND ${UNSYNTHESIZED_PARTNER_RESULT_SQL}
+    )
+  )`;
+
 /** Running operations always retain priority; active waits yield only to an explicit user action. */
 export const JOI_FOREGROUND_WORK_SQL = `
   w.status = 'RUNNING' OR (

@@ -95,6 +95,8 @@ export interface PartnerSessionState {
 }
 
 export interface PartnerExecutionContext {
+  /** Use the managed Work instance identity for a resumable one-shot checkpoint. */
+  workInstanceId?: string;
   readHistory?: () => Promise<unknown[]>;
   skillPaths?: readonly string[];
   onThinking?: (thinking: ConversationThinkingDto) => Promise<void>;
@@ -137,7 +139,7 @@ export interface PartnerEngineRuntime {
   preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin | undefined>;
   /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
   probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
-  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus | "SUSPENDED" }>;
+  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<ResidentTurnResult>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */
   toolOptions(): readonly string[];

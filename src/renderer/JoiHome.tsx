@@ -1149,7 +1149,9 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   return t("status.canceled");
 }
 
-function agentExecutionLabel(agent: Pick<WorkbenchAgentCardDto, "executionPhase" | "waitReason" | "resultAssessment"> & { status: string }): string {
+function agentExecutionLabel(agent: Pick<WorkbenchAgentCardDto, "executionPhase" | "waitReason" | "resultAssessment" | "questionContinuation"> & { status: string }): string {
+  if (agent.questionContinuation === "QUEUED") return t("home.questionContinuationQueued");
+  if (agent.questionContinuation === "CONTINUED") return t("home.questionContinued");
   if (agent.status === "FAILED" && agent.resultAssessment === "INSUFFICIENT") return t("home.insufficient");
   if (agent.waitReason === "CAPACITY") return t("home.waitingForExecutionCapacity");
   if (agent.waitReason === "WORKSPACE_WRITE" || agent.executionPhase === "WRITE_QUEUED") return t("home.waitingToWrite");

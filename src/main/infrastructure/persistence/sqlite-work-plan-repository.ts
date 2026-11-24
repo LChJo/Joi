@@ -422,7 +422,12 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   async loadForReassignment(workId: string): Promise<WorkReassignmentContext | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
       SELECT w.work_id, w.workbench_id, w.input_id, w.title, COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status,
-             w.created_at, w.updated_at, w.intent_json, a.partner_revision_id, a.instance_id, rev.partner_id
+             w.created_at, w.updated_at, w.intent_json, a.partner_revision_id, a.instance_id, rev.partner_id,
+             (SELECT action.action_id FROM partner_runs run
+               JOIN joi_user_action_requests action ON action.run_id = run.run_id
+               WHERE run.dispatch_attempt_id = a.dispatch_attempt_id AND action.work_id = w.work_id AND action.input_id = w.input_id
+                 AND action.kind = 'PARTNER_QUESTION' AND action.status = 'RESOLVED' AND action.decision = 'RESUME'
+               ORDER BY action.resolved_at DESC, action.action_id DESC LIMIT 1) AS answered_question_action_id
         FROM work_items w
         LEFT JOIN work_access_policies p ON p.work_id = w.work_id
         JOIN dispatch_attempts a ON a.dispatch_attempt_id = (
@@ -437,6 +442,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     const executionNeeds = readExecutionNeeds((JSON.parse(row.intent_json as string) as { executionNeeds?: unknown }).executionNeeds);
     return {
       inputId: row.input_id as string,
+      ...(typeof row.answered_question_action_id === "string" ? { answeredQuestionActionId: row.answered_question_action_id } : {}),
       ...(executionNeeds === undefined ? {} : { executionNeeds }),
       item: {
         accessMode: row.access_mode as WorkReassignmentContext["item"]["accessMode"],
@@ -603,8 +609,8 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         connection.prepare(`INSERT INTO work_access_policies (work_id, access_mode) VALUES (?, ?)
           ON CONFLICT(work_id) DO UPDATE SET access_mode = excluded.access_mode`).run(plan.workId, plan.accessMode);
       }
-      // A resumed/reassigned Work supersedes its paused run. Leaving the old run in
-      // WAITING_INPUT would keep Agent and goal projections permanently active.
+      // A replacement attempt closes paused runs for scheduling. The applied question
+      // action and its next attempt carry the continuation outcome for Agent history.
       connection.prepare(`UPDATE partner_runs SET status = 'FAILED', updated_at = ?
         WHERE work_id = ? AND status IN ('WAITING_INPUT', 'WAITING_AUTH')`).run(plan.createdAt, plan.workId);
       connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?

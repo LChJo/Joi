@@ -796,6 +796,8 @@ class _GoalDetailPageState extends State<GoalDetailPage>
                   resultAssessment: agent['resultAssessment'] as String?,
                   executionPhase: agent['executionPhase'] as String?,
                   waitReason: agent['waitReason'] as String?,
+                  questionContinuation:
+                      agent['questionContinuation'] as String?,
                 ),
               ),
               trailing: const Icon(Icons.chevron_right),
@@ -844,6 +846,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   String? _resultAssessment;
   String? _executionPhase;
   String? _waitReason;
+  String? _questionContinuation;
   bool _loading = false;
   bool _foreground = true;
   int _generation = 0;
@@ -856,6 +859,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
     _resultAssessment = widget.agent['resultAssessment'] as String?;
     _executionPhase = widget.agent['executionPhase'] as String?;
     _waitReason = widget.agent['waitReason'] as String?;
+    _questionContinuation = widget.agent['questionContinuation'] as String?;
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -896,6 +900,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
       var resultAssessment = _resultAssessment;
       var executionPhase = _executionPhase;
       var waitReason = _waitReason;
+      var questionContinuation = _questionContinuation;
       do {
         final page = await widget.controller.read(
           'agent.conversation',
@@ -914,6 +919,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           resultAssessment = agent['resultAssessment'] as String?;
           executionPhase = agent['executionPhase'] as String?;
           waitReason = agent['waitReason'] as String?;
+          questionContinuation = agent['questionContinuation'] as String?;
         }
         pages++;
       } while (!more && cursor != null && pages < _loadedPages);
@@ -927,6 +933,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
         _resultAssessment = resultAssessment;
         _executionPhase = executionPhase;
         _waitReason = waitReason;
+        _questionContinuation = questionContinuation;
         _error = null;
         _loadedPages = more ? _loadedPages + 1 : pages;
       });
@@ -978,6 +985,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           resultAssessment: _resultAssessment,
           executionPhase: _executionPhase,
           waitReason: _waitReason,
+          questionContinuation: _questionContinuation,
         ),
       ),
       if (_error != null) Text(noticeText(_error!)),

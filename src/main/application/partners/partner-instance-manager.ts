@@ -10,6 +10,7 @@ import type {
   PartnerToolTraceProgress,
   PartnerSessionState,
   PartnerExecutionContext,
+  ResidentTurnResult,
   SessionPolicy,
 } from "../ports/partner-instances.js";
 import type { ToolTraceDraft } from "./tool-trace-presentation.js";
@@ -34,6 +35,15 @@ const DEFAULT_LIMITS = {
   maxResidentPerPartner: 4,
   warmIdleMillis: 30 * 60_000,
 } as const;
+
+function isParkedEphemeral(record: PartnerInstanceRecord): boolean {
+  return record.sessionPolicy === "EPHEMERAL" && record.status === "IDLE" && record.externalSessionRef !== undefined;
+}
+
+function hasQuestionCheckpoint(result: ResidentTurnResult): boolean {
+  return result.status === "WAITING_INPUT" && result.externalSessionRef !== undefined
+    && (result.output.pendingQuestionSpec !== undefined || Boolean(result.output.pendingQuestion?.trim()));
+}
 
 export class PartnerInstanceManager {
   readonly #limits: { ephemeralIdleMillis: number; maxResidentGlobal: number; maxResidentPerPartner: number; warmIdleMillis: number };
@@ -146,6 +156,9 @@ export class PartnerInstanceManager {
         if (existing === null) throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
         if (existing.workbenchId !== input.request.workbenchId) throw new DomainError("partner_instance_workbench_mismatch", "Partner instance belongs to another Workbench.");
         if (existing.partnerId !== input.revision.partnerId) throw new DomainError("partner_instance_partner_mismatch", "Partner instance belongs to another partner.");
+        if (isParkedEphemeral(existing) && input.request.questionContinuation?.origin?.instanceId !== existing.instanceId) {
+          throw new DomainError("partner_instance_unavailable", "This partner instance is reserved for its answered Work.");
+        }
         if (existing.status === "DISPOSED") {
           if (existing.sessionPolicy !== "EPHEMERAL") throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
           // Compatibility for delayed outbox rows persisted before plan-time validation existed.
@@ -269,8 +282,10 @@ export class PartnerInstanceManager {
           workId: input.request.workId,
         });
       }
-      if (record.sessionPolicy === "EPHEMERAL" && input.request.workspaceExecution === undefined) {
+      const managesPiWorkQuestion = record.engine === "pi-core" && input.dispatchAttemptId !== undefined && input.request.conversationId === undefined;
+      if (record.sessionPolicy === "EPHEMERAL" && input.request.workspaceExecution === undefined && record.externalSessionRef === undefined) {
         const result = await engine.runEphemeral(input.request, input.revision, {
+          ...(managesPiWorkQuestion ? { workInstanceId: record.instanceId } : {}),
           ...(input.onThinking === undefined ? {} : { onThinking: input.onThinking }),
           ...(input.onContext === undefined ? {} : { onContext: input.onContext }),
           knowledgeSection,
@@ -282,7 +297,11 @@ export class PartnerInstanceManager {
           skillSection,
         }, input.signal === undefined ? undefined : { signal: input.signal });
         if (result.status === "SUSPENDED") throw new DomainError("workspace_checkpoint_missing", "Legacy execution cannot suspend for writing.");
-        await this.#disposeRecord(record, "ephemeral_completed");
+        const retainQuestion = managesPiWorkQuestion && hasQuestionCheckpoint(result);
+        if (retainQuestion && result.messages !== undefined) {
+          await this.dependencies.messages.save(record.instanceId, result.messages).catch(() => undefined);
+        }
+        await this.#settleInstance(record, result, retainQuestion);
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
           actionId: input.request.actionId,
           workbenchId: input.request.workbenchId,
@@ -346,12 +365,7 @@ export class PartnerInstanceManager {
         return { actionId: input.request.actionId, artifacts: [], body: "", checkpointRef, externalRunId: turn.externalRunId,
           instanceId: record.instanceId, status: "SUSPENDED", workId: input.request.workId };
       }
-      if (record.sessionPolicy === "EPHEMERAL") await this.#disposeRecord(record, "ephemeral_completed");
-      else await this.dependencies.repository.markTurnComplete(
-        record.instanceId,
-        this.dependencies.clock.now().toISOString(),
-        turn.externalSessionRef,
-      );
+      await this.#settleInstance(record, turn, managesPiWorkQuestion && hasQuestionCheckpoint(turn));
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
         actionId: input.request.actionId,
         workbenchId: input.request.workbenchId,
@@ -434,7 +448,7 @@ export class PartnerInstanceManager {
   }
 
   async list(filter?: { workbenchId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {
-    return this.dependencies.repository.listActive(filter);
+    return (await this.dependencies.repository.listActive(filter)).filter(record => !isParkedEphemeral(record));
   }
 
   async recoverOnBoot(): Promise<{ ephemeralDisposed: number; residentRecovered: number }> {
@@ -466,6 +480,11 @@ export class PartnerInstanceManager {
     await this.dependencies.repository.markDisposed(record.instanceId, reason, this.dependencies.clock.now().toISOString());
     this.#engine(record.engine).evictFromMemory(record.instanceId);
     if (record.sessionPolicy === "EPHEMERAL") await this.dependencies.messages.clear(record.instanceId);
+  }
+
+  async #settleInstance(record: PartnerInstanceRecord, result: ResidentTurnResult, retainQuestion: boolean): Promise<void> {
+    if (record.sessionPolicy === "EPHEMERAL" && !retainQuestion) await this.#disposeRecord(record, "ephemeral_completed");
+    else await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString(), result.externalSessionRef);
   }
 
   #engine(engine: PartnerRevision["engine"]): PartnerEngineRuntime {

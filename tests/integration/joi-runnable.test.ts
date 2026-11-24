@@ -12,10 +12,15 @@ describe("foreground runnable facts and evolution idle", () => {
     connection.exec(`
       CREATE TABLE workbenches (workbench_id TEXT PRIMARY KEY, status TEXT);
       CREATE TABLE joi_inbox_messages (input_id TEXT PRIMARY KEY, status TEXT, workbench_id TEXT,
-        goal_input_id TEXT, result_revision INTEGER, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT,
+        goal_input_id TEXT, result_revision INTEGER, requirements_revision INTEGER, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT,
         turn_failure_count INTEGER NOT NULL DEFAULT 0,turn_failed_at TEXT,turn_failure_reason_code TEXT,
         turn_retry_at TEXT,session_generation INTEGER NOT NULL DEFAULT 0,turn_retry_epoch INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE joi_goal_execution_gates (goal_input_id TEXT, status TEXT, resume_input_id TEXT);
+      CREATE TABLE joi_goal_execution_gates (goal_input_id TEXT, status TEXT, resume_input_id TEXT, answered_at TEXT);
+      CREATE TABLE joi_goal_result_sets (original_input_id TEXT PRIMARY KEY, revision INTEGER, synthetic_input_id TEXT);
+      CREATE TABLE joi_goal_requirements (goal_input_id TEXT PRIMARY KEY, revision INTEGER);
+      CREATE TABLE partner_result_events (work_id TEXT, run_id TEXT, status TEXT, event_id TEXT PRIMARY KEY);
+      CREATE TABLE work_results (run_id TEXT, status TEXT, is_authoritative INTEGER, is_late INTEGER);
+      CREATE TABLE joi_goal_result_members (event_id TEXT PRIMARY KEY);
       CREATE TABLE joi_user_action_requests (action_id TEXT, input_id TEXT, work_id TEXT, status TEXT);
       CREATE TABLE joi_turns (turn_id TEXT, input_id TEXT, status TEXT);
       CREATE TABLE work_items (work_id TEXT, input_id TEXT, workbench_id TEXT, status TEXT);
@@ -50,6 +55,20 @@ describe("foreground runnable facts and evolution idle", () => {
     expect(pending).toHaveLength(51);
     expect(pending.at(-1)).toMatchObject({ inputId: "joi_result_input:goal:goal", goalInputId: "goal", synthesis: true });
   });
+  it("holds synthesis while Work is active and schedules only the current snapshot after Work settles", async () => {
+    connection.exec(`INSERT INTO work_items VALUES ('work','goal','bench','READY');
+      INSERT INTO joi_goal_result_sets VALUES ('goal',2,'joi_result_input:goal:goal:r2:q0');
+      INSERT INTO joi_inbox_messages(input_id,status,workbench_id,goal_input_id,result_revision,created_at)
+      VALUES ('joi_result_input:goal:goal:r1:q0','PENDING','bench','goal',1,'2'),
+        ('joi_result_input:goal:goal:r2:q0','PENDING','bench','goal',2,'3');`);
+    expect((await reader.listPendingInputs()).map(row => row.inputId)).toEqual(["child"]);
+    connection.exec(`UPDATE work_items SET status = 'COMPLETED';
+      INSERT INTO partner_result_events VALUES ('work','run','COMPLETED','latest');
+      INSERT INTO work_results VALUES ('run','COMPLETED',1,0);`);
+    expect((await reader.listPendingInputs()).map(row => row.inputId)).toEqual(["child"]);
+    connection.exec("INSERT INTO joi_goal_result_members VALUES ('latest')");
+    expect((await reader.listPendingInputs()).map(row => row.inputId)).toEqual(["child", "joi_result_input:goal:goal:r2:q0"]);
+  });
   it("excludes archived workbench inputs and queued Work", async () => {
     connection.exec("INSERT INTO work_items VALUES ('work','goal','bench','READY'); UPDATE workbenches SET status = 'ARCHIVED'");
     expect(await reader.listPendingInputs()).toEqual([{ inputId: "evolution:test", createdAt: "2" }]);
@@ -61,7 +80,7 @@ describe("foreground runnable facts and evolution idle", () => {
     expect(store.idle()).toBe(true);
   });
   it.each(["WAITING_INPUT", "REVIEWING"])("treats %s gates consistently and leaves the designated review runnable", async (status) => {
-    connection.prepare("INSERT INTO joi_goal_execution_gates VALUES ('goal',?,'review')").run(status);
+    connection.prepare("INSERT INTO joi_goal_execution_gates VALUES ('goal',?,'review',NULL)").run(status);
     expect(await reader.listPendingInputs()).toEqual([{ inputId: "evolution:test", createdAt: "2" }]);
     expect(store.idle()).toBe(true);
     if (status === "REVIEWING") {
@@ -71,7 +90,7 @@ describe("foreground runnable facts and evolution idle", () => {
     }
   });
   it("blocks a reviewing gate without a designated resume input", async () => {
-    connection.exec("INSERT INTO joi_goal_execution_gates VALUES ('goal','REVIEWING',NULL)");
+    connection.exec("INSERT INTO joi_goal_execution_gates VALUES ('goal','REVIEWING',NULL,NULL)");
     expect(await reader.listPendingInputs()).toEqual([{ inputId: "evolution:test", createdAt: "2" }]);
     expect(store.idle()).toBe(true);
   });
@@ -86,7 +105,7 @@ describe("foreground runnable facts and evolution idle", () => {
     expect(store.idle()).toBe(false);
   });
   it.each(["PLANNED", "READY"])("lets %s Work behind a user-input gate yield to evolution", (status) => {
-    connection.exec("UPDATE joi_inbox_messages SET status = 'CONSUMED'; INSERT INTO joi_goal_execution_gates VALUES ('goal','WAITING_INPUT',NULL)");
+    connection.exec("UPDATE joi_inbox_messages SET status = 'CONSUMED'; INSERT INTO joi_goal_execution_gates VALUES ('goal','WAITING_INPUT',NULL,NULL)");
     connection.prepare("INSERT INTO work_items VALUES ('work','goal','bench',?)").run(status);
     expect(store.idle()).toBe(true);
     connection.exec("UPDATE joi_goal_execution_gates SET status = 'OPEN'");

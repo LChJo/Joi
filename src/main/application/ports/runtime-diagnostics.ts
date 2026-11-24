@@ -68,7 +68,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.task.turn_cancel_requested": {
     inputId: string;
-    reason?: "stalled" | "user_canceled";
+    reason?: "stalled" | "user_canceled" | "goal_answer";
   };
   "joi.task.turn_canceled": {
     durationMs: number;

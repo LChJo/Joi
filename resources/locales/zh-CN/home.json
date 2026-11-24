@@ -286,6 +286,8 @@
   "waitingForExecutionCapacity": "等待执行容量",
   "waitingForWorkspaceReadAccess": "等待工作区可读",
   "waitingToWrite": "等待写入",
+  "questionContinuationQueued": "已回答，等待接续",
+  "questionContinued": "已接续",
   "analyzing": "分析中",
   "writing": "写入执行中",
   "valueWorkCompleted": "{p0} 工作完成",

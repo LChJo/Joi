@@ -96,6 +96,7 @@ export interface WorkPlanRepository {
 }
 
 export interface WorkReassignmentContext {
+  answeredQuestionActionId?: string;
   executionNeeds?: WorkExecutionNeed[];
   inputId?: string;
   item: WorkItem;

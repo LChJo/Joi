@@ -51,6 +51,7 @@ export interface JoiPendingInput {
   inputId: string;
   resultRevision?: number;
   resolvedAction?: { actionId: string; decision: "RESUME"; workId: string };
+  partnerQuestionReview?: { actionId: string; workId: string };
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
@@ -65,6 +66,7 @@ export interface JoiInputCompletion {
 }
 
 export interface JoiCoordinatorStore {
+  deferObsoleteSynthesis?(inputId: string, turnId?: string): Promise<boolean>;
   validateSynthesisState?(inputId: string, draft?: GoalSynthesisDraft, completing?: boolean): Promise<void>;
   completeResolvedAction?(input: { actionId: string; inputId: string; turnId: string }): Promise<void>;
   completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion): Promise<unknown>;
