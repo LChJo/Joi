@@ -2524,15 +2524,15 @@
     {
       "id": "251779e1-a5cc-4fda-a221-f895d44d0c88",
       "kind": "source-code",
-      "claim": "Disposable learning regressions cover protocol order and quality separation, specific failure classification, bounded local rejection, daily/explicit recovery, cost accounting and existing backoff/sample/experience invariants.",
+      "claim": "Disposable learning regressions cover protocol and explicit recovery, shadow admission and budget caps, and stale evidence and model stops. Sealed checkpoints bind reusable baseline trials to unchanged evidence and policy. Registered production cohorts test timed promotion, insufficient traffic or benefit, and early rollback while preserving call and token accounting.",
       "location": {
         "path": "tests/integration/method-learning-lifecycle.test.ts"
       },
-      "hash": "11e7a90861a20755d613ff5735a43ad2d4ed17909bef396230092352985d86a4",
-      "observedAt": "2026-11-24T05:42:25.012Z",
+      "hash": "a89c957f0decb6fb31d21b2777ef25e4ca72e117b5c73d7db5433ff0eee42c79",
+      "observedAt": "2026-11-24T07:00:25.359Z",
       "range": {
         "startLine": 1,
-        "endLine": 471
+        "endLine": 752
       }
     },
     {
