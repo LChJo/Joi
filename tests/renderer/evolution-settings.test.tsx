@@ -268,3 +268,88 @@ it("does not allow immediate evaluation at a zero global cap even when the switc
   expect(screen.getByRole("button", { name: "立即评测一次" })).toBeDisabled();
   expect(screen.queryByRole("progressbar")).toBeNull();
 });
+
+const replayReadiness: NonNullable<EvolutionLearningDto["readiness"]> = {
+  splitVersion: 1, asOf: "2026-10-23T00:00:00Z", settledGoals: 10, eligibleGoals: 8, sourceGroups: 6,
+  replayableDevelopmentGroups: 1, compatibleSealedGroups: 4, missingSealedGroups: 1, callsRemainingToday: 12,
+};
+const emptyArm = { trials: 0, success: 0, backingReads: 0, toolRequests: 0, modelCalls: 0, tokens: 0 };
+
+it("validates the shadow request budget and displays the queued request", async () => {
+  const value = { ...readyLearning, readiness: replayReadiness };
+  const { api } = learningApi(value);
+  const request = vi.spyOn(api, "runEvolutionShadow").mockResolvedValue({ ...status, learning: { ...value,
+    shadow: { status: "queued", callLimit: 12, verdict: null, baseline: emptyArm, candidate: emptyArm } } });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  const limit = await screen.findByRole("spinbutton", { name: "开发对照调用上限" });
+  const button = screen.getByRole("button", { name: "运行开发对照" });
+  expect(screen.getByText(/已收敛 10 · 客观验收合格 8/u)).toBeInTheDocument();
+  for (const invalid of ["", "5", "6.5", "61"]) {
+    fireEvent.change(limit, { target: { value: invalid } });
+    expect(button).toBeDisabled();
+  }
+  fireEvent.change(limit, { target: { value: "12" } });
+  expect(button).toBeEnabled();
+  fireEvent.click(button);
+  expect(await screen.findByText("开发对照已排队")).toBeInTheDocument();
+  expect(request).toHaveBeenCalledExactlyOnceWith("a", 12);
+  expect(button).toBeDisabled();
+});
+
+it.each([
+  { label: "missing replayable evidence", readiness: { ...replayReadiness, replayableDevelopmentGroups: 0 } },
+  { label: "exhausted calls", readiness: { ...replayReadiness, callsRemainingToday: 0 } },
+])("disables shadow requests with $label", async ({ readiness }) => {
+  const { api } = learningApi({ ...readyLearning, readiness });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByRole("button", { name: "运行开发对照" })).toBeDisabled();
+});
+
+it("shows the running shadow cost and keeps another request disabled", async () => {
+  const { api } = learningApi({ ...readyLearning, readiness: replayReadiness,
+    shadow: { status: "running", callLimit: 18, verdict: null, baseline: { trials: 1, success: 1,
+      backingReads: 2, toolRequests: 2, modelCalls: 3, tokens: 7 }, candidate: { ...emptyArm, modelCalls: 1, tokens: null } } });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByText("开发对照运行中")).toBeInTheDocument();
+  expect(screen.getByText(/底层读取 2 \/ 0 · 工具请求 2 \/ 0 · 模型调用 3 \/ 1/u)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "运行开发对照" })).toBeDisabled();
+});
+
+it("renders sealed progress and measured production costs without inventing unknown token totals", async () => {
+  const production = { decisionAt: "2026-11-23T00:00:00Z", minimumPairs: 5, assignedCandidate: 5, assignedControl: 7,
+    excluded: 2, pairs: 5, baselineSuccesses: 4, candidateSuccesses: 5, qualityDelta: 0.2, qualityInterval: [-0.1, 0.4] as [number, number],
+    baselineCalls: 20, candidateCalls: 15, baselineTokens: null, candidateTokens: null, breakEvenGoals: 4,
+    learningCost: [{ phase: "SHADOW", calls: 4, knownTokens: 20, tokenReports: 3 }], verdict: "promoted" as const };
+  const { api } = learningApi({ ...readyLearning, cases: { ...readyLearning.cases, developmentGroups: 2, experiences: 1 },
+    experiment: { id: "sealed", reason: "invalid_candidate", calls: 4, tokens: null, waitingForSamples: true,
+      baselineNotReproduced: true, candidateRejection: "development_mismatch", retryAt: "2026-10-23T01:01:00Z",
+      sealed: { evaluationId: "evaluation", lockedAt: replayReadiness.asOf, completedTrials: 2, expectedTrials: 30,
+        reusableBaselineTrials: 3, estimatedNewCalls: 42, baseline: { ...emptyArm, success: 2 }, candidate: emptyArm,
+        cost: [{ phase: "EVALUATE", calls: 4, knownTokens: 20, tokenReports: 3 }] } },
+    methods: [{ revisionId: "method", scope: "WORKBENCH", module: "context", status: "ACTIVE", createdAt: replayReadiness.asOf,
+      benefit: null, baselineSuccesses: 4, candidateSuccesses: 5, evaluatedRuns: 10, candidateGoals: 5, controlGoals: 7, production }] });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByText("封存试验 2 / 30 · 可复用基线 3 次 · 锁定时预计新增 42 次调用")).toBeInTheDocument();
+  expect(screen.getByText("基线未重现缺陷，本轮未生成候选方法。")).toBeInTheDocument();
+  expect(screen.getByText("候选引用的开发依据不适用")).toBeInTheDocument();
+  expect(screen.getByText("达到生产晋升阈值")).toBeInTheDocument();
+  expect(screen.getByText(/生产验收差值 20% · 不确定区间 -10% … 40%/u)).toBeInTheDocument();
+  expect(screen.getByText(/调用 20 \/ 15 · Token — \/ — · 回本所需目标 4/u)).toBeInTheDocument();
+  expect(screen.getByText(/SHADOW · 4 次调用 · 已知 Token 20 · 3 \/ 4 次有 Token 记录/u)).toBeInTheDocument();
+});
+
+it.each([{ verdict: null, label: "开发对照已停止" }, { verdict: "source_changed" as const, label: "模型或证据版本已变化" }])(
+  "shows $label and the unmeasured rejected cohort", async ({ verdict, label }) => {
+    const { api } = learningApi({ ...readyLearning, readiness: replayReadiness,
+      shadow: { status: "stopped", callLimit: 18, verdict, baseline: emptyArm, candidate: emptyArm },
+      methods: [{ revisionId: "rejected-cohort", scope: "WORKBENCH", module: "completion", status: "REJECTED", createdAt: replayReadiness.asOf,
+        benefit: "efficiency", baselineSuccesses: 0, candidateSuccesses: 0, evaluatedRuns: 0, candidateGoals: 0, controlGoals: 0,
+        production: { decisionAt: replayReadiness.asOf, minimumPairs: 5, assignedCandidate: 0, assignedControl: 0, excluded: 0, pairs: 0,
+          baselineSuccesses: 0, candidateSuccesses: 0, qualityDelta: null, qualityInterval: null, baselineCalls: null, candidateCalls: null,
+          baselineTokens: null, candidateTokens: null, learningCost: [], breakEvenGoals: null, verdict: "traffic_insufficient" } }] });
+    render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+    expect(await screen.findByText(label)).toBeInTheDocument();
+    expect(screen.getByText("合格生产流量不足")).toBeInTheDocument();
+    expect(screen.getByText("生产验收差值 — · 不确定区间 —")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行开发对照" })).toBeEnabled();
+  });

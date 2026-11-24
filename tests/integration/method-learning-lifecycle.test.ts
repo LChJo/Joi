@@ -14,6 +14,12 @@ const originalPin = {modelId:"model",modelRevisionId:"m1",sourceId:"source",sour
 const candidate = {version:2,context:[],planning:[],completion:["acceptance_matrix"]};
 const json = (value: object): JsonObject => JSON.parse(JSON.stringify(value)) as JsonObject;
 const trial = (scenarioId: string, variant = "baseline", attempt = 0) => ({scenarioId,variant,attempt,calls:0,modelCalls:0,tokens:0,tokensComplete:true,observations:[] as string[],actions:[] as string[]});
+const shadowReceipt = {receiptId:"read-1",resultId:"result",sourceRef:"body",start:0,end:2,digest:"page-digest",
+  verification:"PASSED",authority:null,residentReceipts:null};
+const shadowFragment = {status:"ready",fragment:{version:1,id:"manifest",sourceGroup:"source-group",workbenchId:"a",goalId:"goal",
+  turnId:"turn",requirementsRevision:1,resultRevision:2,sourceRevisionId:"s1",modelRevisionId:"m1",
+  parentRevisionId:null,parent:baselineMethodPolicy,requirements:[{id:"private-id",mandatory:true}],
+  reads:[shadowReceipt,{...shadowReceipt,receiptId:"read-2"}]},grade:{disposition:"complete",citedResultIds:["result"]}} satisfies DecisionFragmentResult;
 
 describe("method learning lifecycle recovery", () => {
   let fixture: RuntimeFixture;
@@ -80,13 +86,7 @@ describe("method learning lifecycle recovery", () => {
     expect(subject.canceled("evolution:missing")).toBe(true);
   });
   it("runs six isolated shadow trials within the call limit even when no sealed cases exist", async () => {
-    const receipt = {receiptId:"read-1",resultId:"result",sourceRef:"body",start:0,end:2,digest:"page-digest",
-      verification:"PASSED",authority:null,residentReceipts:null};
-    const manifest = {status:"ready",fragment:{version:1,id:"manifest",sourceGroup:"source-group",workbenchId:"a",goalId:"goal",
-      turnId:"turn",requirementsRevision:1,resultRevision:2,sourceRevisionId:"s1",modelRevisionId:"m1",
-      parentRevisionId:null,parent:{...baselineMethodPolicy},requirements:[{id:"private-id",mandatory:true}],
-      reads:[receipt,{...receipt,receiptId:"read-2"}]},grade:{disposition:"complete",citedResultIds:["result"]}} satisfies DecisionFragmentResult;
-    vi.spyOn(store,"decisionFragments").mockReturnValue([manifest]);
+    vi.spyOn(store,"decisionFragments").mockReturnValue([shadowFragment]);
     const read = vi.spyOn(store,"readDecisionPage").mockReturnValue("中🧭");
     let callsInTrial = 0;
     call.mockImplementation(input=>{
@@ -109,6 +109,95 @@ describe("method learning lifecycle recovery", () => {
     expect(read).toHaveBeenCalledTimes(9);
     expect(store.revisions()).toEqual([]);
   });
+  it("rejects invalid shadow requests and reports absent replay evidence without spending calls", () => {
+    const subject = service();
+    for (const limit of [5, 6.5, 61]) {
+      expect(() => subject.requestShadow("a", limit)).toThrow(expect.objectContaining({ code: "evolution_budget_invalid" }));
+    }
+    store.configureGlobal({ enabled: false });
+    expect(() => subject.requestShadow("a", 6)).toThrow(expect.objectContaining({ code: "evolution_run_now_invalid" }));
+    store.configureGlobal({ enabled: true });
+    vi.spyOn(store, "decisionFragments").mockReturnValue([{ status: "no_receipts" }]);
+    expect(subject.requestShadow("a", 6).learning?.shadow).toMatchObject({ status: "stopped", verdict: "no_opportunity" });
+    expect(subject.pending()).toEqual([]);
+    expect(call).not.toHaveBeenCalled();
+  });
+  it("preserves the queued shadow budget and stops when the source no longer matches", async () => {
+    vi.spyOn(store, "decisionFragments").mockReturnValue([shadowFragment]);
+    const subject = service();
+    subject.requestShadow("a", 6);
+    expect(subject.requestShadow("a", 18).learning?.shadow).toMatchObject({ status: "queued", callLimit: 6 });
+    pin = { ...pin, modelRevisionId: "other-model" };
+    await subject.handle("evolution:a");
+    expect(subject.status("a").learning?.shadow).toMatchObject({ status: "stopped", verdict: "source_changed", callLimit: 6 });
+    expect(store.participant("a").shadowRequest).toBeNull();
+    expect(call).not.toHaveBeenCalled();
+  });
+  it.each(["before start", "before next call", "during page read", "after the model responds"])("stops a stale shadow request %s", async (when) => {
+    const fragments = vi.spyOn(store, "decisionFragments").mockReturnValue([shadowFragment]);
+    const read = vi.spyOn(store, "readDecisionPage").mockReturnValue("fixture page");
+    const subject = service();
+    call.mockResolvedValue({ value: { action: "read_evidence", evidenceId: "page-1" }, tokens: 4 });
+    subject.requestShadow("a", 12);
+    if (when === "before start") fragments.mockReturnValue([]);
+    if (when === "during page read") read.mockReturnValue(null);
+    if (when === "after the model responds") call.mockImplementationOnce(() => {
+      pin = { ...pin, modelRevisionId: "other-model" };
+      return Promise.resolve({ value: { action: "read_evidence", evidenceId: "page-1" }, tokens: 4 });
+    });
+    await subject.handle("evolution:a");
+    if (when === "before next call") {
+      expect(subject.status("a").learning?.shadow).toMatchObject({ status: "running", baseline: { modelCalls: 1 } });
+      fragments.mockReturnValue([]);
+      await subject.handle("evolution:a");
+    }
+    const shadow = subject.status("a").learning?.shadow;
+    expect(shadow).toMatchObject({ status: "stopped", verdict: when === "before start" ? "no_opportunity" : "source_changed" });
+    expect(call).toHaveBeenCalledTimes(when === "before start" ? 0 : 1);
+    expect(store.usage("2026-10-23").calls).toBe(when === "before start" ? 0 : 1);
+    expect(store.revisions()).toEqual([]);
+  });
+  it("counts unknown token usage and stops an unfinished shadow trial at the call cap", async () => {
+    vi.spyOn(store, "decisionFragments").mockReturnValue([shadowFragment]);
+    vi.spyOn(store, "readDecisionPage").mockReturnValue("fixture page");
+    call.mockResolvedValue({ action: "read_evidence", evidenceId: "page-1" });
+    const subject = service(true);
+    subject.requestShadow("a", 6);
+    await subject.handle("evolution:a");
+    expect(subject.status("a").learning?.shadow).toMatchObject({ status: "stopped", verdict: "budget_exhausted",
+      baseline: { trials: 0, modelCalls: 6, toolRequests: 6, tokens: null } });
+    expect(call).toHaveBeenCalledTimes(6);
+    expect(store.revisions()).toEqual([]);
+  });
+  it.each([null, { action: "read_evidence", evidenceId: "unknown" }, { action: "finish", decision: "complete", evidenceIds: ["page-1"] }])(
+    "rejects an invalid shadow response %j without adopting a method", async (response) => {
+      vi.spyOn(store, "decisionFragments").mockReturnValue([shadowFragment]);
+      const read = vi.spyOn(store, "readDecisionPage");
+      call.mockResolvedValue({ value: response, tokens: 4 });
+      const subject = service(true);
+      subject.requestShadow("a", 12);
+      await subject.handle("evolution:a");
+      expect(subject.status("a").learning?.shadow).toMatchObject({ status: "stopped", verdict: null, baseline: { modelCalls: 2, tokens: 8 } });
+      expect(read).not.toHaveBeenCalled();
+      expect(store.revisions()).toEqual([]);
+    });
+  it("finishes all six shadow trials but retains the parent when candidate quality drops", async () => {
+    vi.spyOn(store, "decisionFragments").mockReturnValue([shadowFragment]);
+    vi.spyOn(store, "readDecisionPage").mockReturnValue("fixture page");
+    let actions = 0;
+    call.mockImplementation(() => {
+      const index = actions++;
+      const value = index % 2 === 0 ? { action: "read_evidence", evidenceId: "page-1" }
+        : { action: "finish", decision: index % 4 === 1 ? "complete" : "continue", evidenceIds: ["page-1"] };
+      return Promise.resolve({ value, tokens: 4 });
+    });
+    const subject = service(true);
+    subject.requestShadow("a", 12);
+    await subject.handle("evolution:a");
+    expect(subject.status("a").learning?.shadow).toMatchObject({ status: "completed", verdict: "quality_regression",
+      baseline: { success: 3, modelCalls: 6 }, candidate: { success: 0, modelCalls: 6 } });
+    expect(store.revisions()).toEqual([]);
+  });
   it("keeps a global experiment waiting when every sealed source is from one workbench", () => {
     const origin = seedCase("global-development","development","b");
     const sealed = Array.from({length:5},(_,i)=>seedCase(`global-one-bench-${String(i)}`,"sealed"));
@@ -120,6 +209,34 @@ describe("method learning lifecycle recovery", () => {
     seedCase("global-second-bench","sealed","b");
     subject.scan();
     expect(store.experiment(item.id)).toMatchObject({status:"RUNNING",phase:"PROPOSE"});
+  });
+  it.each(["lost sealed case", "changed policy"])("reuses the sealed baseline but refuses to spend after a $s", async (change) => {
+    const development = seedCase("sealed-development");
+    const heldOut = Array.from({ length: 5 }, (_, i) => seedCase(`sealed-independent-${String(i)}`, "sealed"));
+    const item = experiment([development, ...heldOut], "EVALUATE", json({ candidate, generation: 2 }));
+    const first = evolutionScenarios("sealed")[0];
+    if (!first) throw new Error("Missing sealed scenario");
+    store.saveTrial({ source: pin.sourceRevisionId, model: pin.modelRevisionId, tool: "isolated-evidence-v1",
+      evaluator: METHOD_EVALUATOR_VERSION, parent: policyKey(baselineMethodPolicy), caseId: first.id, attempt: 0 },
+    json({ ...trial(first.id), success: true }));
+    const subject = service();
+    await subject.handle("evolution:a");
+    const sealed = subject.status("a").learning?.experiment?.sealed;
+    expect(sealed).toMatchObject({ evaluationId: "experiment:evaluation:2", reusableBaselineTrials: 1, completedTrials: 1 });
+    expect(call).not.toHaveBeenCalled();
+
+    if (change === "lost sealed case") {
+      const remaining = store.listCases().filter(entry => entry.caseId !== heldOut[0]?.caseId);
+      vi.spyOn(store, "listCases").mockReturnValue(remaining);
+    } else {
+      const checkpoint = store.experiment(item.id);
+      if (checkpoint === null) throw new Error("Missing sealed checkpoint");
+      store.saveExperiment({ ...checkpoint, state: { ...checkpoint.state, candidate: { ...candidate, completion: ["stale_evidence_check"] } } });
+    }
+    await subject.handle("evolution:a");
+    expect(store.experiment(item.id)).toMatchObject({ status: "REJECTED", state: { reason: "revalidation_required" } });
+    expect(store.experimentUsage(item.id).calls).toBe(0);
+    expect(call).not.toHaveBeenCalled();
   });
   it("does not retrieve a prior development comparison from the same source group", async () => {
     const item=seedCase("experience-same-root");
@@ -191,6 +308,57 @@ describe("method learning lifecycle recovery", () => {
     now=decisionAt;
     subject.scan();
     expect(store.revision(canary.id)).toMatchObject({status:"REJECTED",state:{production:{verdict:"traffic_insufficient",minimumPairs:5}}});
+  });
+  it.each([
+    { label: "fewer calls", benefit: "efficiency", candidateCalls: 3, candidateTokens: 30, verdict: "promoted", breakEvenGoals: 3 },
+    { label: "fewer tokens", benefit: "efficiency", candidateCalls: 4, candidateTokens: 30, verdict: "promoted", breakEvenGoals: 10 },
+    { label: "equal costs", benefit: "efficiency", candidateCalls: 4, candidateTokens: 40, verdict: "no_gain", breakEvenGoals: null },
+    { label: "unknown tokens", benefit: "efficiency", candidateCalls: 4, candidateTokens: null, verdict: "no_gain", breakEvenGoals: null },
+    { label: "unmeasured calls", benefit: "efficiency", candidateCalls: 0, candidateTokens: 30, verdict: "traffic_insufficient", breakEvenGoals: null },
+    { label: "better quality", benefit: "quality", candidateCalls: 4, candidateTokens: 40, verdict: "promoted", breakEvenGoals: null },
+    { label: "lower quality", benefit: "quality", candidateCalls: 4, candidateTokens: 40, verdict: "reverted", breakEvenGoals: null },
+    { label: "a completion constraint violation", benefit: "quality", candidateCalls: 4, candidateTokens: 40, verdict: "reverted", breakEvenGoals: null },
+  ])("judges a registered production cohort with $label", ({ label, benefit, candidateCalls, candidateTokens, verdict, breakEvenGoals }) => {
+    const decisionAt = "2026-11-22T01:00:00.000Z";
+    const canary = revision();
+    const parent = { ...canary, id: "active-parent", status: "ACTIVE" as const, state: { ...canary.state, reason: "promoted" } };
+    store.saveRevision(parent);
+    store.saveRevision({ ...canary, state: { ...canary.state, benefit, parentRevisionId: parent.id,
+      cohort: { decisionAt, minimumPairs: 5, experimentId: "sealed-run" } } });
+    const facts: LearningCase[] = [];
+    const metrics = new Map<string, { calls: number; tokens: number | null }>();
+    for (const arm of ["candidate", "control"]) {
+      for (let i = 0; i < 5; i++) {
+        const healthy = i !== 0 || (arm === "candidate" ? label !== "lower quality" : label !== "better quality");
+        const item = seedCase(`${arm}-${String(i)}`, "development", "a", healthy);
+        facts.push(arm === "candidate" && i === 0 && label === "a completion constraint violation" ? { ...item, defect: "evidence_identity" } : item);
+        metrics.set(item.goalId, arm === "candidate" ? { calls: candidateCalls, tokens: candidateTokens } : { calls: 4, tokens: 40 });
+        store.pinGoal({ workbenchId: "a", goalId: item.goalId, revisionId: arm === "candidate" ? canary.id : parent.id,
+          policy: JSON.stringify({ pin, evaluatorVersion: METHOD_EVALUATOR_VERSION, cohortRevisionId: canary.id }), at: now });
+      }
+    }
+    const outOfWindow = seedCase("after-cohort", "development", "a", true);
+    facts.push({ ...outOfWindow, observedAt: "2026-11-23T01:00:00.000Z" });
+    store.pinGoal({ workbenchId: "a", goalId: outOfWindow.goalId, revisionId: canary.id,
+      policy: JSON.stringify({ pin, evaluatorVersion: METHOD_EVALUATOR_VERSION, cohortRevisionId: canary.id }), at: now });
+    vi.spyOn(store, "currentEvaluationCases").mockReturnValue(facts);
+    vi.spyOn(store, "goalSourceMatches").mockReturnValue(true);
+    vi.spyOn(store, "goalMetrics").mockImplementation(id => metrics.get(id) ?? { calls: 0, tokens: null });
+    vi.spyOn(store, "experimentPhaseUsage").mockReturnValue([{ phase: "EVALUATE", calls: 3, knownTokens: 100, tokenReports: 3 }]);
+    const subject = service();
+    if (label !== "a completion constraint violation") {
+      subject.scan();
+      expect(store.revision(canary.id)).toMatchObject({ status: "CANARY", state: { production: { verdict: "observing" } } });
+      now = decisionAt;
+    }
+    subject.scan();
+    const report = { verdict, pairs: 5, assignedCandidate: 6, assignedControl: 5, excluded: 1, breakEvenGoals,
+      candidateTokens: candidateTokens === null || candidateCalls === 0 ? null : candidateTokens * 5 };
+    expect(store.revision(canary.id)).toMatchObject({ status: verdict === "promoted" ? "ACTIVE" : verdict === "reverted" ? "REVERTED" : "REJECTED",
+      state: { production: report } });
+    expect(store.revision(parent.id)?.status).toBe(verdict === "promoted" ? "REJECTED" : "ACTIVE");
+    expect(subject.status("a").learning?.methods.find(method => method.revisionId === canary.id)?.production).toMatchObject(report);
+    expect(call).not.toHaveBeenCalled();
   });
   it.each(["abort","off"] as const)("accounts a paid response when %s happens during the call", async change => {
     const item=seedCase("paid"); const seeded=experiment([item]); const subject=service(true);
