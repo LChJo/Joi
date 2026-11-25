@@ -3,7 +3,7 @@ import path from "node:path";
 import { setDesktopTestLocale } from "./locale";
 import type { EvolutionLearningDto, EvolutionStatusDto } from "../../src/shared/evolution";
 
-test("evolution shows current learning without retired material across sizes and themes", async () => {
+test("diagnostics and evolution keep user-facing status readable across sizes and themes", async () => {
   test.setTimeout(60_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
   try {
@@ -14,6 +14,23 @@ test("evolution shows current learning without retired material across sizes and
     await page.getByRole("button", { name: /保存并继续/u }).click();
     await page.getByRole("button", { name: /先只用本机/u }).click();
     await page.getByRole("button", { name: "暂时跳过" }).click();
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    await page.getByRole("tab", { name: "诊断", exact: true }).click();
+    const diagnostics = page.locator(".diagnostics-panel");
+    await expect(diagnostics.getByRole("heading", { name: "工作概况" })).toBeVisible();
+    await expect(diagnostics.getByText("数据版本", { exact: true })).toBeHidden();
+    for (const width of [1280, 768]) {
+      await page.setViewportSize({ width, height: 1100 });
+      for (const colorScheme of ["light", "dark"] as const) {
+        await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+        const overflow = await diagnostics.evaluate(element => ({ scroll: element.scrollWidth, client: element.clientWidth }));
+        expect(overflow.scroll).toBeLessThanOrEqual(overflow.client);
+        await diagnostics.screenshot({ path: path.resolve(`test-results/diagnostics-${String(width)}-${colorScheme}.png`) });
+      }
+    }
+    await diagnostics.getByText("技术详情", { exact: true }).click();
+    await expect(diagnostics.getByText("数据版本", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 1100 });
     await page.getByRole("button", { name: "工作台", exact: true }).click();
     await page.getByRole("button", { name: "创建工作台" }).click();
     await page.getByLabel("名称", { exact: true }).fill("学习设计预览");

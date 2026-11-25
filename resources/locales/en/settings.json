@@ -398,6 +398,21 @@
     "description": "settings: Unavailable",
     "sourceText": "无法"
   },
+  "runtimeActivity": {
+    "message": "Work overview",
+    "description": "Diagnostics activity section",
+    "sourceText": "工作概况"
+  },
+  "healthAndAccess": {
+    "message": "Status checks",
+    "description": "Diagnostics health and access section",
+    "sourceText": "状态检查"
+  },
+  "technicalDetails": {
+    "message": "Technical details",
+    "description": "Optional technical diagnostics disclosure",
+    "sourceText": "技术详情"
+  },
   "dataVersion": {
     "message": "Data version",
     "description": "settings: Data version",

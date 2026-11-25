@@ -18,7 +18,7 @@ describe("system panel private partner context", () => {
   it("does not expose work memory or instance data and points to the Workbench context center", () => {
     const api = new DigitalLifeApi("");
     render(<SystemPanel api={api} diagnostics={diagnostics} interactions={[]} />);
-    expect(screen.getByRole("heading", { name: "私有执行上下文" })).toBeInTheDocument();
+    expect(screen.getByText("私有执行上下文").closest("details")).not.toHaveAttribute("open");
     expect(screen.getByText(/请到工作台上下文中心查看状态/u)).toBeInTheDocument();
     expect(screen.queryByLabelText("选择搭档")).not.toBeInTheDocument();
     expect(screen.queryByText("重构登录页")).not.toBeInTheDocument();

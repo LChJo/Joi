@@ -106,6 +106,7 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
         <h3 id="evolution-progress-heading">{t("evolution.currentProgress")}</h3>
         <span className={`evolution-state ${disabled ? "disabled" : paused ? "paused" : ""}`}>{t(disabled ? "evolution.learningOffBadge" : paused ? "evolution.learningPausedBadge" : running ? "evolution.learningRunningBadge" : "evolution.learningEnabledBadge")}</span>
       </header>
+      <div className="evolution-status-row"><div className="evolution-status-copy">
       <p className="evolution-headline" role="status">{t(headline)}</p>
       {global.paused ? <p className="evolution-description">{global.pause == null ? t("evolution.pauseUnknown")
         : t("evolution.pauseDetail", {p0:t(labels[global.pause.reason]),p1:new Date(global.pause.at).toLocaleString()})}</p> : null}
@@ -113,6 +114,15 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
         ? t("evolution.pauseUnknown") : t(labels[learning.participation.reason])}</p>}
       {learning.blockers.length === 0 ? <p className="evolution-description">{t("evolution.automaticLearningHint")}</p>
         : <div className="evolution-next"><span>{t("evolution.nextStep")}</span><ul>{learning.blockers.map((blocker) => <li key={blocker}>{t(learningBlockers[blocker])}</li>)}</ul></div>}
+      </div>
+      <div className="evolution-evaluate-action"><button className="button primary" type="button" disabled={saving || !canEvaluate}
+        onClick={() => void act(async () => {
+          const value = await api.runEvolutionNow(status.workbenchId);
+          updateStatus(value);
+          return value;
+        }, (value) => value.runRequestedAt === null ? "evolution.blockerNoCase" : "evolution.evaluationRequestedItStartsWhenTheWorkbenchIsIdle")}>{t("evolution.evaluateNow")}</button>
+        <span>{t("evolution.manualEvaluationHint")}</span></div>
+      </div>
       {learning.experiment === null ? null : <div className="evolution-result">
         <span>{t(running ? "evolution.runningEvaluation" : "evolution.latestEvaluation")}</span>
         <p>{t(learning.experiment.baselineNotReproduced ? "evolution.baselineNotReproduced" : labels[learning.experiment.reason])}</p>
@@ -134,6 +144,9 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
         <div><dt>{t("evolution.independentCases")}</dt><dd>{formatNumber(learning.cases.sealed)}</dd></div>
         <div><dt>{t("evolution.reproducibleProblems")}</dt><dd>{formatNumber(learning.cases.defects)}</dd></div>
       </dl>
+      <details className="settings-disclosure evolution-learning-details">
+        <summary>{t("evolution.learningDetails")}</summary>
+        <div className="evolution-detail-content">
       {learning.cases.developmentGroups === undefined ? null : <p className="evolution-description">{t("evolution.sourceGroups",{p0:formatNumber(learning.cases.developmentGroups),p1:formatNumber(learning.cases.sealedGroups ?? 0)})}</p>}
       {readiness === undefined ? null : <div className="evolution-description">
         <p>{t("evolution.sourceReadiness", {p0:formatNumber(readiness.settledGoals),p1:formatNumber(readiness.eligibleGoals),
@@ -145,13 +158,6 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
       {learning.cases.reproduced === undefined ? null : <p className="evolution-description">{t("evolution.reproducedGroups",{p0:formatNumber(learning.cases.reproduced)})}</p>}
       {learning.cases.experiences === undefined ? null : <p className="evolution-description">{t("evolution.experienceCount",{p0:formatNumber(learning.cases.experiences)})}</p>}
       <p className="evolution-description">{t(learning.cases.sealed === 0 ? "evolution.noIndependentCasesHint" : "evolution.independentCasesHint")}</p>
-      <div className="evolution-evaluate-action"><button className="button primary" type="button" disabled={saving || !canEvaluate}
-        onClick={() => void act(async () => {
-          const value = await api.runEvolutionNow(status.workbenchId);
-          updateStatus(value);
-          return value;
-        }, (value) => value.runRequestedAt === null ? "evolution.blockerNoCase" : "evolution.evaluationRequestedItStartsWhenTheWorkbenchIsIdle")}>{t("evolution.evaluateNow")}</button>
-        <span>{t("evolution.manualEvaluationHint")}</span></div>
       {readiness === undefined ? null : <div className="evolution-evaluate-action">
         <label>{t("evolution.shadowCallLimit")} <input type="number" min={6} max={60} step={1} value={shadowLimit || ""}
           onChange={event=>setShadowLimit(Number(event.target.value))} /></label>
@@ -159,6 +165,8 @@ function LearningEvolutionPanel({ api, status, learning, overview, updateStatus,
           || readiness.callsRemainingToday===0 || shadow?.status==="queued" || shadow?.status==="running" || !Number.isInteger(shadowLimit) || shadowLimit<6 || shadowLimit>60}
           onClick={()=>void act(async()=>updateStatus(await api.runEvolutionShadow(status.workbenchId,shadowLimit)))}>{t("evolution.runShadow")}</button>
       </div>}
+        </div>
+      </details>
       {shadow === undefined ? null : <div className="evolution-result">
         <p>{t(shadow.verdict!==null ? shadowVerdicts[shadow.verdict]
           : shadow.status==="queued" ? "evolution.shadowQueued" : shadow.status==="running" ? "evolution.shadowRunning" : "evolution.shadowStopped")}</p>

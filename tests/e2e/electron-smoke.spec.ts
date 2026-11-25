@@ -235,7 +235,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.screenshot({ path: path.resolve("test-results/e2e-evolution-960.png") });
     await globalLearning.click();
     await expect(globalLearning).toBeChecked();
-    await expect(window.getByText("观察真实任务事实", { exact: true })).toBeVisible();
+    await expect(window.getByText("积累任务经验", { exact: true })).toBeVisible();
     await expect(window.getByText("尚无可复现缺陷案例", { exact: true })).toBeVisible();
 
     await window.getByRole("button", { exact: true, name: "joi" }).click();

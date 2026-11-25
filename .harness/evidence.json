@@ -452,15 +452,15 @@
     {
       "id": "bdb1be5c-c983-4e99-8b95-e1f0df5ed37f",
       "kind": "source-code",
-      "claim": "Global navigation uses user-selected Heartbeat for Joi and SquaresFour for workbenches; supports glyph-only collapse/expand, icon tooltips, retained page state and a narrow overlay. Archive navigation opens task/conversation tabs. The Version tab places software updates above existing backup and restore controls.",
+      "claim": "Global navigation uses user-selected Heartbeat for Joi and SquaresFour for workbenches; supports glyph-only collapse/expand, icon tooltips, retained page state and a narrow overlay. Archive navigation opens task/conversation tabs. The Version tab places software updates above existing backup and restore controls. Diagnostics groups activity and status checks, keeps manual actions accessible, and discloses technical counters on demand.",
       "location": {
         "path": "src/renderer/Console.tsx"
       },
-      "hash": "91ebbcdb7e4ca1ac9e0714f4b4d2d6a45f2af60d7d320fc532fdaa3e80682ac2",
-      "observedAt": "2026-11-21T11:14:01.531Z",
+      "hash": "8439db2ef2ed8a5fdaf9d9418f6634be13e896dec7ddc5609fe493d8b528f6cf",
+      "observedAt": "2026-11-25T05:51:03.233Z",
       "range": {
         "startLine": 1,
-        "endLine": 400
+        "endLine": 442
       }
     },
     {
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "01d799461275baf0b7d8eec97db6bfed36dc2585a25f5c63fc1cde590077474f",
-      "observedAt": "2026-11-24T09:54:05.416Z",
+      "hash": "89095f3fa5c23a2c287f0df1f50ff507bee5312a51747cd865becf0583c01aac",
+      "observedAt": "2026-11-25T05:51:03.235Z",
       "range": {
         "startLine": 1,
-        "endLine": 1614
+        "endLine": 1686
       }
     },
     {
@@ -1660,11 +1660,11 @@
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "4a9ca47b07605b8cb48c734a05255402e5f357510c615606d5dd1685aae5e9ee",
-      "observedAt": "2026-11-24T09:54:05.417Z",
+      "hash": "9fe4971effba6414279f8403ebf6eddcaebd2e0dc350c0d083545dfc30a67487",
+      "observedAt": "2026-11-25T05:52:45.135Z",
       "range": {
         "startLine": 1,
-        "endLine": 10691
+        "endLine": 10819
       }
     },
     {
@@ -1688,11 +1688,11 @@
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "4c1e49f72ada6989a3abc9d5bf066cce8b43cef36f6659ed48b1ceb7d06247c7",
-      "observedAt": "2026-11-24T09:54:05.418Z",
+      "hash": "c355f630b2df642deff8c77720e585e25a7f5e3a36fbb302c29b753b29d0160f",
+      "observedAt": "2026-11-25T05:52:45.151Z",
       "range": {
         "startLine": 1,
-        "endLine": 7470
+        "endLine": 7556
       }
     },
     {
@@ -1842,11 +1842,11 @@
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "462e918f0460ada0f8641ffeab8aafa077c500afde0ec8953dcb87bff4867607",
-      "observedAt": "2026-11-24T09:54:05.418Z",
+      "hash": "8ceece4b17b3644828c18456e1244a89be097d7138c60900d8baa757281c1e87",
+      "observedAt": "2026-11-25T05:52:45.153Z",
       "range": {
         "startLine": 1,
-        "endLine": 9432
+        "endLine": 9542
       }
     },
     {
@@ -2496,15 +2496,15 @@
     {
       "id": "bf81ead4-46f4-40a9-9739-6f928dc67c99",
       "kind": "source-code",
-      "claim": "Learning settings distinguish pause causes, retry times, independent groups, baseline reproduction and reusable comparisons; sample waiting resumes without manual reproposal.",
+      "claim": "Learning settings distinguish pause causes, retry times, independent groups, baseline reproduction and reusable comparisons; sample waiting resumes without manual reproposal. User-facing learning progress and settings remain visible; technical readiness and comparison controls are disclosed on demand.",
       "location": {
         "path": "src/renderer/EvolutionSettings.tsx"
       },
-      "hash": "db41d5b0708128fa60aa1c2f437b987407247fbca264e1d25fa0a2b622c67587",
-      "observedAt": "2026-11-24T05:42:25.011Z",
+      "hash": "2c883528a5a084583aabe994e2d54b42b338189aba59ab47afd3f803118ca9e1",
+      "observedAt": "2026-11-25T05:45:42.974Z",
       "range": {
         "startLine": 1,
-        "endLine": 244
+        "endLine": 252
       }
     },
     {
@@ -2906,8 +2906,8 @@
       "location": {
         "path": "tests/e2e/electron-smoke.spec.ts"
       },
-      "hash": "a181e2911323307daa9c32f785ee8ae52bbbe90bdae1fda770a66b6715613eeb",
-      "observedAt": "2026-11-17T07:10:53.821Z",
+      "hash": "6deb42ff00cdcf6f501f86d44f593dcfdb7fa16ece8d459053e6261713883429",
+      "observedAt": "2026-11-25T05:52:45.156Z",
       "range": {
         "startLine": 1,
         "endLine": 505
@@ -4602,15 +4602,15 @@
     {
       "id": "6834d606-c582-489b-ad78-241902cef814",
       "kind": "source-code",
-      "claim": "AC-UPD-01 verifies Version settings keep backup and restore beside updates, recover from status errors, link the official manual release, and display Mac download progress and installer readiness.",
+      "claim": "AC-UPD-01 verifies Version settings keep backup and restore beside updates, recover from status errors, link the official manual release, and display Mac download progress and installer readiness. Diagnostics verifies optional technical details while keeping data checks visible.",
       "location": {
         "path": "tests/renderer/settings-panel.test.tsx"
       },
-      "hash": "a5fd5369ee2dacfc83898b2467c73cb8442beb0214d31922fb1bea0de935d442",
-      "observedAt": "2026-11-21T11:41:39.134Z",
+      "hash": "7854f87569ac299e687a3a15ff5bbc20144a18e6b4fb8c9e6e89afe2f383d71e",
+      "observedAt": "2026-11-25T05:52:45.156Z",
       "range": {
         "startLine": 1,
-        "endLine": 539
+        "endLine": 548
       }
     },
     {
@@ -4800,15 +4800,15 @@
     {
       "id": "3d00ba06-9bca-419e-b217-8cb0327b25fa",
       "kind": "source-code",
-      "claim": "Evolution settings show source-readiness counts, an explicit bounded shadow action, sealed evaluation costs and anonymous production cohort verdicts.",
+      "claim": "Evolution settings show source-readiness counts, an explicit bounded shadow action, sealed evaluation costs and anonymous production cohort verdicts. User-facing learning progress and settings remain visible; technical readiness and comparison controls are disclosed on demand.",
       "location": {
         "path": "src/renderer/EvolutionSettings.tsx"
       },
-      "hash": "db41d5b0708128fa60aa1c2f437b987407247fbca264e1d25fa0a2b622c67587",
-      "observedAt": "2026-11-24T05:22:26.616Z",
+      "hash": "2c883528a5a084583aabe994e2d54b42b338189aba59ab47afd3f803118ca9e1",
+      "observedAt": "2026-11-25T05:45:42.975Z",
       "range": {
         "startLine": 1,
-        "endLine": 244
+        "endLine": 252
       }
     },
     {

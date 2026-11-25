@@ -174,8 +174,50 @@ export function SystemPanel({ api, diagnostics, interactions, onIntegrityCheck }
   };
   const integrityLabel = diagnostics?.database.integrityChecking === true
     ? t("settings.checking")
-    : diagnostics?.database.integrity === "ok" ? t("settings.healthy") : diagnostics?.database.integrity === "unknown" ? t("settings.notChecked") : t("settings.checkNeeded");
-  return <section className="page-section"><header className="page-title-row"><div><p className="eyebrow">{t("settings.joiIsKeepingAnEyeOnThings")}</p><h1>{t("settings.joiRuntimeStatus")}</h1><p>{t("settings.aBriefStatusOverviewWithoutMessageContentCredentialsOr")}</p></div>{api === undefined ? null : <div className="row-actions"><a className="button ghost" download href={api.diagnosticsExportUrl()}>{t("settings.exportDiagnostics")}</a>{onIntegrityCheck === undefined ? null : <button className="button ghost" disabled={diagnostics?.database.integrityChecking === true} onClick={() => void checkIntegrity()} type="button">{t("settings.checkLocalDataAgain")}</button>}<button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice(noticeMessage("settings.allWorkHasBeenStoppedUnconfirmedPartnerActivityIs")))} type="button">{t("settings.emergencyStopAllWork")}</button></div>}</header>{notice === null ? null : <Notice tone={notice.includes(t("settings.unavailable")) ? "danger" : "info"}>{notice}</Notice>}{diagnostics === null ? <LoadingPage /> : <><div className="metric-strip"><div><span>{t("settings.dataVersion")}</span><strong>v{diagnostics.schemaVersion}</strong></div><div><span>{t("settings.workPartners")}</span><strong>{diagnostics.agents.connections}</strong></div><div><span>{t("settings.collaborating")}</span><strong>{diagnostics.agents.activeInvocations ?? 0}</strong></div><div><span>{t("settings.takingAction")}</span><strong>{diagnostics.runtime.activeWakes ?? 0}</strong></div><div><span>{t("settings.waitingToProcess")}</span><strong>{diagnostics.runtime.pendingOutbox}</strong></div><div><span>{t("settings.statusUpdates")}</span><strong>{diagnostics.sse.events}</strong></div></div><div className="diagnostic-table"><div><span>{t("settings.localData")}</span><strong>{dataHealthy ? t("settings.dataHealthy") : t("settings.dataNeedsAttention")}</strong><i className={dataHealthy ? "ok" : "warn"}>{integrityLabel}</i></div><div><span>{t("settings.dailySchedule")}</span><strong>{diagnostics.runtime.enabledSchedules ?? 0}  {t("settings.routines")} {diagnostics.runtime.scheduledAlarms ?? 0}  {t("settings.alarms")}</strong><i className={(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? "warn" : "ok"}>{(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? t("settings.valueActionsNeedConfirmation", { p0: String(diagnostics.runtime.staleWakeTurns) }) : t("settings.healthy")}</i></div><div><span>{t("settings.accessFromOtherDevices")}</span><strong>{listenerStatusLabel(diagnostics.web.lan)}</strong><i className={diagnostics.web.lan === undefined ? "muted" : "ok"}>{diagnostics.web.lan === undefined ? t("settings.thisComputerOnly") : t("settings.configured")}</i></div><div><span>{t("settings.signedInDevices")}</span><strong>{diagnostics.web.sessions}  {t("settings.activeDevices")}</strong><i className="ok">{t("settings.protected")}</i></div><div><span>{t("settings.waitingForYourDecision")}</span><strong>{interactions.length}  {t("settings.pendingItems")}</strong><i className={interactions.length > 0 ? "warn" : "ok"}>{interactions.length > 0 ? t("settings.needsAttention") : t("settings.healthy")}</i></div></div>{api === undefined ? null : <PartnerMemoryDebug api={api} />}</>}</section>;
+    : diagnostics?.database.integrity === "ok" ? t("settings.healthy") : diagnostics?.database.integrity === "unknown" || diagnostics?.database.integrity === undefined ? t("settings.notChecked") : t("settings.checkNeeded");
+  const integrityUnknown = diagnostics?.database.integrity === undefined || diagnostics.database.integrity === "unknown";
+  const lan = diagnostics?.web.lan;
+  const staleActions = diagnostics?.runtime.staleWakeTurns ?? 0;
+  return <section className="page-section diagnostics-panel">
+    <header className="diagnostics-heading">
+      <h2>{t("settings.joiRuntimeStatus")}</h2>
+      {api === undefined ? null : <div className="diagnostics-action-row"><a className="button ghost" download href={api.diagnosticsExportUrl()}>{t("settings.exportDiagnostics")}</a>
+        {diagnostics !== null ? null : <button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice(noticeMessage("settings.allWorkHasBeenStoppedUnconfirmedPartnerActivityIs")))} type="button">{t("settings.emergencyStopAllWork")}</button>}
+      </div>}
+    </header>
+    {notice === null ? null : <Notice tone={notice.includes(t("settings.unavailable")) ? "danger" : "info"}>{notice}</Notice>}
+    {diagnostics === null ? <LoadingPage /> : <>
+      <section className="diagnostics-card" aria-label={t("settings.runtimeActivity")}>
+        <header className="diagnostics-card-header"><h3>{t("settings.runtimeActivity")}</h3>
+          {api === undefined ? null : <button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice(noticeMessage("settings.allWorkHasBeenStoppedUnconfirmedPartnerActivityIs")))} type="button">{t("settings.emergencyStopAllWork")}</button>}
+        </header>
+        <dl className="diagnostics-metrics">
+          <div><dt>{t("settings.workPartners")}</dt><dd>{diagnostics.agents.connections}</dd></div>
+          <div><dt>{t("settings.collaborating")}</dt><dd>{diagnostics.agents.activeInvocations ?? 0}</dd></div>
+          <div><dt>{t("settings.takingAction")}</dt><dd>{diagnostics.runtime.activeWakes ?? 0}</dd></div>
+        </dl>
+      </section>
+      <section className="diagnostics-card" aria-label={t("settings.healthAndAccess")}>
+        <h3>{t("settings.healthAndAccess")}</h3>
+        <div className="diagnostic-table">
+          <div><span>{t("settings.waitingForYourDecision")}</span><strong>{interactions.length} {t("settings.pendingItems")}</strong>{interactions.length > 0 ? <i className="warn">{t("settings.needsAttention")}</i> : null}</div>
+          <div><span>{t("settings.localData")}</span><strong className={diagnostics.database.integrityChecking || integrityUnknown ? "" : dataHealthy ? "ok" : "warn"}>{integrityUnknown || diagnostics.database.integrityChecking ? integrityLabel : dataHealthy ? t("settings.dataHealthy") : t("settings.dataNeedsAttention")}</strong>{api === undefined || onIntegrityCheck === undefined ? null : <button className="button ghost" disabled={diagnostics.database.integrityChecking === true} onClick={() => void checkIntegrity()} type="button">{t("settings.checkLocalDataAgain")}</button>}</div>
+          <div><span>{t("settings.dailySchedule")}</span><strong>{diagnostics.runtime.enabledSchedules ?? 0} {t("settings.routines")} {diagnostics.runtime.scheduledAlarms ?? 0} {t("settings.alarms")}</strong><i className={staleActions > 0 ? "warn" : "ok"}>{staleActions > 0 ? t("settings.valueActionsNeedConfirmation", { p0: String(staleActions) }) : t("settings.healthy")}</i></div>
+          <div><span>{t("settings.accessFromOtherDevices")}</span><strong className={lan !== undefined && lan.status !== "listening" ? "warn" : ""}>{listenerStatusLabel(lan)}</strong></div>
+          <div><span>{t("settings.signedInDevices")}</span><strong>{diagnostics.web.sessions} {t("settings.activeDevices")}</strong></div>
+        </div>
+      </section>
+      <details className="diagnostics-details settings-disclosure"><summary>{t("settings.technicalDetails")}</summary>
+        <dl className="diagnostics-metrics">
+          <div><dt>{t("settings.dataVersion")}</dt><dd>v{diagnostics.schemaVersion}</dd></div>
+          <div><dt>{t("settings.waitingToProcess")}</dt><dd>{diagnostics.runtime.pendingOutbox}</dd></div>
+          <div><dt>{t("settings.statusUpdates")}</dt><dd>{diagnostics.sse.events}</dd></div>
+        </dl>
+        <p>{t("settings.aBriefStatusOverviewWithoutMessageContentCredentialsOr")}</p>
+        {api === undefined ? null : <PartnerMemoryDebug api={api} />}
+      </details>
+    </>}
+  </section>;
 }
 
 export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: DigitalLifeApi; diagnostics: DiagnosticsDto | null; interactions?: InteractionDto[] }) {

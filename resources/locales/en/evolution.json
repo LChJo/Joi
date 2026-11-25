@@ -643,7 +643,7 @@
   "appliedMethodGoals": {
     "message": "Goals using a learned method: {p0}",
     "description": "evolution: Goals using a learned method: {p0}",
-    "sourceText": "实际采用方法的目标：{p0}",
+    "sourceText": "已使用新方法的目标：{p0}",
     "placeholders": {
       "p0": "string"
     }
@@ -732,44 +732,44 @@
     "sourceText": "已更新方法学习设置"
   },
   "stageObserving": {
-    "message": "Observing real task facts",
-    "description": "evolution: Observing real task facts",
-    "sourceText": "观察真实任务事实"
+    "message": "Learning from completed tasks",
+    "description": "evolution: Learning from completed tasks",
+    "sourceText": "积累任务经验"
   },
   "stageDiagnosing": {
-    "message": "Diagnosing reproducible defects",
-    "description": "evolution: Diagnosing reproducible defects",
-    "sourceText": "诊断可复现缺陷"
+    "message": "Investigating problems found in tasks",
+    "description": "evolution: Investigating problems found in tasks",
+    "sourceText": "分析任务中的问题"
   },
   "stageProtocol": {
-    "message": "Checking the model tool protocol",
-    "description": "evolution: Checking the model tool protocol",
-    "sourceText": "检查模型工具协议"
+    "message": "Checking that the model can use tools",
+    "description": "evolution: Checking that the model can use tools",
+    "sourceText": "检查模型能否正常使用工具"
   },
   "stageDevelop": {
-    "message": "Developing a method on replay cases",
-    "description": "evolution: Developing a method on replay cases",
-    "sourceText": "在重放案例上开发方法"
+    "message": "Developing better ways to work",
+    "description": "evolution: Developing better ways to work",
+    "sourceText": "尝试改进工作方法"
   },
   "stagePropose": {
-    "message": "Proposing a structured method",
-    "description": "evolution: Proposing a structured method",
-    "sourceText": "提议结构化方法"
+    "message": "Preparing an improvement",
+    "description": "evolution: Preparing an improvement",
+    "sourceText": "整理改进方案"
   },
   "stageValidate": {
-    "message": "Retesting the candidate method",
-    "description": "evolution: Retesting the candidate method",
-    "sourceText": "复测候选方法"
+    "message": "Retesting the improvement",
+    "description": "evolution: Retesting the improvement",
+    "sourceText": "复测改进方案"
   },
   "stageEvaluate": {
-    "message": "Independent held-out evaluation",
-    "description": "evolution: Independent held-out evaluation",
-    "sourceText": "独立封存评测"
+    "message": "Independently testing the new method",
+    "description": "evolution: Independently testing the new method",
+    "sourceText": "独立验证新方法"
   },
   "stageCanary": {
-    "message": "20% production trial",
-    "description": "evolution: 20% production trial",
-    "sourceText": "20% 生产灰度"
+    "message": "Trial on 20% of real tasks",
+    "description": "evolution: Trial on 20% of real tasks",
+    "sourceText": "在 20% 的实际任务中试用"
   },
   "stageActive": {
     "message": "Evaluated method active",
@@ -792,9 +792,9 @@
     "sourceText": "已暂停，需显式恢复"
   },
   "blockerNotIdle": {
-    "message": "Foreground tasks take priority. Learning continues when they finish.",
-    "description": "evolution: Foreground tasks take priority. Learning continues when they finish.",
-    "sourceText": "前台任务优先，等待任务完成后继续。"
+    "message": "Current tasks take priority; learning continues when they finish.",
+    "description": "evolution: Current tasks take priority; learning continues when they finish.",
+    "sourceText": "当前任务优先，完成后继续学习。"
   },
   "blockerBudget": {
     "message": "Available evaluation budget exhausted for today",
@@ -822,9 +822,9 @@
     "sourceText": "模型或评测器版本变化，需重新验证"
   },
   "blockerCandidate": {
-    "message": "An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
+    "message": "Today's automatic evaluation has already started. You can schedule another manually.",
     "description": "evolution: An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
-    "sourceText": "今天已自动启动过新候选，下一次自动学习需等待下一日；也可手动安排评测。"
+    "sourceText": "今日已启动过新方法评测，可手动安排下一次。"
   },
   "methodReverted": {
     "message": "Reverted",
@@ -857,9 +857,9 @@
     "sourceText": "学习设置"
   },
   "waitingForIdle": {
-    "message": "Waiting for foreground tasks",
-    "description": "evolution: Waiting for foreground tasks",
-    "sourceText": "等待前台任务完成"
+    "message": "Waiting for current tasks to finish",
+    "description": "evolution: Waiting for current tasks to finish",
+    "sourceText": "等待当前任务完成"
   },
   "learningPausedBadge": {
     "message": "Paused",
@@ -889,7 +889,7 @@
   "automaticLearningHint": {
     "message": "Learning runs while idle. Verified methods are then tried on real tasks.",
     "description": "evolution: Learning runs while idle. Verified methods are then tried on real tasks.",
-    "sourceText": "空闲时自动学习；新方法通过评测后，再进入实际任务试用。"
+    "sourceText": "空闲时自动学习，通过验证后才会试用新方法。"
   },
   "runningEvaluation": {
     "message": "Evaluation in progress",
@@ -909,20 +909,25 @@
       "p0": "string"
     }
   },
+  "learningDetails": {
+    "message": "Learning details",
+    "description": "Optional learning diagnostics and comparison controls",
+    "sourceText": "学习详情"
+  },
   "developmentCases": {
-    "message": "Development cases",
-    "description": "evolution: Development cases",
-    "sourceText": "开发案例"
+    "message": "Cases for improvement",
+    "description": "Cases used to develop a method",
+    "sourceText": "用于改进的案例"
   },
   "independentCases": {
-    "message": "Held-out cases",
-    "description": "evolution: Held-out cases",
-    "sourceText": "独立评测案例"
+    "message": "Cases for independent testing",
+    "description": "Independent cases used to verify a method",
+    "sourceText": "用于独立验证的案例"
   },
   "reproducibleProblems": {
-    "message": "Defect records awaiting reproduction",
-    "description": "evolution: Defect records awaiting reproduction",
-    "sourceText": "待复现缺陷记录"
+    "message": "Problems to reproduce",
+    "description": "Recorded problems awaiting reproduction",
+    "sourceText": "待复现的问题"
   },
   "noIndependentCasesHint": {
     "message": "No held-out cases yet. These cases independently verify the effect of new methods.",
@@ -940,9 +945,9 @@
     "sourceText": "空闲时开始，计入共享预算。"
   },
   "noAdoptedMethodsHint": {
-    "message": "Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+    "message": "Existing methods are still in use.",
     "description": "evolution: Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
-    "sourceText": "候选方法通过评测后才会试用或生效；目前继续使用现有策略。"
+    "sourceText": "目前仍使用原有方法。"
   },
   "methodInTrial": {
     "message": "In trial",
@@ -980,9 +985,9 @@
     "sourceText": "今日共享预算用量"
   },
   "participationHint": {
-    "message": "Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+    "message": "This workbench can learn while idle using the shared budget.",
     "description": "evolution: Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
-    "sourceText": "允许本工作台在空闲时参与方法学习，使用全部工作台共享的预算。"
+    "sourceText": "工作台空闲时可以使用共享预算学习。"
   },
   "upgradeRequired": {
     "message": "Method learning is unavailable in this version. Update Joi and try again.",
