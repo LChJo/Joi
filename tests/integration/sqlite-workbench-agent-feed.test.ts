@@ -377,6 +377,8 @@ describe("Workbench Agent and joi home projections", () => {
       expect((await repository.listAgents({ workbenchId: workbench.workbenchId, limit: 50 })).items).toHaveLength(2);
       const filtered = await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 50 });
       expect(filtered.items.map((item) => item.agentId)).toEqual([first.instanceId]);
+      expect(filtered.items[0]).not.toHaveProperty("modelId");
+      expect(filtered.items[0]).not.toHaveProperty("modelSourceName");
       fixture.database.transaction((connection) => {
         for (const suffix of ["a", "b"]) connection.prepare(`INSERT INTO partner_runs
           (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
@@ -384,7 +386,27 @@ describe("Workbench Agent and joi home projections", () => {
           .run(`run-${suffix}`, `attempt-${suffix}`, `action-${suffix}`, workbench.workbenchId, `work-${suffix}`, first.partnerRevisionId, `external-${suffix}`, now, now);
         // One resident-style stream containing entries from more than one goal.
         connection.prepare("UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = 'attempt-b'").run(first.instanceId);
+        const usage = connection.prepare(`INSERT INTO usage_invocations
+          (invocation_id, started_at, status, engine, purpose, workbench_id, goal_id, work_id, partner_id, source_name, model_id)
+          VALUES (?, ?, 'completed', 'pi', ?, ?, ?, ?, ?, ?, ?)`);
+        usage.run("usage-a", now, "partner", workbench.workbenchId, "goal-a", "work-a", partner.partnerId, "历史模型网络", "model-a");
+        usage.run("usage-b", now, "partner", workbench.workbenchId, "goal-b", "work-b", partner.partnerId, "另一个网络", "model-b");
+        usage.run("summary-a", now, "summary", workbench.workbenchId, "goal-a", "work-a", partner.partnerId, "汇总网络", "summary-model");
+        usage.run("later-a", "2099-01-01T00:00:00.000Z", "partner", workbench.workbenchId, "goal-a", "work-a", partner.partnerId, "后续网络", "later-model");
+        connection.prepare(`INSERT INTO usage_observations (invocation_id, observation_key, observed_at, model_id)
+          VALUES ('usage-a', 'usage', ?, 'observed-model-a')`).run(now);
       });
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ agentId: first.instanceId, modelSourceName: "历史模型网络", modelId: "observed-model-a" })]);
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-b", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ agentId: first.instanceId, modelSourceName: "另一个网络", modelId: "model-b" })]);
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO usage_observations (invocation_id, observation_key, observed_at, source_id, source_name)
+          VALUES ('usage-b', 'usage', ?, 'changed-source', '切换后的网络')`).run(now);
+      });
+      const switched = (await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-b", limit: 50 })).items[0];
+      expect(switched).toMatchObject({ modelSourceName: "切换后的网络" });
+      expect(switched).not.toHaveProperty("modelId");
       await repository.append(first.instanceId, [
         { entryId: "entry-a", runId: "run-a", createdAt: now, order: 0, kind: "MARKDOWN", role: "AGENT", text: "Goal A evidence" },
         { entryId: "entry-b", runId: "run-b", createdAt: now, order: 0, kind: "MARKDOWN", role: "AGENT", text: "Goal B evidence" },
@@ -393,6 +415,22 @@ describe("Workbench Agent and joi home projections", () => {
         .toEqual(["Goal A evidence"]);
       await expect(repository.conversation({ agentId: second.instanceId, workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 20 }))
         .rejects.toMatchObject({ code: "workbench_agent_not_found" });
+      fixture.database.transaction((connection) => {
+        const later = "2099-01-01T00:00:00.000Z";
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, instance_id, status, created_at, updated_at)
+          VALUES ('attempt-a-next', 'plan-a', 'work-a', ?, 1, 'action-a-next', ?, 'COMPLETED', ?, ?)`)
+          .run(second.partnerRevisionId, second.instanceId, later, later);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('run-a-next', 'attempt-a-next', 'action-a-next', ?, 'work-a', ?, 'LOCAL_PI', 'external-a-next', 'COMPLETED', ?, ?)`)
+          .run(workbench.workbenchId, second.partnerRevisionId, later, later);
+      });
+      const retried = await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 50 });
+      expect(retried.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({ agentId: first.instanceId, modelId: "observed-model-a", modelSourceName: "历史模型网络" }),
+        expect.objectContaining({ agentId: second.instanceId, modelId: "later-model", modelSourceName: "后续网络" }),
+      ]));
     } finally {
       await fixture.close();
     }

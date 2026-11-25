@@ -10,7 +10,7 @@ import { GOAL_RECENT_AGENT_LIMIT } from "../../../shared/joi.js";
 import type { WorkbenchAgentConversationQuery, WorkbenchAgentListQuery, WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
-import { stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
+import { sanitizeAgentConversationText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { TOOL_TRACE_MAX_BODY_CHARS } from "../../application/partners/tool-trace-presentation.js";
 import { DomainError } from "../../domain/errors.js";
 import { workspaceArtifactDirectory, workspaceArtifactReference, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
@@ -93,9 +93,16 @@ function terminal(status: WorkbenchAgentStatusDto): boolean {
   return ["COMPLETED", "FAILED", "CANCELED", "UNKNOWN"].includes(status);
 }
 
+function modelLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return stripPathRedactions(sanitizeAgentConversationText(value)).replace(/\s+/gu, " ").slice(0, 160) || undefined;
+}
+
 function mapCard(row: Row): WorkbenchAgentCardDto {
   const status = mapStatus(row);
   const engine = row.backing_kind === "A2A_RUN" ? "pi-core" : mapStoredEngine(row.engine, row.cli_protocol);
+  const modelSourceName = modelLabel(row.model_source_name);
+  const modelId = modelLabel(row.model_id);
   return {
     ...(row.question_continuation === "QUEUED" || row.question_continuation === "CONTINUED" ? { questionContinuation: row.question_continuation } : {}),
     ...(status === "FAILED" && row.incomplete_result === 1 ? { resultAssessment: "INSUFFICIENT" as const } : {}),
@@ -107,6 +114,8 @@ function mapCard(row: Row): WorkbenchAgentCardDto {
     createdAt: required(row, "created_at"),
     engine,
     lastActivityAt: required(row, "last_activity_at"),
+    ...(modelSourceName === undefined ? {} : { modelSourceName }),
+    ...(modelId === undefined ? {} : { modelId }),
     partnerId: required(row, "partner_id"),
     partnerName: required(row, "partner_name"),
     sessionPolicy: required(row, "session_policy") as WorkbenchAgentCardDto["sessionPolicy"],
@@ -156,6 +165,10 @@ function cardSelect(goalScoped: boolean, paged = false): string {
   return `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
   ${paged ? "s.activity_at," : ""}
+  ${goalScoped ? `CASE WHEN model_observation.source_id IS NOT NULL AND model_observation.source_id IS NOT model_usage.source_id
+      THEN model_observation.model_id ELSE COALESCE(model_observation.model_id, model_usage.model_id) END AS model_id,
+    CASE WHEN model_observation.source_id IS NOT NULL AND model_observation.source_id IS NOT model_usage.source_id
+      THEN model_observation.source_name ELSE COALESCE(model_usage.source_name, model_observation.source_name) END AS model_source_name,` : ""}
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
   pr.updated_at AS run_updated_at,
   (SELECT e.phase FROM dispatch_attempts ea CROSS JOIN local_work_execution e ON ea.dispatch_attempt_id = e.dispatch_attempt_id
@@ -206,6 +219,19 @@ function cardSelect(goalScoped: boolean, paged = false): string {
       qr.created_at DESC, qr.run_id DESC LIMIT 1
   ) END
    LEFT JOIN work_items goal_work ON goal_work.work_id = chosen.work_id
+  ${goalScoped ? `LEFT JOIN usage_invocations model_usage ON model_usage.invocation_id = (
+    SELECT u.invocation_id FROM usage_invocations u
+    WHERE u.goal_id = goal_work.input_id AND u.workbench_id = s.workbench_id AND u.work_id = chosen.work_id
+      AND u.partner_id = s.partner_id AND u.purpose = 'partner'
+      AND u.started_at >= chosen.created_at AND (chosen.status = 'RUNNING' OR u.started_at <= chosen.updated_at)
+      AND NOT EXISTS (SELECT 1 FROM partner_runs competing
+        WHERE competing.work_id = chosen.work_id AND competing.run_id <> chosen.run_id
+          AND u.started_at >= competing.created_at AND (competing.status = 'RUNNING' OR u.started_at <= competing.updated_at))
+    ORDER BY u.started_at DESC, u.invocation_id DESC LIMIT 1
+  )
+  LEFT JOIN usage_observations model_observation ON model_observation.invocation_id = model_usage.invocation_id
+    AND model_observation.observation_key = (SELECT o.observation_key FROM usage_observations o
+      WHERE o.invocation_id = model_usage.invocation_id ORDER BY o.observed_at DESC, o.observation_key DESC LIMIT 1)` : ""}
   LEFT JOIN work_results result ON chosen.status = 'FAILED' AND result.run_id = chosen.run_id AND result.is_authoritative = 1
   LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
   LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id`;

@@ -172,15 +172,15 @@
     {
       "id": "67786627-f77c-4800-9ac6-386b484e5f5d",
       "kind": "source-code",
-      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions. The shared goal Agent card limit governs both the server projection and renderer request. Codex states and optional desktop account facts use token-free shared DTOs. Agent cards optionally carry a safe queued or historical question continuation state.",
+      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies. A shared message page contains the entries and optional cursor; the existing full page extends it with the agent card. Goal cards and unassigned actions optionally carry safe durable question queues. Goal map details carry separate freshness and path order revisions. The shared goal Agent card limit governs both the server projection and renderer request. Codex states and optional desktop account facts use token-free shared DTOs. Agent cards optionally carry a safe queued or historical question continuation state. Goal-scoped Agent cards optionally expose the recorded model network name and model ID.",
       "location": {
         "path": "src/shared/joi.ts"
       },
-      "hash": "9400ff5f5a05e4c649041ea5c22dbaa5ac9e7cb4e71c5a006097c99fa3f2c81e",
-      "observedAt": "2026-11-24T13:18:35.850Z",
+      "hash": "7e96b49330c0355d257f135326d4f85205a0fb54fe1c30845038f32fc4e5c03c",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 803
+        "endLine": 846
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version. AC-40/53 requires goal-scoped recorded model identity without guessing unavailable history.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "7721614ca32b14d246f386ddd5c22319ba27da08b7f11405a766be7d6c843be1",
-      "observedAt": "2026-11-25T13:10:07.418Z",
+      "hash": "5843ad5bccb80810a23537100d2231220ae214ae4ec84475dcd207b4b18a93c4",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 803
+        "endLine": 805
       }
     },
     {
@@ -942,12 +942,12 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures. Both drawer types use a 22-pixel full-height resize hit area and a 120-280-pixel visible grip.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures. Both drawer types use a 22-pixel full-height resize hit area and a 120-280-pixel visible grip. Goal Agent subtitle labels wrap long model identities.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "ba060d7909a6695d56b840c36ceb3efcfd2ab21cc0fbcc2f5cff27bb174d6b09",
-      "observedAt": "2026-11-25T08:04:09.449Z",
+      "hash": "fabfb918d7967d7da1cd07fa75097825ab6d175ecd9caa6d27096f8c22780c0a",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
         "endLine": 1686
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version. Home detail and conclusion drawers share the active width preference and use the same resize control. Agent cards display an answered queue and a historical continuation with their localized labels.",
-      "hash": "ef5b78d22d3994ea6c08ff3418b92729c8deb534095162eceda304a437863a89",
-      "observedAt": "2026-11-25T13:10:07.418Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version. Home detail and conclusion drawers share the active width preference and use the same resize control. Agent cards display an answered queue and a historical continuation with their localized labels. Goal Agent card subtitles show the available recorded network and model, or the localized unrecorded state.",
+      "hash": "593327dfd4ddca0ee08241aa696191b6a5d23d68a38d0ee52e9d171a25a102c1",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 2050
+        "endLine": 2054
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft. Drawer regression checks conclusion resize, width retention into details, navigation bounds, keyboard adjustment and responsive fallback.",
-      "hash": "045496e5dc4bc03019a28e5617722292e2454b31ee29d5cf522b46d5cefa61a4",
-      "observedAt": "2026-11-25T08:04:09.451Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft. Drawer regression checks conclusion resize, width retention into details, navigation bounds, keyboard adjustment and responsive fallback. Goal card tests cover recorded network/model names and absent history.",
+      "hash": "df03b7b70c916b62aca7505cfb4f766d636b7c8e1dcef4623bb9c0f5d9f55339",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 2619
+        "endLine": 2623
       }
     },
     {
@@ -1656,15 +1656,15 @@
     {
       "id": "c0f84140-afb3-44b8-8bb5-fde0e3339745",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The generated Flutter catalog includes the question history label. The generated ARB escapes the English desktop update text for Flutter while displaying its original apostrophe.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. The generated Flutter catalog includes the question history label. The generated ARB escapes the English desktop update text for Flutter while displaying its original apostrophe. Includes the missing model metadata label.",
       "location": {
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
-      "hash": "cb6c653598fb2cbe25752b204b153337c4d6a928350869edd35909437013f683",
-      "observedAt": "2026-11-25T13:10:07.418Z",
+      "hash": "4a49bc1e68b71ac83822e5a02c7ec79af8e2e58eafc25c65b9580d28954664cf",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 10829
+        "endLine": 10834
       }
     },
     {
@@ -1684,15 +1684,15 @@
     {
       "id": "479d96c5-ec0c-4509-9963-e0f00febdfff",
       "kind": "source-code",
-      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. Shared message dispatch includes the question history label. Agent question continuation labels share the desktop language catalog.",
+      "claim": "Localization retains Flutter-compatible ICU escaping and adds question states, recommendations, deadlines, answer provenance, delivery, recovery and unsupported-host messages. Shared message dispatch includes the question history label. Agent question continuation labels share the desktop language catalog. Includes the shared missing model metadata label.",
       "location": {
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
-      "hash": "b5834cf26beedfb38154f78868411649ccf1843fd43ed682ef8736d9fc81f35e",
-      "observedAt": "2026-11-25T13:10:07.418Z",
+      "hash": "0269577c8f716e650b047b872086528c9b271a7f417075340778ec8cefd3bd21",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 7564
+        "endLine": 7568
       }
     },
     {
@@ -1838,15 +1838,15 @@
     {
       "id": "c56ffabe-fe5f-41d2-8e22-c0ed8e10d06f",
       "kind": "source-code",
-      "claim": "Generated desktop catalogs include automatic-compaction configuration and cache-warming messages; question states, defaults, deadlines, answer/delivery receipts and recovery messages preserve safe shared localization contracts. The generated catalog exposes the shared question history label.",
+      "claim": "Generated desktop catalogs include automatic-compaction configuration and cache-warming messages; question states, defaults, deadlines, answer/delivery receipts and recovery messages preserve safe shared localization contracts. The generated catalog exposes the shared question history label. Includes a localized missing model metadata label.",
       "location": {
         "path": "src/shared/i18n/generated.ts"
       },
-      "hash": "6dd06dd2cc732b367646c9a5328cb2ea5ed3f5cda7c700f6df9f70ab46f96f6a",
-      "observedAt": "2026-11-25T13:10:07.418Z",
+      "hash": "0e65eebc7cf7075acbb1d517e569df5efb66d80cb34f1307894ce4409be4abf0",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 9552
+        "endLine": 9557
       }
     },
     {
@@ -2034,15 +2034,15 @@
     {
       "id": "19c76272-7569-42d8-b53e-756b6d33cf7e",
       "kind": "source-code",
-      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status. A scoped message read checks the visible session and goal membership, then pages normalized entries by sequence using indexed run lookups. The full read preserves agent projection and the same cursor. Workbench lists order by creation time and Agent ID, while goal lists order their bounded window by goal activity and Agent ID. Keyset cursors bind their scope and legacy offset cursors remain readable. Goal lists select a scoped page of backing sessions before joining run status and evidence. Goal list and transcript reads share the 100-agent activity window. Card enrichment runs only after selecting that window. A run-linked answered action and exact replacement attempt identify question continuations across persisted and historical cards.",
+      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status. A scoped message read checks the visible session and goal membership, then pages normalized entries by sequence using indexed run lookups. The full read preserves agent projection and the same cursor. Workbench lists order by creation time and Agent ID, while goal lists order their bounded window by goal activity and Agent ID. Keyset cursors bind their scope and legacy offset cursors remain readable. Goal lists select a scoped page of backing sessions before joining run status and evidence. Goal list and transcript reads share the 100-agent activity window. Card enrichment runs only after selecting that window. A run-linked answered action and exact replacement attempt identify question continuations across persisted and historical cards. Goal-scoped card enrichment reads recorded usage by workbench, goal, Work, partner and run interval, excludes overlapping runs and summaries, and never combines an observation from another source with the original model.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-workbench-agent-repository.ts"
       },
-      "hash": "4735b0a62c25193f7cc6c715996a084e8aaf747d861ce4eea7fb038e16a794bb",
-      "observedAt": "2026-11-24T13:18:35.850Z",
+      "hash": "37fbd2994d4c23bd19600e4f217783cce40048d7ccfef0faac32315d86b2efb2",
+      "observedAt": "2026-11-25T16:57:46.398Z",
       "range": {
         "startLine": 1,
-        "endLine": 497
+        "endLine": 523
       }
     },
     {
@@ -4985,6 +4985,20 @@
       "range": {
         "startLine": 1,
         "endLine": 191
+      }
+    },
+    {
+      "id": "46dbac8d-f7e7-46b3-86c0-5bc9cb129b2b",
+      "kind": "source-code",
+      "claim": "Goal-scoped Agent projections keep model receipts isolated by goal and run interval across resident reuse and a later retry, exclude summaries, preserve missing metadata and do not mix identities across changed sources.",
+      "location": {
+        "path": "tests/integration/sqlite-workbench-agent-feed.test.ts"
+      },
+      "hash": "2dd3100437fed9de34264a552fc12284ff8f1b191853f99d9dcd4dcfedc4714d",
+      "observedAt": "2026-11-25T16:57:46.398Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 884
       }
     }
   ]

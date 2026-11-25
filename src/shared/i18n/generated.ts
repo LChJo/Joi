@@ -743,6 +743,7 @@ export interface MessageParameters {
   "exportState.pair": undefined;
   "exportState.resume": undefined;
   "exportState.none": undefined;
+  "home.agentModelNotRecorded": undefined;
   "home.antigravitySubscription": undefined;
   "home.antigravitySubscriptionHint": undefined;
   "home.antigravityBrowserSignIn": undefined;
@@ -2722,6 +2723,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "Initial pairing (pair)",
     "exportState.resume": "Resume connection (resume)",
     "exportState.none": "None",
+    "home.agentModelNotRecorded": "Model not recorded",
     "home.antigravitySubscription": "Antigravity subscription",
     "home.antigravitySubscriptionHint": "Sign in with a Google account that has Antigravity access. Requests use that account's model quota.",
     "home.antigravityBrowserSignIn": "Continue with Google",
@@ -4699,6 +4701,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "exportState.pair": "首次配对 pair",
     "exportState.resume": "恢复连接 resume",
     "exportState.none": "无",
+    "home.agentModelNotRecorded": "模型信息未记录",
     "home.antigravitySubscription": "反重力订阅",
     "home.antigravitySubscriptionHint": "使用已开通反重力的 Google 账号授权，请求计入该账号的模型额度。",
     "home.antigravityBrowserSignIn": "使用 Google 登录",
@@ -7297,6 +7300,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "恢复连接 resume": "exportState.resume",
   "None": "exportState.none",
   "无": "exportState.none",
+  "Model not recorded": "home.agentModelNotRecorded",
+  "模型信息未记录": "home.agentModelNotRecorded",
   "Antigravity subscription": "home.antigravitySubscription",
   "反重力订阅": "home.antigravitySubscription",
   "Sign in with a Google account that has Antigravity access. Requests use that account's model quota.": "home.antigravitySubscriptionHint",

@@ -1,4 +1,5 @@
 {
+  "agentModelNotRecorded": "模型信息未记录",
   "antigravitySubscription": "反重力订阅",
   "antigravitySubscriptionHint": "使用已开通反重力的 Google 账号授权，请求计入该账号的模型额度。",
   "antigravityBrowserSignIn": "使用 Google 登录",
