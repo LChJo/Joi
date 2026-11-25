@@ -884,3 +884,33 @@ export function runtimeDiagnosticErrorDetail(error: unknown): string | undefined
   const trimmed = detail.trim();
   return trimmed === "" ? undefined : trimmed.slice(0, 240);
 }
+
+/** Distinct known subscription-flow error prefixes; unmatched errors fall back to a bounded identifier. */
+const SUBSCRIPTION_REASON_PREFIXES: readonly [prefix: string, reasonCode: string][] = [
+  ["401 OAuth credential rejected", "token_exchange_rejected"],
+  ["401 OAuth credential invalid", "credential_invalid"],
+  ["OAuth response invalid", "token_response_invalid"],
+  ["OAuth HTTP", "token_exchange_http"],
+  ["Antigravity project response invalid", "project_response_invalid"],
+  ["Antigravity HTTP", "project_discovery_http"],
+  ["Antigravity connection failed", "connection_failed"],
+  ["antigravity_callback_invalid", "callback_invalid"],
+];
+
+/** Maps a known subscription sign-in error to a bounded reason code; message text never passes through. */
+export function subscriptionLoginReasonCode(error: unknown): string {
+  if (error instanceof Error) {
+    for (const [prefix, reasonCode] of SUBSCRIPTION_REASON_PREFIXES) {
+      if (error.message.startsWith(prefix)) return reasonCode;
+    }
+  }
+  return runtimeDiagnosticErrorCode(error);
+}
+
+/** Reduces an email to its masked form for every outbound surface; non-email shapes collapse to "***". */
+export function maskEmail(email: string): string {
+  const separator = email.indexOf("@");
+  if (separator <= 0 || separator === email.length - 1) return "***";
+  const domain = email.slice(separator + 1);
+  return domain.includes("@") || domain.length === 0 ? "***" : `${email.slice(0, 1)}***@${domain}`;
+}
