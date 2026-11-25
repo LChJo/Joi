@@ -64,6 +64,8 @@ export interface ModelSourceRepository {
 export interface ModelSourceSecretStore {
   delete(providerId: string): Promise<void>;
   describeOAuth?(providerId: string): Promise<CodexAccountDto | undefined>;
+  /** Minimal read for lifecycle actions such as revocation; never exposes the access token. */
+  readOAuthCredential?(providerId: string): Promise<{ refresh?: string } | undefined>;
   saveApiKey(providerId: string, apiKey: string | undefined): Promise<number>;
   saveOAuth?(providerId: string, credential: ModelSourceOAuthCredential): Promise<number>;
 }
@@ -73,6 +75,31 @@ export interface ModelSourceOAuthCredential {
   refresh: string;
   expires: number;
   projectId?: string;
+  /** Raw account identity; only the masked form ever leaves the encrypted blob. */
+  accountEmail?: string;
+  /** Granted scopes as short names without the googleapis URL prefix. */
+  scopes?: string[];
+}
+
+/** Bounded facts of one subscription sign-in attempt; never carries provider text or credentials. */
+export type SubscriptionLoginStage =
+  | "client_credentials" | "callback_listener" | "browser_open" | "callback_received"
+  | "token_exchange" | "project_discovery" | "userinfo" | "scope_check" | "credential_store";
+
+export type SubscriptionLoginStageOutcome = "ok" | "fallback" | "failed" | "skipped";
+
+export interface SubscriptionLoginStageEvent {
+  stage: SubscriptionLoginStage;
+  outcome: SubscriptionLoginStageOutcome;
+  reasonCode?: string;
+}
+
+/** Attempt facts the authorization adapter reports; the raw email stays inside this process. */
+export interface SubscriptionLoginFacts {
+  accountEmail?: string;
+  grantedScopes?: string[];
+  missingScopes?: string[];
+  clientSource?: "builtin" | "env";
 }
 
 export interface SubscriptionAuthorizationPort {
@@ -82,6 +109,9 @@ export interface SubscriptionAuthorizationPort {
     showBrowser(url: string): void;
     showDeviceCode(url: string, userCode: string): void;
     waitForCallback(signal: AbortSignal): Promise<string>;
+    /** Optional sanitized stage reporter; adapters must work without it. */
+    onStage?(event: SubscriptionLoginStageEvent): void;
+    onFacts?(facts: SubscriptionLoginFacts): void;
   }): Promise<ModelSourceOAuthCredential>;
 }
 
