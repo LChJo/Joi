@@ -12,7 +12,7 @@ import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type Synthe
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { SafeMarkdown as Markdown } from "./SafeMarkdown";
 
-import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationMessagesDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationMessagesDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type AntigravityDiagnosticsDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared/goal-artifacts";
 import { ApiError, type DigitalLifeApi } from "./api";
@@ -265,6 +265,44 @@ function limitOptions(tiers: readonly LimitTier[], current?: number, unit = "") 
   </>;
 }
 
+/** Localized label for a bounded stage/revocation outcome; codes themselves stay locale-independent. */
+function antigravityOutcomeLabel(outcome: "ok" | "fallback" | "failed" | "skipped" | "revoked" | "already_invalid"): string {
+  switch (outcome) {
+    case "ok": case "revoked": return t("home.antigravityStageOutcomeOk");
+    case "fallback": return t("home.antigravityStageOutcomeFallback");
+    case "failed": return t("home.antigravityStageOutcomeFailed");
+    default: return t("home.antigravityStageOutcomeSkipped");
+  }
+}
+
+function AntigravityDiagnosticsPanel({ data, onClose }: { data: AntigravityDiagnosticsDto; onClose: () => void }) {
+  const login = data.login;
+  return <details className="model-source-diagnostics" open>
+    <summary>{t("home.antigravityDiagnosticsTitle")}</summary>
+    <button className="button ghost" onClick={onClose} type="button">{t("home.collapse")}</button>
+    {login === undefined ? <small>{t("home.antigravityDiagnosticsEmpty")}</small> : <>
+      <small>{login.clientSource === undefined ? null : t(login.clientSource === "builtin" ? "home.antigravityClientBuiltin" : "home.antigravityClientEnv")}</small>
+      {login.accountEmail === undefined ? null : <small>{t("home.codexAccountLabel", { p0: login.accountEmail })}</small>}
+      <ul>{login.stages.map((stage, index) => <li key={`${stage.stage}-${String(index)}`}>
+        <span>{antigravityOutcomeLabel(stage.outcome)}</span> <code>{stage.stage}</code>
+        {stage.reasonCode === undefined ? null : <code>{stage.reasonCode}</code>}
+        <small>{stage.latencyMs}ms</small>
+      </li>)}</ul>
+    </>}
+    {data.revocations.length === 0 ? null : <>
+      <small>{t("home.antigravityRevocationsLabel")}</small>
+      <ul>{data.revocations.map((entry, index) => <li key={`${entry.trigger}-${String(index)}`}>
+        <span>{antigravityOutcomeLabel(entry.outcome)}</span> <code>{entry.trigger}</code>
+        {entry.reasonCode === undefined ? null : <code>{entry.reasonCode}</code>}
+      </li>)}</ul>
+    </>}
+    {login?.grantedScopes === undefined && login?.missingScopes === undefined ? null : <>
+      <small>{t("home.antigravityScopesLabel", { p0: (login.grantedScopes ?? []).join(", ") || "—" })}</small>
+      {login.missingScopes === undefined ? null : <small>{t("home.antigravityMissingScopesLabel", { p0: login.missingScopes.join(", ") })}</small>}
+    </>}
+  </details>;
+}
+
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   useI18n();
   const [sources, setSources] = useState<JoiSnapshotDto["modelSources"]>([]);
@@ -272,6 +310,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [reconnecting, setReconnecting] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<{ sourceId: string; data: AntigravityDiagnosticsDto } | null>(null);
   const [busySources, setBusySources] = useState<ReadonlySet<string>>(new Set());
   const running = useRef(new Set<string>());
   const [notice, setNotice] = useNotice();
@@ -424,6 +463,13 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
           ...((source.kind === "codex" || source.kind === "antigravity") && api.desktop ? [
             { label: t(source.kind === "antigravity" ? "home.antigravityReconnect" : "home.codexReconnect"), run: () => { setEditing(null); setReconnecting(source.sourceId); } },
           ] : []),
+          ...(source.kind === "antigravity" && api.desktop ? [
+            { label: t("home.antigravityDiagnostics"), run: () => void runSourceAction(source.sourceId, async () => {
+              setNotice(null);
+              try { setDiagnostics({ sourceId: source.sourceId, data: await api.antigravityDiagnostics() }); }
+              catch { tell(t("home.antigravityDiagnosticsFailed"), true); }
+            }) },
+          ] : []),
           { label: t("home.disable"), disabled: source.status === "DISABLED", run: () => void runSourceAction(source.sourceId, async () => {
             try { await api.updateModelSource(source.sourceId, { disabled: true }); await load(); }
             catch { tell(t("home.modelConnectionChangesCouldNotBeSaved"), true); }
@@ -432,6 +478,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         ]} />
       </div>
       {reconnecting === source.sourceId ? <CodexSubscriptionForm key={source.sourceId} provider={source.kind === "antigravity" ? "antigravity" : "codex"} api={api} sourceId={source.sourceId} onCancel={() => setReconnecting(null)} onConnected={async () => { setReconnecting(null); await load(); }} /> : null}
+      {diagnostics?.sourceId === source.sourceId ? <AntigravityDiagnosticsPanel data={diagnostics.data} onClose={() => setDiagnostics(null)} /> : null}
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>{t("home.editDisplayName")}<input defaultValue={source.displayName} name="displayName" required /></label><label>{t("home.editBaseUrl")}<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
         <label>{t("home.editModelId")}<input defaultValue={source.activeModel.id} name="modelId" required /></label>

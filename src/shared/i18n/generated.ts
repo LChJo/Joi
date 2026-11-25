@@ -756,6 +756,25 @@ export interface MessageParameters {
   "home.antigravityAccessForbidden": undefined;
   "home.antigravityModelUnavailable": undefined;
   "home.antigravityReconnect": undefined;
+  "home.antigravityDiagnostics": undefined;
+  "home.antigravityDiagnosticsTitle": undefined;
+  "home.antigravityDiagnosticsFailed": undefined;
+  "home.antigravityDiagnosticsEmpty": undefined;
+  "home.antigravityStageOutcomeOk": undefined;
+  "home.antigravityStageOutcomeFallback": undefined;
+  "home.antigravityStageOutcomeFailed": undefined;
+  "home.antigravityStageOutcomeSkipped": undefined;
+  "home.antigravityReasonTokenExchangeRejected": undefined;
+  "home.antigravityReasonCallbackInvalid": undefined;
+  "home.antigravityReasonProjectDiscoveryFailed": undefined;
+  "home.antigravityReasonUserinfoUnavailable": undefined;
+  "home.antigravityReasonScopeMissing": undefined;
+  "home.antigravityReasonListenerFailed": undefined;
+  "home.antigravityClientBuiltin": undefined;
+  "home.antigravityClientEnv": undefined;
+  "home.antigravityRevocationsLabel": undefined;
+  "home.antigravityScopesLabel": { "p0": string };
+  "home.antigravityMissingScopesLabel": { "p0": string };
   "home.codexSubscription": undefined;
   "home.codexAccountLabel": { "p0": string };
   "home.codexPlanLabel": { "p0": string };
@@ -2710,6 +2729,25 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.antigravityAccessForbidden": "Google rejected the Antigravity request (HTTP 403). The reason is unknown.",
     "home.antigravityModelUnavailable": "This model ID is outside the Antigravity model catalog.",
     "home.antigravityReconnect": "Sign in to Antigravity again",
+    "home.antigravityDiagnostics": "Diagnostics",
+    "home.antigravityDiagnosticsTitle": "Antigravity diagnostics",
+    "home.antigravityDiagnosticsFailed": "Antigravity diagnostics are temporarily unavailable.",
+    "home.antigravityDiagnosticsEmpty": "No sign-in attempts recorded yet.",
+    "home.antigravityStageOutcomeOk": "Completed",
+    "home.antigravityStageOutcomeFallback": "Fell back",
+    "home.antigravityStageOutcomeFailed": "Failed",
+    "home.antigravityStageOutcomeSkipped": "Skipped",
+    "home.antigravityReasonTokenExchangeRejected": "Google rejected the authorization credentials. Sign in again.",
+    "home.antigravityReasonCallbackInvalid": "The callback URL does not match this sign-in.",
+    "home.antigravityReasonProjectDiscoveryFailed": "The Antigravity project could not be resolved. Try again later.",
+    "home.antigravityReasonUserinfoUnavailable": "Account details were unavailable. Sign-in itself was not affected.",
+    "home.antigravityReasonScopeMissing": "Google did not grant every required scope; some features may be limited.",
+    "home.antigravityReasonListenerFailed": "The local callback listener failed to start.",
+    "home.antigravityClientBuiltin": "Using the built-in approved application credentials",
+    "home.antigravityClientEnv": "Using custom OAuth credentials",
+    "home.antigravityRevocationsLabel": "Revocation history",
+    "home.antigravityScopesLabel": "Granted scopes: {p0}",
+    "home.antigravityMissingScopesLabel": "Missing scopes: {p0}",
     "home.codexSubscription": "Codex subscription",
     "home.codexAccountLabel": "Account {p0}",
     "home.codexPlanLabel": "{p0} plan",
@@ -4662,6 +4700,25 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.antigravityAccessForbidden": "Google 拒绝了反重力请求（HTTP 403）。具体原因未知。",
     "home.antigravityModelUnavailable": "此 Model ID 不在反重力模型目录中。",
     "home.antigravityReconnect": "重新登录反重力",
+    "home.antigravityDiagnostics": "诊断",
+    "home.antigravityDiagnosticsTitle": "反重力诊断",
+    "home.antigravityDiagnosticsFailed": "暂时无法获取反重力诊断。",
+    "home.antigravityDiagnosticsEmpty": "还没有登录尝试记录。",
+    "home.antigravityStageOutcomeOk": "已完成",
+    "home.antigravityStageOutcomeFallback": "已降级",
+    "home.antigravityStageOutcomeFailed": "失败",
+    "home.antigravityStageOutcomeSkipped": "已跳过",
+    "home.antigravityReasonTokenExchangeRejected": "Google 拒绝了授权凭据，请重新登录。",
+    "home.antigravityReasonCallbackInvalid": "回调网址与本次授权不匹配。",
+    "home.antigravityReasonProjectDiscoveryFailed": "暂时无法确定反重力项目，请稍后重试。",
+    "home.antigravityReasonUserinfoUnavailable": "暂时无法获取账号信息，登录本身未受影响。",
+    "home.antigravityReasonScopeMissing": "Google 未授予全部所需权限，部分功能可能受限。",
+    "home.antigravityReasonListenerFailed": "本机回调端口启动失败。",
+    "home.antigravityClientBuiltin": "使用内置获准应用凭据",
+    "home.antigravityClientEnv": "使用自定义 OAuth 凭据",
+    "home.antigravityRevocationsLabel": "撤销记录",
+    "home.antigravityScopesLabel": "授予的权限：{p0}",
+    "home.antigravityMissingScopesLabel": "缺失权限：{p0}",
     "home.codexSubscription": "Codex 订阅",
     "home.codexAccountLabel": "账号 {p0}",
     "home.codexPlanLabel": "套餐 {p0}",
@@ -7248,6 +7305,37 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "此 Model ID 不在反重力模型目录中。": "home.antigravityModelUnavailable",
   "Sign in to Antigravity again": "home.antigravityReconnect",
   "重新登录反重力": "home.antigravityReconnect",
+  "Diagnostics": "settings.diagnostics",
+  "诊断": "settings.diagnostics",
+  "Antigravity diagnostics": "home.antigravityDiagnosticsTitle",
+  "反重力诊断": "home.antigravityDiagnosticsTitle",
+  "Antigravity diagnostics are temporarily unavailable.": "home.antigravityDiagnosticsFailed",
+  "暂时无法获取反重力诊断。": "home.antigravityDiagnosticsFailed",
+  "No sign-in attempts recorded yet.": "home.antigravityDiagnosticsEmpty",
+  "还没有登录尝试记录。": "home.antigravityDiagnosticsEmpty",
+  "Fell back": "home.antigravityStageOutcomeFallback",
+  "已降级": "home.antigravityStageOutcomeFallback",
+  "失败": "statistics.failed",
+  "Skipped": "home.antigravityStageOutcomeSkipped",
+  "已跳过": "home.antigravityStageOutcomeSkipped",
+  "Google rejected the authorization credentials. Sign in again.": "home.antigravityReasonTokenExchangeRejected",
+  "Google 拒绝了授权凭据，请重新登录。": "home.antigravityReasonTokenExchangeRejected",
+  "The callback URL does not match this sign-in.": "home.antigravityReasonCallbackInvalid",
+  "回调网址与本次授权不匹配。": "home.antigravityReasonCallbackInvalid",
+  "The Antigravity project could not be resolved. Try again later.": "home.antigravityReasonProjectDiscoveryFailed",
+  "暂时无法确定反重力项目，请稍后重试。": "home.antigravityReasonProjectDiscoveryFailed",
+  "Account details were unavailable. Sign-in itself was not affected.": "home.antigravityReasonUserinfoUnavailable",
+  "暂时无法获取账号信息，登录本身未受影响。": "home.antigravityReasonUserinfoUnavailable",
+  "Google did not grant every required scope; some features may be limited.": "home.antigravityReasonScopeMissing",
+  "Google 未授予全部所需权限，部分功能可能受限。": "home.antigravityReasonScopeMissing",
+  "The local callback listener failed to start.": "home.antigravityReasonListenerFailed",
+  "本机回调端口启动失败。": "home.antigravityReasonListenerFailed",
+  "Using the built-in approved application credentials": "home.antigravityClientBuiltin",
+  "使用内置获准应用凭据": "home.antigravityClientBuiltin",
+  "Using custom OAuth credentials": "home.antigravityClientEnv",
+  "使用自定义 OAuth 凭据": "home.antigravityClientEnv",
+  "Revocation history": "home.antigravityRevocationsLabel",
+  "撤销记录": "home.antigravityRevocationsLabel",
   "Codex subscription": "home.codexSubscription",
   "Codex 订阅": "home.codexSubscription",
   "Authorize a ChatGPT account with Codex access. Requests count toward your ChatGPT plan limits.": "home.codexSubscriptionHint",
@@ -8812,8 +8900,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "安全": "settings.security",
   "Data": "settings.data",
   "数据": "settings.data",
-  "Diagnostics": "settings.diagnostics",
-  "诊断": "settings.diagnostics",
   "joi is preparing the page": "settings.joiIsPreparingThePage",
   "joi 正在整理页面": "settings.joiIsPreparingThePage",
   "Mobile connection ready": "settings.mobileConnectionReady",
@@ -9271,7 +9357,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "Each goal is counted once. Hover for usage details.": "statistics.eachGoalIsCountedOnceHoverForUsageDetails",
   "同一目标只计一次，鼠标悬停查看用量明细。": "statistics.eachGoalIsCountedOnceHoverForUsageDetails",
   "完成": "statistics.completed",
-  "失败": "statistics.failed",
   "Waiting": "status.waiting",
   "等待": "statistics.waiting",
   "Top 10 goals": "statistics.top10Goals",

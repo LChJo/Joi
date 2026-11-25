@@ -322,4 +322,47 @@ describe("Codex subscription model settings", () => {
     await click("取消");
     expect(cancel).toHaveBeenCalledExactlyOnceWith(attemptId);
   });
+
+  it("offers antigravity diagnostics on desktop only and shows sanitized stages", async () => {
+    const api = new DigitalLifeApi("", true);
+    const antigravity = { ...codexSource("NEEDS_AUTH"), displayName: "Antigravity", kind: "antigravity" as const, protocol: "google" as const, sourceId: "ag-source" };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [antigravity] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [] });
+    const diagnostics = vi.spyOn(api, "antigravityDiagnostics").mockResolvedValue({
+      login: {
+        provider: "antigravity", startedAt: "2026-11-25T00:00:00.000Z", outcome: "failed",
+        accountEmail: "b***@gmail.com", clientSource: "builtin",
+        stages: [{ stage: "token_exchange", outcome: "failed", reasonCode: "token_exchange_rejected", at: "2026-11-25T00:00:01.000Z", latencyMs: 12 }],
+      },
+      revocations: [{ kind: "antigravity", trigger: "delete", outcome: "revoked", at: "2026-11-25T00:00:02.000Z" }],
+    });
+    const view = render(<ModelSourceManager api={api} />);
+    await screen.findByText("Antigravity");
+    await click("Antigravity 更多操作");
+    const menu = screen.getByRole("menu");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["编辑", "重新登录反重力", "诊断", "停用", "删除"]);
+    await act(async () => {
+      fireEvent.click(within(menu).getByRole("menuitem", { name: "诊断" }));
+      await Promise.resolve();
+    });
+    expect(diagnostics).toHaveBeenCalledExactlyOnceWith();
+    expect(screen.getByText("反重力诊断")).toBeVisible();
+    expect(screen.getByText("账号 b***@gmail.com")).toBeVisible();
+    expect(screen.getByText("使用内置获准应用凭据")).toBeVisible();
+    expect(screen.getByText("token_exchange")).toBeVisible();
+    expect(screen.getByText("token_exchange_rejected")).toBeVisible();
+    expect(screen.getByText("撤销记录")).toBeVisible();
+    expect(document.body.textContent).not.toContain("brycen");
+    view.unmount();
+
+    // LAN sessions neither offer the menu entry nor receive the data.
+    const lan = new DigitalLifeApi("", false);
+    vi.spyOn(lan, "listModelSources").mockResolvedValue({ items: [antigravity] });
+    vi.spyOn(lan, "listPartners").mockResolvedValue({ items: [] });
+    const lanView = render(<ModelSourceManager api={lan} />);
+    await screen.findByText("Antigravity");
+    await click("Antigravity 更多操作");
+    expect(within(screen.getByRole("menu")).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["编辑", "停用", "删除"]);
+    lanView.unmount();
+  });
 });
