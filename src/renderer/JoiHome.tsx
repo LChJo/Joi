@@ -8,7 +8,7 @@ import { GoalDrawerResizeHandle, GoalTitle, GoalMap } from "./GoalDetailPresenta
 import { useGoalDetail } from "./useGoalDetail.js";
 import { useWorkbenchAgentPage } from "./useWorkbenchAgentPage.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
-import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type RefObject, type SyntheticEvent, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { SafeMarkdown as Markdown } from "./SafeMarkdown";
 
@@ -1549,11 +1549,12 @@ function ThinkingRow({ item }: { item: JoiThinkingItemDto }) {
   </div>;
 }
 
-function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBack, onResolved, onRetried, onScheduleGoal }: {
+function GoalDetail({ api, partners, workbenches, goal, preferredWidthRef, initialAgentStatus, onBack, onResolved, onRetried, onScheduleGoal }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
   workbenches: WorkbenchDto[];
   goal: JoiGoalCardDto;
+  preferredWidthRef: RefObject<number | null>;
   initialAgentStatus?: WorkbenchAgentStatusDto;
   onScheduleGoal?: (goalId: string) => void;
   onBack: () => void;
@@ -1564,7 +1565,6 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   const detailState = useGoalDetail(api, goal.goalId);
   const artifactVersion = goal.resultId ?? goal.completedAt ?? String(goal.artifactCount ?? goal.artifacts?.length ?? 0);
   const drawerId = useId();
-  const preferredWidthRef = useRef<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto>();
   const agentPage = useWorkbenchAgentPage(api, {
@@ -1636,14 +1636,16 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   </div>;
 }
 
-function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
+function GoalResultView({ api, goal, preferredWidthRef, onBack, onOpenDetail, onRetried }: {
   api: DigitalLifeApi;
   goal: JoiGoalCardDto;
+  preferredWidthRef: RefObject<number | null>;
   onBack: () => void;
   onOpenDetail: (preferredStatus?: WorkbenchAgentStatusDto) => void;
   onRetried: (goal: JoiGoalCardDto) => void;
 }) {
   useI18n();
+  const drawerId = useId();
   const [body] = useState(goal.completionSummary ?? "");
   const [resultId] = useState(goal.resultId);
   const [showHistory, setShowHistory] = useState(false);
@@ -1663,7 +1665,8 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
   }, []);
   if (showHistory) return <GoalResultHistory api={api} goal={goal} lockPage={false} onClose={() => setShowHistory(false)} />;
   return <div className="joi-drawer-backdrop" onClick={close} role="presentation">
-    <section aria-label={t("home.valueForValue", { p0: goal.workbench.name, p1: resultLabel })} aria-modal="true" className="joi-goal-drawer joi-result-drawer" onClick={(event) => { event.stopPropagation(); setExportMenu(false); }} role="dialog">
+    <section aria-label={t("home.valueForValue", { p0: goal.workbench.name, p1: resultLabel })} aria-modal="true" className="joi-goal-drawer joi-result-drawer" id={drawerId} onClick={(event) => { event.stopPropagation(); setExportMenu(false); }} role="dialog">
+      <GoalDrawerResizeHandle drawerId={drawerId} preferredWidthRef={preferredWidthRef} />
       <header className="joi-goal-detail-header">
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>
@@ -1716,6 +1719,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   const [feedError, setFeedError] = useState(false);
   const [feedLoaded, setFeedLoaded] = useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(focusGoalId ?? null);
+  const preferredGoalDrawerWidth = useRef<number | null>(null);
   const [workbenchChoiceId, setWorkbenchChoiceId] = useState<string | null>(null);
   const shownWorkbenchQuestions = useRef(new Set<string>());
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
@@ -1910,8 +1914,8 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       <div><strong>{change.kind === "MERGE" ? t("home.joiSuggestsMergingWorkbenches") : t("home.joiSuggestsArchivingAWorkbench")}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">{t("home.keepAsIs")}</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? t("home.confirmMerge") : t("home.confirmArchive")}</button></div>
     </article>)}</section>}
-    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refreshAfterMutation().catch(() => undefined)} onRetried={markRetryStarted} />}
-    {resultGoal === undefined ? null : <GoalResultView key={resultGoal.goalId} api={api} goal={resultGoal} onBack={() => setResultGoalId(null)} onOpenDetail={(preferredStatus) => { setResultGoalId(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoalId(null); markRetryStarted(retriedGoal); }} />}
+    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} preferredWidthRef={preferredGoalDrawerWidth} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refreshAfterMutation().catch(() => undefined)} onRetried={markRetryStarted} />}
+    {resultGoal === undefined ? null : <GoalResultView key={resultGoal.goalId} api={api} goal={resultGoal} preferredWidthRef={preferredGoalDrawerWidth} onBack={() => setResultGoalId(null)} onOpenDetail={(preferredStatus) => { setResultGoalId(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoalId(null); markRetryStarted(retriedGoal); }} />}
     <div aria-label={t("home.joiActivityFeed")} className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
       {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">{t("home.yourConfirmationIsNeeded")}</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString(currentLocale())}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}{needsWorkbenchChoice(message.clarificationReasonCode) ? <><p className="joi-clarify-reason">{clarificationText(message.clarificationReasonCode, message.clarificationPrompt)}</p><button className="button primary" onClick={() => setWorkbenchChoiceId(message.inputId)} type="button">{t("home.chooseWorkbench")}</button></> : (message.questions?.length ?? 0) > 0 && message.clarificationReasonCode === "question_required" ? <QuestionQueue questions={message.questions ?? []} onAnswer={async (id,input) => { const saved = await api.answerQuestion({kind:"GOAL",id:message.inputId},id,input); await refreshAfterMutation(); return saved; }} /> : <ClarificationActions key={`${message.questionId ?? "legacy"}:${String(message.questionVersion)}`} api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => { dismissAction(message.inputId); void refreshAfterMutation().catch(() => undefined); }} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} />}</article>)}
@@ -2014,6 +2018,7 @@ export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onCon
   const [snapshot, setSnapshot] = useState<JoiSnapshotDto | null>(null);
   const [error, setError] = useNotice();
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const preferredGoalDrawerWidth = useRef<number | null>(null);
   const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -2031,7 +2036,7 @@ export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onCon
   const openGoal = archived.find((goal) => goal.goalId === openGoalId);
   return <section className="joi-home" aria-labelledby="joi-archived-title">
     <header><h1 id="joi-archived-title">{t("common.archived")}</h1><p>{t("home.archivingHidesACardFromTheHomePageUnarchive")}</p></header>
-    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={refresh} onRetried={(goal) => onContinued?.(goal.goalId)} />}
+    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} preferredWidthRef={preferredGoalDrawerWidth} onBack={() => setOpenGoalId(null)} onResolved={refresh} onRetried={(goal) => onContinued?.(goal.goalId)} />}
     <div aria-label={t("home.archivedGoals")} className="joi-feed joi-feed-single">
       {archived.length === 0 ? <p className="joi-feed-empty">{t("home.noArchivedGoalsYetChooseArchiveFromACard")}</p> : archived.map((goal) => <article className={`joi-goal-card archived ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">

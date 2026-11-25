@@ -47,7 +47,7 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1280,height:800,useCo
     const page = await application.firstWindow();
     const css = await readFile('src/renderer/styles.css', 'utf8');
     for (const result of [false, true]) {
-      await page.setContent(`<body style="overflow:hidden"><div class="joi-drawer-backdrop"><section class="joi-goal-drawer${result ? ' joi-result-drawer' : ''}"><header class="joi-goal-detail-header"><h1>任务详情</h1></header><div class="joi-goal-drawer-body">${'<p>完整正文滚动测试</p>'.repeat(120)}<p id="tail">全文末尾</p></div>${result ? '<div class="joi-result-export"><button>导出全文</button></div>' : ''}</section></div></body>`);
+      await page.setContent(`<body style="overflow:hidden"><div class="joi-drawer-backdrop"><section class="joi-goal-drawer${result ? ' joi-result-drawer' : ''}"><div class="joi-goal-drawer-resizer" role="separator"></div><header class="joi-goal-detail-header"><h1>任务详情</h1></header><div class="joi-goal-drawer-body">${'<p>完整正文滚动测试</p>'.repeat(120)}<p id="tail">全文末尾</p></div>${result ? '<div class="joi-result-export"><button>导出全文</button></div>' : ''}</section></div></body>`);
       await page.addStyleTag({ content: css });
       await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished)));
       const drawer = page.locator('.joi-goal-drawer');
@@ -58,6 +58,13 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1280,height:800,useCo
       expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) - viewport.width)).toBeLessThanOrEqual(1);
       expect(box?.x).toBeGreaterThan(0);
       expect(box?.height).toBeLessThanOrEqual(viewport.height + 1);
+      const resize = page.getByRole('separator');
+      expect((await resize.boundingBox())?.width).toBeGreaterThanOrEqual(20);
+      expect(await resize.evaluate(element => parseFloat(getComputedStyle(element, '::after').height))).toBeGreaterThanOrEqual(120);
+      expect(await resize.evaluate(element => {
+        const rect = element.getBoundingClientRect();
+        return [0.1, 0.5, 0.9].every(fraction => document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height * fraction) === element);
+      })).toBe(true);
       const body = page.locator('.joi-goal-drawer-body');
       await body.hover();
       await page.mouse.wheel(0, 700);

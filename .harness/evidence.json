@@ -274,8 +274,8 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "e68ff9c47af03db0dafe6032cc5b57ad16449ee39402be0dae82e539f25fdc87",
-      "observedAt": "2026-11-24T16:53:15.596Z",
+      "hash": "7c3ac0ff0283e2b104a0d09f8f24a73c1380bd6e722c5b61d647b1e978ebe3f8",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
         "endLine": 163
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "34e322e0a48504925851efa896ec1d5245ec894fc07ac44e91ab828678213710",
-      "observedAt": "2026-11-24T16:19:53.708Z",
+      "hash": "7721614ca32b14d246f386ddd5c22319ba27da08b7f11405a766be7d6c843be1",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
-        "endLine": 801
+        "endLine": 803
       }
     },
     {
@@ -942,12 +942,12 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures. Both drawer types use a 22-pixel full-height resize hit area and a 120-280-pixel visible grip.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "89095f3fa5c23a2c287f0df1f50ff507bee5312a51747cd865becf0583c01aac",
-      "observedAt": "2026-11-25T05:51:03.235Z",
+      "hash": "ba060d7909a6695d56b840c36ceb3efcfd2ab21cc0fbcc2f5cff27bb174d6b09",
+      "observedAt": "2026-11-25T08:04:09.449Z",
       "range": {
         "startLine": 1,
         "endLine": 1686
@@ -1380,8 +1380,8 @@
       "location": {
         "path": "package-lock.json"
       },
-      "hash": "25d61b0c304a7b45e6625fb9f5f8fd433599215d98b159f1f162df390760cd94",
-      "observedAt": "2026-11-24T16:53:15.596Z",
+      "hash": "a1da3505751d4b36cfc4e18d6fd9598892f4bfcfbbadcd2da6f76c5da5ce4ea2",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
         "endLine": 14193
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version. Agent cards display an answered queue and a historical continuation with their localized labels.",
-      "hash": "6b7f35be030d9630f257251c18979838be6fbb73107f1a9571b0403bbc63861c",
-      "observedAt": "2026-11-24T13:18:35.850Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version. Home detail and conclusion drawers share the active width preference and use the same resize control. Agent cards display an answered queue and a historical continuation with their localized labels.",
+      "hash": "ef5b78d22d3994ea6c08ff3418b92729c8deb534095162eceda304a437863a89",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
-        "endLine": 1998
+        "endLine": 2050
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft.",
-      "hash": "18fde1bd07cc299f6fab3b2299134ccb5b9e057b3b41054b537ed2b2e02eba35",
-      "observedAt": "2026-11-24T09:54:05.417Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft. Drawer regression checks conclusion resize, width retention into details, navigation bounds, keyboard adjustment and responsive fallback.",
+      "hash": "045496e5dc4bc03019a28e5617722292e2454b31ee29d5cf522b46d5cefa61a4",
+      "observedAt": "2026-11-25T08:04:09.451Z",
       "range": {
         "startLine": 1,
-        "endLine": 2566
+        "endLine": 2619
       }
     },
     {
@@ -1661,7 +1661,7 @@
         "path": "apps/joi_mobile/l10n/app_en.arb"
       },
       "hash": "cb6c653598fb2cbe25752b204b153337c4d6a928350869edd35909437013f683",
-      "observedAt": "2026-11-26T05:21:14.152Z",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
         "endLine": 10829
@@ -1689,7 +1689,7 @@
         "path": "apps/joi_mobile/lib/i18n_messages.dart"
       },
       "hash": "b5834cf26beedfb38154f78868411649ccf1843fd43ed682ef8736d9fc81f35e",
-      "observedAt": "2026-11-26T05:21:14.154Z",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
         "endLine": 7564
@@ -1843,7 +1843,7 @@
         "path": "src/shared/i18n/generated.ts"
       },
       "hash": "6dd06dd2cc732b367646c9a5328cb2ea5ed3f5cda7c700f6df9f70ab46f96f6a",
-      "observedAt": "2026-11-26T05:21:14.155Z",
+      "observedAt": "2026-11-25T13:10:07.418Z",
       "range": {
         "startLine": 1,
         "endLine": 9552
