@@ -79,7 +79,7 @@ it("changes participation independently and shows production methods and exposur
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   expect(await screen.findByText("效率收益")).toBeInTheDocument();
   expect(screen.getByText(/候选目标 2 · 对照目标 8/u)).toBeInTheDocument();
-  expect(screen.getByText(/实际采用方法的目标：2/u)).toBeInTheDocument();
+  expect(screen.getByText(/已使用新方法的目标：2/u)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("checkbox", { name: "本工作台参与方法学习" }));
   await waitFor(() => expect(participate).toHaveBeenCalledWith("a", true));
   expect(run).not.toHaveBeenCalled();
@@ -174,7 +174,7 @@ it("prevents duplicate evaluations while saving and retains the current budget a
   fireEvent.click(screen.getByRole("button", { name: "立即评测一次" }));
   expect(evaluate).toHaveBeenCalledTimes(2);
   await act(async () => { run.resolve({ ...status, learning: { ...readyLearning, stage: "PROTOCOL", experiment: { id: "experiment", calls: 1, tokens: null, reason: "evaluating" } } }); await Promise.resolve(); });
-  expect(screen.getByText("检查模型工具协议")).toBeInTheDocument();
+  expect(screen.getByText("检查模型能否正常使用工具")).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "当前进展" })).toHaveTextContent("Token 用量未知");
   expect(within(screen.getByRole("region", { name: "学习设置" })).getByText("1,234 tokens")).toBeInTheDocument();
 });
@@ -209,10 +209,10 @@ it("shows a polling failure without losing the last method status", async () => 
   const view = render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   try {
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText("在重放案例上开发方法")).toBeInTheDocument();
+    expect(screen.getByText("尝试改进工作方法")).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(screen.getByText("没能读取进化状态，请稍后重试。")).toBeInTheDocument();
-    expect(screen.getByText("在重放案例上开发方法")).toBeInTheDocument();
+    expect(screen.getByText("尝试改进工作方法")).toBeInTheDocument();
   } finally { view.unmount(); vi.useRealTimers(); }
 });
 it.each(["success", "failure"] as const)("ignores a late %s from a previously selected workbench", async (outcome) => {
@@ -224,14 +224,14 @@ it.each(["success", "failure"] as const)("ignores a late %s from a previously se
   loadOverview.mockReturnValueOnce(oldOverview.promise).mockResolvedValue(overview);
   const view = render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   view.rerender(<WorkbenchEvolutionPanel api={api} workbenchId="b" />);
-  await screen.findByText("实际采用方法的目标：7");
+  await screen.findByText("已使用新方法的目标：7");
   await act(async () => {
     if (outcome === "success") oldStatus.resolve({ ...status, learning });
     else oldStatus.reject(new Error("old request failed"));
     oldOverview.resolve({ ...overview, learning });
     await Promise.resolve();
   });
-  expect(screen.getByText("实际采用方法的目标：7")).toBeInTheDocument();
+  expect(screen.getByText("已使用新方法的目标：7")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "立即评测一次" })).toBeEnabled();
   expect(screen.queryByText("没能读取进化状态，请稍后重试。")).toBeNull();
 });
@@ -253,7 +253,7 @@ it.each([
   expect(row).toHaveTextContent(text);
   expect(row).toHaveTextContent("9 次调用");
   expect(row).toHaveTextContent("321 tokens");
-  expect(screen.getByText("前台任务优先，等待任务完成后继续。")).toBeInTheDocument();
+  expect(screen.getByText("当前任务优先，完成后继续学习。")).toBeInTheDocument();
   expect(screen.getByText("独立评测或灰度样本不足")).toBeInTheDocument();
   expect(screen.getByText("尚未采用新方法")).toBeInTheDocument();
 });
@@ -281,6 +281,7 @@ it("validates the shadow request budget and displays the queued request", async 
   const request = vi.spyOn(api, "runEvolutionShadow").mockResolvedValue({ ...status, learning: { ...value,
     shadow: { status: "queued", callLimit: 12, verdict: null, baseline: emptyArm, candidate: emptyArm } } });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  fireEvent.click(await screen.findByText("学习详情"));
   const limit = await screen.findByRole("spinbutton", { name: "开发对照调用上限" });
   const button = screen.getByRole("button", { name: "运行开发对照" });
   expect(screen.getByText(/已收敛 10 · 客观验收合格 8/u)).toBeInTheDocument();
@@ -302,6 +303,7 @@ it.each([
 ])("disables shadow requests with $label", async ({ readiness }) => {
   const { api } = learningApi({ ...readyLearning, readiness });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  fireEvent.click(await screen.findByText("学习详情"));
   expect(await screen.findByRole("button", { name: "运行开发对照" })).toBeDisabled();
 });
 
@@ -311,6 +313,7 @@ it("shows the running shadow cost and keeps another request disabled", async () 
       backingReads: 2, toolRequests: 2, modelCalls: 3, tokens: 7 }, candidate: { ...emptyArm, modelCalls: 1, tokens: null } } });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   expect(await screen.findByText("开发对照运行中")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("学习详情"));
   expect(screen.getByText(/底层读取 2 \/ 0 · 工具请求 2 \/ 0 · 模型调用 3 \/ 1/u)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "运行开发对照" })).toBeDisabled();
 });
@@ -351,5 +354,6 @@ it.each([{ verdict: null, label: "开发对照已停止" }, { verdict: "source_c
     expect(await screen.findByText(label)).toBeInTheDocument();
     expect(screen.getByText("合格生产流量不足")).toBeInTheDocument();
     expect(screen.getByText("生产验收差值 — · 不确定区间 —")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("学习详情"));
     expect(screen.getByRole("button", { name: "运行开发对照" })).toBeEnabled();
   });

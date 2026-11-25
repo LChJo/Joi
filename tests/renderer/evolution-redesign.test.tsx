@@ -92,8 +92,18 @@ it("explains a global pause separately from the latest assessment and counts ind
   const progress=await screen.findByRole("region",{name:"当前进展"});
   expect(within(progress).getByText(/暂停原因：模型或评测环境已变化/u)).toBeInTheDocument();
   expect(within(progress).getByText(/独立来源组：开发 1 · 封存 0/u)).toBeInTheDocument();
-  expect(within(progress).getByText("待复现缺陷记录")).toBeInTheDocument();
+  expect(within(progress).getByText("待复现的问题")).toBeInTheDocument();
   expect(within(progress).getByText(/改善幅度不足/u)).toBeInTheDocument();
+});
+
+it("keeps sample internals out of the main learning summary but available on demand", async () => {
+  show({...status,learning:{...learning,cases:{...learning.cases,developmentGroups:4,sealedGroups:0,reproduced:0,experiences:0}}});
+  const progress=await screen.findByRole("region",{name:"当前进展"});
+  const details=within(progress).getByText("学习详情").closest("details");
+  expect(details).not.toHaveAttribute("open");
+  expect(details).toContainElement(within(progress).getByText(/独立来源组：开发 4/u));
+  expect(details).toContainElement(within(progress).getByText(/可复用对照经验/u));
+  expect(within(progress).getByRole("button",{name:"立即评测一次"}).closest("details")).toBeNull();
 });
 
 it("shows sample waiting without asking for manual resume or reproposing a candidate", async () => {

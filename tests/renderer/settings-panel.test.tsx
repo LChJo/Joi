@@ -505,6 +505,15 @@ describe("settings panel", () => {
     await waitFor(() => expect(check).toHaveBeenCalledOnce());
   });
 
+  it("keeps technical counters behind an optional diagnostics disclosure", () => {
+    render(<SystemPanel diagnostics={{ ...diagnostics, schemaVersion: 119, runtime: { pendingOutbox: 5 }, sse: { events: 100 } }} interactions={[]} />);
+    const details = screen.getByText("技术详情").closest("details");
+    expect(details).not.toHaveAttribute("open");
+    expect(details).toContainElement(screen.getByText("v119"));
+    expect(details).toContainElement(screen.getByText("状态更新"));
+    expect(screen.getByText("本机数据").closest("details")).toBeNull();
+  });
+
   it("labels pending and unknown integrity states and reports a failed manual check", async () => {
     const api = new DigitalLifeApi("");
     const onIntegrityCheck = vi.fn().mockRejectedValue(new Error("private failure"));

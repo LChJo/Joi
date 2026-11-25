@@ -3234,44 +3234,44 @@
     "description": "evolution: Method learning settings updated",
     "placeholders": {}
   },
-  "evolutionStageObserving": "Observing real task facts",
+  "evolutionStageObserving": "Learning from completed tasks",
   "@evolutionStageObserving": {
-    "description": "evolution: Observing real task facts",
+    "description": "evolution: Learning from completed tasks",
     "placeholders": {}
   },
-  "evolutionStageDiagnosing": "Diagnosing reproducible defects",
+  "evolutionStageDiagnosing": "Investigating problems found in tasks",
   "@evolutionStageDiagnosing": {
-    "description": "evolution: Diagnosing reproducible defects",
+    "description": "evolution: Investigating problems found in tasks",
     "placeholders": {}
   },
-  "evolutionStageProtocol": "Checking the model tool protocol",
+  "evolutionStageProtocol": "Checking that the model can use tools",
   "@evolutionStageProtocol": {
-    "description": "evolution: Checking the model tool protocol",
+    "description": "evolution: Checking that the model can use tools",
     "placeholders": {}
   },
-  "evolutionStageDevelop": "Developing a method on replay cases",
+  "evolutionStageDevelop": "Developing better ways to work",
   "@evolutionStageDevelop": {
-    "description": "evolution: Developing a method on replay cases",
+    "description": "evolution: Developing better ways to work",
     "placeholders": {}
   },
-  "evolutionStagePropose": "Proposing a structured method",
+  "evolutionStagePropose": "Preparing an improvement",
   "@evolutionStagePropose": {
-    "description": "evolution: Proposing a structured method",
+    "description": "evolution: Preparing an improvement",
     "placeholders": {}
   },
-  "evolutionStageValidate": "Retesting the candidate method",
+  "evolutionStageValidate": "Retesting the improvement",
   "@evolutionStageValidate": {
-    "description": "evolution: Retesting the candidate method",
+    "description": "evolution: Retesting the improvement",
     "placeholders": {}
   },
-  "evolutionStageEvaluate": "Independent held-out evaluation",
+  "evolutionStageEvaluate": "Independently testing the new method",
   "@evolutionStageEvaluate": {
-    "description": "evolution: Independent held-out evaluation",
+    "description": "evolution: Independently testing the new method",
     "placeholders": {}
   },
-  "evolutionStageCanary": "20% production trial",
+  "evolutionStageCanary": "Trial on 20% of real tasks",
   "@evolutionStageCanary": {
-    "description": "evolution: 20% production trial",
+    "description": "evolution: Trial on 20% of real tasks",
     "placeholders": {}
   },
   "evolutionStageActive": "Evaluated method active",
@@ -3294,9 +3294,9 @@
     "description": "evolution: Paused; resume explicitly to continue",
     "placeholders": {}
   },
-  "evolutionBlockerNotIdle": "Foreground tasks take priority. Learning continues when they finish.",
+  "evolutionBlockerNotIdle": "Current tasks take priority; learning continues when they finish.",
   "@evolutionBlockerNotIdle": {
-    "description": "evolution: Foreground tasks take priority. Learning continues when they finish.",
+    "description": "evolution: Current tasks take priority; learning continues when they finish.",
     "placeholders": {}
   },
   "evolutionBlockerBudget": "Available evaluation budget exhausted for today",
@@ -3324,7 +3324,7 @@
     "description": "evolution: Model or evaluator version changed; revalidation required",
     "placeholders": {}
   },
-  "evolutionBlockerCandidate": "An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
+  "evolutionBlockerCandidate": "Today''s automatic evaluation has already started. You can schedule another manually.",
   "@evolutionBlockerCandidate": {
     "description": "evolution: An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
     "placeholders": {}
@@ -3359,9 +3359,9 @@
     "description": "evolution: Learning settings",
     "placeholders": {}
   },
-  "evolutionWaitingForIdle": "Waiting for foreground tasks",
+  "evolutionWaitingForIdle": "Waiting for current tasks to finish",
   "@evolutionWaitingForIdle": {
-    "description": "evolution: Waiting for foreground tasks",
+    "description": "evolution: Waiting for current tasks to finish",
     "placeholders": {}
   },
   "evolutionLearningPausedBadge": "Paused",
@@ -3413,19 +3413,24 @@
       }
     }
   },
-  "evolutionDevelopmentCases": "Development cases",
+  "evolutionLearningDetails": "Learning details",
+  "@evolutionLearningDetails": {
+    "description": "Optional learning diagnostics and comparison controls",
+    "placeholders": {}
+  },
+  "evolutionDevelopmentCases": "Cases for improvement",
   "@evolutionDevelopmentCases": {
-    "description": "evolution: Development cases",
+    "description": "Cases used to develop a method",
     "placeholders": {}
   },
-  "evolutionIndependentCases": "Held-out cases",
+  "evolutionIndependentCases": "Cases for independent testing",
   "@evolutionIndependentCases": {
-    "description": "evolution: Held-out cases",
+    "description": "Independent cases used to verify a method",
     "placeholders": {}
   },
-  "evolutionReproducibleProblems": "Defect records awaiting reproduction",
+  "evolutionReproducibleProblems": "Problems to reproduce",
   "@evolutionReproducibleProblems": {
-    "description": "evolution: Defect records awaiting reproduction",
+    "description": "Recorded problems awaiting reproduction",
     "placeholders": {}
   },
   "evolutionNoIndependentCasesHint": "No held-out cases yet. These cases independently verify the effect of new methods.",
@@ -3443,7 +3448,7 @@
     "description": "evolution: Starts when idle and counts toward the shared budget.",
     "placeholders": {}
   },
-  "evolutionNoAdoptedMethodsHint": "Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+  "evolutionNoAdoptedMethodsHint": "Existing methods are still in use.",
   "@evolutionNoAdoptedMethodsHint": {
     "description": "evolution: Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
     "placeholders": {}
@@ -3483,7 +3488,7 @@
     "description": "evolution: Shared budget used today",
     "placeholders": {}
   },
-  "evolutionParticipationHint": "Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+  "evolutionParticipationHint": "This workbench can learn while idle using the shared budget.",
   "@evolutionParticipationHint": {
     "description": "evolution: Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
     "placeholders": {}
@@ -9283,6 +9288,21 @@
   "settingsUnavailable": "Unavailable",
   "@settingsUnavailable": {
     "description": "settings: Unavailable",
+    "placeholders": {}
+  },
+  "settingsRuntimeActivity": "Work overview",
+  "@settingsRuntimeActivity": {
+    "description": "Diagnostics activity section",
+    "placeholders": {}
+  },
+  "settingsHealthAndAccess": "Status checks",
+  "@settingsHealthAndAccess": {
+    "description": "Diagnostics health and access section",
+    "placeholders": {}
+  },
+  "settingsTechnicalDetails": "Technical details",
+  "@settingsTechnicalDetails": {
+    "description": "Optional technical diagnostics disclosure",
     "placeholders": {}
   },
   "settingsDataVersion": "Data version",
