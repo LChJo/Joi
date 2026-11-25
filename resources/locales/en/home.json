@@ -1,4 +1,5 @@
 {
+  "agentModelNotRecorded": "Model not recorded",
   "antigravitySubscription": "Antigravity subscription",
   "antigravitySubscriptionHint": "Sign in with a Google account that has Antigravity access. Requests use that account's model quota.",
   "antigravityBrowserSignIn": "Continue with Google",

@@ -179,6 +179,8 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-26 的目标 Agent 终态投影以 AC-40/AC-53 为门禁：工作台全局 Agent 页继续用 `IDLE/BUSY` 表示 resident instance availability；从目标详情携带 `goalId` 查询时，卡片必须显示该 session 在该 goal 中的活跃或最新 partner run 状态。已完成 run 必须保持 `COMPLETED`，不能因实例已回到可复用 IDLE 而伪装成尚无执行结果。
 
+目标详情 Agent 卡片（AC-40/53）：副标题显示选中执行已有用量记录中的模型网络名和模型 ID，仅关联同工作台、目标、Work、搭档和执行时段内的普通搭档调用，排除汇总及归属重叠的执行；历史缺失时明确提示未记录，不使用当前模型配置猜测历史模型。长名称换行且可悬停查看；保持原状态、会话范围和分页边界。覆盖 `sqlite-workbench-agent-feed.test.ts`、`joi-home-single-entry.test.tsx`。
+
 2026-08-06 的可靠性修复：失败 turn 收尾必须中止其推理会话（残留流状态不得毒化后续 turn）；同一输入连续即时失败超过上限即停摆，禁止 failTurn→重投 的无限崩溃环；`joi-task-component.test.ts` 锁定停摆上限，`sqlite-work-plan-outbox.test.ts` 锁定 goal-binding 双向语义。2026-08-20 起 migration 040 将该停摆持久化为独立失败事实，不再伪造成用户取消；首页显示安全原因码、自动尝试次数、是否已启动执行和固定处理建议。
 
 2026-08-06 的术语迁移以 AC-45 为门禁：产品文案统一为“工作台”，代码契约统一为 `Workbench/workbenchId/workbench.*`，HTTP 统一为 `/api/v1/workbenches`；migration 038 无损升级 037 的表、列、外键、枚举和待处理 outbox。旧 migration 001–037 只作为升级事实保留旧物理名，不再定义当前产品术语。

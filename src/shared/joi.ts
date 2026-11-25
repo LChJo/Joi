@@ -586,6 +586,9 @@ export interface WorkbenchAgentCardDto {
   createdAt: string;
   engine: PartnerEngineDto;
   lastActivityAt: string;
+  /** Recorded model identity for the selected goal-scoped execution, when available. */
+  modelSourceName?: string;
+  modelId?: string;
   partnerId: string;
   partnerName: string;
   sessionPolicy: "EPHEMERAL" | "RESIDENT";

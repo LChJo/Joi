@@ -1208,6 +1208,10 @@ function agentExecutionLabel(agent: Pick<WorkbenchAgentCardDto, "executionPhase"
   return agent.status;
 }
 
+function agentModelLabel(agent: WorkbenchAgentCardDto): string {
+  return [agent.modelSourceName, agent.modelId].filter(Boolean).join(" · ") || t("home.agentModelNotRecorded");
+}
+
 function recentOutcomeLabel(status: WorkbenchDetailDto["recentOutcomes"][number]["status"]): string {
   if (status === "COMPLETED_WITH_GAPS") return t("home.completedWithGaps");
   if (status === "FAILED") return t("home.failed763284");
@@ -1621,7 +1625,7 @@ function GoalDetail({ api, partners, workbenches, goal, preferredWidthRef, initi
             <AgentPageControls page={agentPage} />
             {agents.length === 0 && (agentPage.loaded || goal.workbench.workbenchId === "") ? <p className="plain-empty">{t("home.joiHasNotStartedAnyAgentsForThisGoal")}</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgent?.agentId} className={`joi-goal-agent ${agent.agentId === selectedAgent?.agentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgent(agent)} type="button">
               <span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span>
-              <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine}</small></span>
+              <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small title={agentModelLabel(agent)}>{agentModelLabel(agent)}</small></span>
               <i className={`agent-status ${(agent.resultAssessment === "INSUFFICIENT" && agent.status === "FAILED" ? "insufficient" : agent.status.toLowerCase())}`}>{agentExecutionLabel(agent)}</i>
             </button>)}
           </aside>

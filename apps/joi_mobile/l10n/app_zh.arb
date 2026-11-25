@@ -730,6 +730,7 @@
   "exportStatePair": "首次配对 pair",
   "exportStateResume": "恢复连接 resume",
   "exportStateNone": "无",
+  "homeAgentModelNotRecorded": "模型信息未记录",
   "homeAntigravitySubscription": "反重力订阅",
   "homeAntigravitySubscriptionHint": "使用已开通反重力的 Google 账号授权，请求计入该账号的模型额度。",
   "homeAntigravityBrowserSignIn": "使用 Google 登录",

@@ -1059,8 +1059,9 @@ describe("joi home single entry", () => {
       agentId: "agent-1", workbenchId: workbench.workbenchId, canDelete: true, createdAt: "2026-07-28T10:00:00.000Z", engine: "pi-core" as const,
       lastActivityAt: "2026-07-28T10:00:00.000Z", partnerId: "partner-1", partnerName: "实现者", sessionPolicy: "EPHEMERAL" as const,
       status: "COMPLETED" as const, transport: "LOCAL" as const,
+      modelSourceName: "实际使用的网络", modelId: "deepseek-chat",
     };
-    const other = { ...agent, agentId: "agent-2", partnerName: "审查者" };
+    const other = { ...agent, agentId: "agent-2", partnerName: "审查者", modelSourceName: "审查网络", modelId: "review-model" };
     const listAgents = vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent, other] });
     vi.spyOn(api, "agentConversation").mockImplementation((_workbenchId: string, agentId: string) => Promise.resolve({
       agent: agentId === "agent-2" ? other : agent,
@@ -1080,6 +1081,8 @@ describe("joi home single entry", () => {
     expect(screen.getByText("功能").tagName).toBe("STRONG");
     expect(screen.getByLabelText("这条目标的 Agent 列表")).toBeInTheDocument();
     await waitFor(() => expect(listAgents).toHaveBeenCalledWith(workbench.workbenchId, { goalId: "goal-1", limit: 100 }));
+    expect(within(screen.getByLabelText("这条目标的 Agent 列表")).getByText("实际使用的网络 · deepseek-chat")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("这条目标的 Agent 列表")).getByText("审查网络 · review-model")).toBeInTheDocument();
     expect(await screen.findByText("改造完成报告")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /审查者/u }));
@@ -1118,6 +1121,7 @@ describe("joi home single entry", () => {
 
     render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByText("跟踪分析过程"));
+    expect(await screen.findByText("模型信息未记录")).toBeInTheDocument();
     expect(await screen.findByText("这位 Agent 还没有可展示的执行消息。")).toBeInTheDocument();
     expect(await screen.findByText("正在流式整理证据", {}, { timeout: 1_400 })).toBeInTheDocument();
     expect(conversation.mock.calls.length).toBeGreaterThanOrEqual(2);
