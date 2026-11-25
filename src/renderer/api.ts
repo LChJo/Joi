@@ -24,7 +24,7 @@ import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } 
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
-import type { CodexLoginDto, CodexLoginMethod } from "../shared/joi";
+import type { AntigravityDiagnosticsDto, CodexLoginDto, CodexLoginMethod } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
 import type { UserQuestionScope, UserQuestionDto, AnswerUserQuestionInput } from "../shared/user-questions";
@@ -384,6 +384,9 @@ export class DigitalLifeApi {
   }
   cancelAntigravityLogin(attemptId: string) {
     return this.request<undefined>(`/api/v1/model-sources/antigravity-login/${encodeURIComponent(attemptId)}`, { method: "DELETE" });
+  }
+  antigravityDiagnostics(signal?: AbortSignal) {
+    return this.request<AntigravityDiagnosticsDto>("/api/v1/model-sources/antigravity-diagnostics", { ...(signal === undefined ? {} : { signal }) });
   }
   startCodexLogin(method: CodexLoginMethod, sourceId?: string) {
     return this.request<CodexLoginDto>("/api/v1/model-sources/codex-login", { method: "POST", body: { method, sourceId } });

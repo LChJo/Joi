@@ -34,6 +34,32 @@ describe("Antigravity subscription form", () => {
     expect(cancel).not.toHaveBeenCalled();
   });
 
+  it("adds a specific hint for a bounded reason code and falls back without one", async () => {
+    vi.useFakeTimers();
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "startAntigravityLogin").mockResolvedValue({
+      attemptId: "anti-login", status: "browser", acceptsCallback: true, url: "https://accounts.google.com/o/oauth2/v2/auth?state=fixture",
+    });
+    const status = vi.spyOn(api, "antigravityLoginStatus");
+    status.mockResolvedValue({ attemptId: "anti-login", status: "failed", reasonCode: "token_exchange_rejected" });
+    const view = render(<CodexSubscriptionForm provider="antigravity" api={api} onCancel={() => undefined} onConnected={() => Promise.resolve()} />);
+    try {
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "使用 Google 登录" })); });
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+      expect(screen.getByRole("status")).toHaveTextContent("Google 拒绝了授权凭据");
+      expect(screen.queryByText(/synthetic|private-/u)).toBeNull();
+      view.unmount();
+
+      const unmapped = render(<CodexSubscriptionForm provider="antigravity" api={api} onCancel={() => undefined} onConnected={() => Promise.resolve()} />);
+      status.mockResolvedValue({ attemptId: "anti-login", status: "failed", reasonCode: "totally_unmapped_code" });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "使用 Google 登录" })); });
+      await act(() => vi.advanceTimersByTimeAsync(1000));
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(screen.getByRole("alert")).toHaveTextContent("反重力登录失败");
+      unmapped.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("offers subscription sign-in on desktop and omits it from LAN setup", () => {
     const changed = () => Promise.resolve();
     const desktop = render(<ModelSourceSetup api={new DigitalLifeApi("", true)} changed={changed} />);

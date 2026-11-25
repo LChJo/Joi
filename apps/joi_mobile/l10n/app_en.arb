@@ -4022,6 +4022,109 @@
     "description": "home.antigravityReconnect",
     "placeholders": {}
   },
+  "homeAntigravityDiagnostics": "Diagnostics",
+  "@homeAntigravityDiagnostics": {
+    "description": "home.antigravityDiagnostics",
+    "placeholders": {}
+  },
+  "homeAntigravityDiagnosticsTitle": "Antigravity diagnostics",
+  "@homeAntigravityDiagnosticsTitle": {
+    "description": "home.antigravityDiagnosticsTitle",
+    "placeholders": {}
+  },
+  "homeAntigravityDiagnosticsFailed": "Antigravity diagnostics are temporarily unavailable.",
+  "@homeAntigravityDiagnosticsFailed": {
+    "description": "home.antigravityDiagnosticsFailed",
+    "placeholders": {}
+  },
+  "homeAntigravityDiagnosticsEmpty": "No sign-in attempts recorded yet.",
+  "@homeAntigravityDiagnosticsEmpty": {
+    "description": "home.antigravityDiagnosticsEmpty",
+    "placeholders": {}
+  },
+  "homeAntigravityStageOutcomeOk": "Completed",
+  "@homeAntigravityStageOutcomeOk": {
+    "description": "home.antigravityStageOutcomeOk",
+    "placeholders": {}
+  },
+  "homeAntigravityStageOutcomeFallback": "Fell back",
+  "@homeAntigravityStageOutcomeFallback": {
+    "description": "home.antigravityStageOutcomeFallback",
+    "placeholders": {}
+  },
+  "homeAntigravityStageOutcomeFailed": "Failed",
+  "@homeAntigravityStageOutcomeFailed": {
+    "description": "home.antigravityStageOutcomeFailed",
+    "placeholders": {}
+  },
+  "homeAntigravityStageOutcomeSkipped": "Skipped",
+  "@homeAntigravityStageOutcomeSkipped": {
+    "description": "home.antigravityStageOutcomeSkipped",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonTokenExchangeRejected": "Google rejected the authorization credentials. Sign in again.",
+  "@homeAntigravityReasonTokenExchangeRejected": {
+    "description": "home.antigravityReasonTokenExchangeRejected",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonCallbackInvalid": "The callback URL does not match this sign-in.",
+  "@homeAntigravityReasonCallbackInvalid": {
+    "description": "home.antigravityReasonCallbackInvalid",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonProjectDiscoveryFailed": "The Antigravity project could not be resolved. Try again later.",
+  "@homeAntigravityReasonProjectDiscoveryFailed": {
+    "description": "home.antigravityReasonProjectDiscoveryFailed",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonUserinfoUnavailable": "Account details were unavailable. Sign-in itself was not affected.",
+  "@homeAntigravityReasonUserinfoUnavailable": {
+    "description": "home.antigravityReasonUserinfoUnavailable",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonScopeMissing": "Google did not grant every required scope; some features may be limited.",
+  "@homeAntigravityReasonScopeMissing": {
+    "description": "home.antigravityReasonScopeMissing",
+    "placeholders": {}
+  },
+  "homeAntigravityReasonListenerFailed": "The local callback listener failed to start.",
+  "@homeAntigravityReasonListenerFailed": {
+    "description": "home.antigravityReasonListenerFailed",
+    "placeholders": {}
+  },
+  "homeAntigravityClientBuiltin": "Using the built-in approved application credentials",
+  "@homeAntigravityClientBuiltin": {
+    "description": "home.antigravityClientBuiltin",
+    "placeholders": {}
+  },
+  "homeAntigravityClientEnv": "Using custom OAuth credentials",
+  "@homeAntigravityClientEnv": {
+    "description": "home.antigravityClientEnv",
+    "placeholders": {}
+  },
+  "homeAntigravityRevocationsLabel": "Revocation history",
+  "@homeAntigravityRevocationsLabel": {
+    "description": "home.antigravityRevocationsLabel",
+    "placeholders": {}
+  },
+  "homeAntigravityScopesLabel": "Granted scopes: {p0}",
+  "@homeAntigravityScopesLabel": {
+    "description": "home.antigravityScopesLabel",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "homeAntigravityMissingScopesLabel": "Missing scopes: {p0}",
+  "@homeAntigravityMissingScopesLabel": {
+    "description": "home.antigravityMissingScopesLabel",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
   "homeCodexSubscription": "Codex subscription",
   "@homeCodexSubscription": {
     "description": "home.codexSubscription",

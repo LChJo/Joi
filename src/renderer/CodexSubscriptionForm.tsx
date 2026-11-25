@@ -3,7 +3,20 @@ import { CODEX_AUTHORIZATION_WINDOW, isCodexAuthorizationUrl } from "../shared/c
 import { ANTIGRAVITY_AUTHORIZATION_WINDOW, isAntigravityAuthorizationUrl } from "../shared/antigravity-authorization";
 import type { CodexLoginDto, CodexLoginMethod } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
+import type { MessageKey } from "../shared/i18n/index.js";
 import { t, useI18n } from "./i18n";
+
+/** Bounded failure hints for antigravity sign-in; unmapped codes fall back to the generic text. */
+const ANTIGRAVITY_FAILURE_HINTS: Partial<Record<string, MessageKey>> = {
+  token_exchange_rejected: "home.antigravityReasonTokenExchangeRejected",
+  callback_invalid: "home.antigravityReasonCallbackInvalid",
+  project_discovery_http: "home.antigravityReasonProjectDiscoveryFailed",
+  project_response_invalid: "home.antigravityReasonProjectDiscoveryFailed",
+  connection_failed: "home.antigravityReasonProjectDiscoveryFailed",
+  userinfo_unavailable: "home.antigravityReasonUserinfoUnavailable",
+  scope_missing: "home.antigravityReasonScopeMissing",
+  listener_failed: "home.antigravityReasonListenerFailed",
+};
 
 export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected, provider = "codex" }: {
   api: DigitalLifeApi;
@@ -114,6 +127,8 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected, pr
 
   const authorizationUrl = (attempt?.status === "browser" || attempt?.status === "device_code")
     && (antigravity ? isAntigravityAuthorizationUrl(attempt.url) : isCodexAuthorizationUrl(attempt.url, attempt.status)) ? attempt.url : undefined;
+  const failureHint = attempt?.status === "failed" && antigravity
+    ? ANTIGRAVITY_FAILURE_HINTS[attempt.reasonCode ?? ""] : undefined;
   return <section className="model-source-form" aria-label={t(antigravity ? "home.antigravitySubscription" : "home.codexSubscription")}>
     <h2>{t(antigravity ? "home.antigravitySubscription" : "home.codexSubscription")}</h2>
     {!waiting && attempt?.status !== "completed" ? <>
@@ -134,6 +149,7 @@ export function CodexSubscriptionForm({ api, sourceId, onCancel, onConnected, pr
     {waiting ? <p role="status">{t(attempt.status === "validating" ? "home.checkingTheConnectionThisMayIncurASmallModel" : (antigravity ? "home.antigravityWaitingForAuthorization" : "home.codexWaitingForAuthorization"))}</p> : null}
     {attempt?.status === "completed" ? <p role="status">{t(attempt.source.status === "READY" ? "home.connectedJoiIsReadyToThink" : (antigravity ? "home.antigravitySavedNeedsValidation" : "home.codexSavedNeedsValidation"))}</p> : null}
     {attempt?.status === "failed" || attempt?.status === "expired" ? <p role="alert">{t(attempt.status === "failed" ? (antigravity ? "home.antigravityLoginFailed" : "home.codexLoginFailed") : (antigravity ? "home.antigravityLoginExpired" : "home.codexLoginExpired"))}</p> : null}
+    {failureHint === undefined ? null : <p role="status">{t(failureHint)}</p>}
     {error === undefined ? null : <p role="alert">{error}</p>}
     {statusError ? <p role="alert">{t(antigravity ? "home.antigravityStatusFailed" : "home.codexStatusFailed")}</p> : null}
     {attempt?.status === "validating" ? null : <div className="row-actions"><button className="button ghost" onClick={onCancel} type="button">{t(attempt?.status === "completed" ? "home.collapse" : "common.cancel")}</button></div>}
