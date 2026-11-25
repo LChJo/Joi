@@ -101,7 +101,7 @@ describe("requirements dispatch and start gates", () => {
     } finally { await fixture.close(); }
   });
 
-  it.each(["complete", "fail", "no-disposition"] as const)("retires a routed synthesis superseded by new results when its turn ends with %s", async ending => {
+  it.each(["complete", "fail", "no-disposition", "preflight"] as const)("retires a routed synthesis superseded by new results when its turn ends with %s", async ending => {
     const fixture = await createRuntimeFixture();
     try {
       const ctx = await setup(fixture);
@@ -116,7 +116,10 @@ describe("requirements dispatch and start gates", () => {
         return enqueueGoalResultSynthesis(db, "goal", ctx.wb.workbenchId, fixture.clock.now().toISOString());
       });
       if (second === null) throw new Error("fixture replacement synthesis missing");
-      if (ending === "fail") await ctx.inbox.failTurn(first, "synthesis-old");
+      if (ending === "preflight") {
+        await expect(ctx.inbox.deferObsoleteSynthesis(first, "synthesis-old")).resolves.toBe(true);
+        expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_turns WHERE turn_id = 'synthesis-old'").get())?.status).toBe("ABORTED");
+      } else if (ending === "fail") await ctx.inbox.failTurn(first, "synthesis-old");
       else await ctx.inbox.completeInput(first, "synthesis-old", ending === "no-disposition" ? undefined
         : { outcome: "RESULT_SYNTHESIZED", completionSummary: "Outdated answer", committedByTool: true });
       expect(fixture.database.transaction(db => db.prepare("SELECT status FROM joi_inbox_messages WHERE input_id = ?").get(first))?.status).toBe("CONSUMED");

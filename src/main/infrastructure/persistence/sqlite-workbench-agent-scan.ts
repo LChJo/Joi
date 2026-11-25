@@ -7,6 +7,7 @@ import type {
   WorkbenchPartnerKey,
   WorkbenchUnsynthesizedResult,
 } from "../../application/ports/workbench-agent-scan.js";
+import { UNSYNTHESIZED_PARTNER_RESULT_SQL } from "./sqlite-joi-runnable.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -60,9 +61,7 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
         JOIN work_items w ON w.work_id = r.work_id
         JOIN partner_runs pr ON pr.run_id = r.run_id
         JOIN partner_revisions rev ON rev.partner_revision_id = pr.partner_revision_id
-       WHERE r.workbench_id = ? AND r.is_authoritative = 1 AND r.is_late = 0
-         AND r.status IN ('COMPLETED', 'FAILED', 'UNKNOWN')
-         AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members m WHERE m.event_id = e.event_id)
+       WHERE r.workbench_id = ? AND ${UNSYNTHESIZED_PARTNER_RESULT_SQL}
          AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates g
                           WHERE g.goal_input_id = w.input_id AND g.status <> 'OPEN')
        ORDER BY r.created_at, r.result_id LIMIT 50`).all(workbenchId)) as Row[])

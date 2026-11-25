@@ -575,6 +575,7 @@ export type LocalExecutionPhaseDto = "READ_QUEUED" | "READ_RUNNING" | "WRITE_QUE
 export type ExecutionWaitReasonDto = "CAPACITY" | "WORKSPACE_READ" | "WORKSPACE_WRITE";
 
 export interface WorkbenchAgentCardDto {
+  questionContinuation?: "QUEUED" | "CONTINUED";
   /** A retained deliverable whose acceptance could not be established; execution status is unchanged. */
   resultAssessment?: "INSUFFICIENT";
   executionPhase?: LocalExecutionPhaseDto;

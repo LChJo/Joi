@@ -401,7 +401,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       await this.#touchDevice(value.deviceId);
     }
     await this.#send(session.connectionId, {
-      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1", "conversations.v1", "questions.v1", "goal.map.v1", "conversation.fork.v1"],
+      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1", "goal.results.v1", "conversations.v1", "questions.v1", "goal.map.v1", "conversation.fork.v1", "goal.continuation.instructions.v1"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),

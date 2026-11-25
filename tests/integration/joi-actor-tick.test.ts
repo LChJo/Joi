@@ -27,6 +27,7 @@ function makeDatabase(): DatabaseSync {
       workbench_id TEXT,
       goal_input_id TEXT,
       result_revision INTEGER,
+      requirements_revision INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       canceled_at TEXT,
@@ -62,8 +63,14 @@ function makeDatabase(): DatabaseSync {
       question_id TEXT NOT NULL,
       question_version INTEGER NOT NULL,
       status TEXT NOT NULL,
-      resume_input_id TEXT
+      resume_input_id TEXT,
+      answered_at TEXT
     );
+    CREATE TABLE joi_goal_result_sets (original_input_id TEXT PRIMARY KEY, revision INTEGER, synthetic_input_id TEXT);
+    CREATE TABLE joi_goal_requirements (goal_input_id TEXT PRIMARY KEY, revision INTEGER);
+    CREATE TABLE partner_result_events (work_id TEXT, run_id TEXT, status TEXT, event_id TEXT PRIMARY KEY);
+    CREATE TABLE work_results (run_id TEXT, status TEXT, is_authoritative INTEGER, is_late INTEGER);
+    CREATE TABLE joi_goal_result_members (event_id TEXT PRIMARY KEY);
     CREATE TABLE work_items (
       work_id TEXT PRIMARY KEY,
       workbench_id TEXT,

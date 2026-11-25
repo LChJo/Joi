@@ -4,6 +4,7 @@ import {
 } from "../../ports/runtime-diagnostics.js";
 import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime.js";
 import type { JoiTaskInbox, JoiTaskPendingInput, JoiTurnDriver, ModelSourceGate } from "../../ports/joi-task.js";
+import { GOAL_SYNTHESIS_YIELD } from "../../ports/joi-task.js";
 import { isSynthesisOutputFailure, isTerminalTurnFailure, JOI_TURN_FAILURE_LIMIT, JOI_TURN_RETRY_BASE_MILLIS, JOI_TURN_RETRY_MAX_MILLIS } from "../../../domain/work/joi-turn-recovery.js";
 
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
@@ -104,7 +105,7 @@ export class JoiTaskComponent implements ActorComponent {
         durationMs: Math.max(0, ctx.now.getTime() - turn.startedAt),
         inputId: turn.inputId,
       });
-    } else if (outcome === "failed") {
+    } else if (outcome === "failed" && turn.abortController.signal.reason !== GOAL_SYNTHESIS_YIELD) {
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.input.scheduler_failed", {
         errorCode: errorCode ?? "joi_task_turn_failed",
         inputId: turn.inputId,
@@ -165,17 +166,26 @@ export class JoiTaskComponent implements ActorComponent {
   }
 
   async #startPending(ctx: ActorTickContext): Promise<void> {
+    const pending = await this.dependencies.inbox.listPendingInputs();
+    const resumingGoals = new Set(pending.filter(candidate => candidate.goalResume && candidate.goalInputId !== undefined)
+      .map(candidate => candidate.goalInputId));
     const activeGoals = new Set<string>();
     let ordinaryRunning = false;
     let synthesisCount = 0;
     for (const turn of this.#inFlight.values()) {
       activeGoals.add(turn.goalInputId);
-      if (turn.synthesis) synthesisCount += 1;
-      else ordinaryRunning = true;
+      if (turn.synthesis) {
+        synthesisCount += 1;
+        if (!turn.cancelRequested && turn.settled === undefined && resumingGoals.has(turn.goalInputId)
+          && await this.dependencies.inbox.canYieldSynthesis?.(turn.inputId)) {
+          turn.cancelRequested = true;
+          turn.abortController.abort(GOAL_SYNTHESIS_YIELD);
+          emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_cancel_requested", { inputId: turn.inputId, reason: "goal_answer" });
+        }
+      } else ordinaryRunning = true;
     }
     if (ordinaryRunning && synthesisCount >= MAX_CONCURRENT_SYNTHESES) return;
 
-    const pending = await this.dependencies.inbox.listPendingInputs();
     const now = ctx.now.getTime();
     // Cooldowns belong to the queued attempt; explicit continuation starts a fresh retry epoch.
     const queued = new Set(pending.map((candidate) => candidate.inputId));
@@ -220,6 +230,7 @@ export class JoiTaskComponent implements ActorComponent {
       const until = this.#backoffUntil.get(candidate.inputId);
       if (until !== undefined && until > now) continue;
       const synthesis = candidate.synthesis === true;
+      if (synthesis && resumingGoals.has(goalInputId)) continue;
       if (synthesis ? synthesisCount >= MAX_CONCURRENT_SYNTHESES : ordinaryRunning) continue;
       if (candidate.inputId.startsWith("evolution:") && this.#inFlight.size > 0) continue;
       if (candidate.requiresModelSource !== false && !(ready ??= await this.dependencies.gate.hasReadySource())) continue;
@@ -239,8 +250,8 @@ export class JoiTaskComponent implements ActorComponent {
     this.#inFlight.set(inputId, turn);
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_started", { inputId });
     void this.dependencies.driver.handle(inputId, abortController.signal).then(() => {
-      turn.settled = abortController.signal.aborted ? "failed" : "ok";
-      if (abortController.signal.aborted) turn.errorCode = "joi_task_turn_canceled";
+      turn.settled = abortController.signal.aborted && abortController.signal.reason !== GOAL_SYNTHESIS_YIELD ? "failed" : "ok";
+      if (turn.settled === "failed") turn.errorCode = "joi_task_turn_canceled";
     }).catch((error: unknown) => {
       turn.settled = "failed";
       turn.errorCode = runtimeDiagnosticErrorCode(error);

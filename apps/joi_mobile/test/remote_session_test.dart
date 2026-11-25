@@ -49,6 +49,7 @@ class Peer implements NativeTransport {
   bool history = true;
   bool conversations = true;
   bool questions = true;
+  bool continuationInstructions = false;
   Object? conversationResult;
   bool failSend = false;
   bool failFeed = false;
@@ -146,6 +147,7 @@ class Peer implements NativeTransport {
                 if (history) 'goal.results.v1',
                 if (conversations) 'conversations.v1',
                 if (questions) 'questions.v1',
+                if (continuationInstructions) 'goal.continuation.instructions.v1',
               ],
           },
         ),
@@ -884,6 +886,54 @@ void main() {
       expect(controller.state.notice, isNotNull);
       controller.dispose();
       await peer.bus.close();
+    },
+  );
+  test(
+    'negotiates sending instructions with a versioned goal continuation',
+    () async {
+      for (final supported in [false, true]) {
+        final peer = Peer()..continuationInstructions = supported;
+        final controller = NativeRemoteController(
+          credentials: MemoryCredentials(),
+          transport: peer,
+        );
+        try {
+          await controller.initialize();
+          await settleUntil(() => controller.state.workbenches.isNotEmpty);
+          final action = controller.act(
+            'goal',
+            'clarify',
+            text: '  只补本轮漏项  ',
+            actionChoice: 'CONTINUE',
+            questionId: 'q-2',
+            questionVersion: 2,
+          );
+          final commands = peer.commands.where(
+            (command) => command['kind'] == 'message.clarify',
+          );
+          if (supported) {
+            await action;
+            expect(commands.single, containsPair('text', '只补本轮漏项'));
+            expect(commands.single, containsPair('inputId', 'goal'));
+            expect(commands.single, containsPair('actionChoice', 'CONTINUE'));
+            expect(commands.single, containsPair('questionId', 'q-2'));
+            expect(commands.single, containsPair('questionVersion', 2));
+          } else {
+            await expectLater(
+              action,
+              throwsA(isA<StateError>().having(
+                (error) => error.message,
+                'message',
+                'remote_upgrade_required',
+              )),
+            );
+            expect(commands, isEmpty);
+          }
+        } finally {
+          controller.dispose();
+          await peer.bus.close();
+        }
+      }
     },
   );
   test(

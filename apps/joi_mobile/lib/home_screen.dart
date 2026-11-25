@@ -72,7 +72,12 @@ String executionStatusLabel({
   String? resultAssessment,
   String? executionPhase,
   String? waitReason,
+  String? questionContinuation,
 }) {
+  if (questionContinuation == 'QUEUED') {
+    return tr(Msg.homeQuestionContinuationQueued);
+  }
+  if (questionContinuation == 'CONTINUED') return tr(Msg.homeQuestionContinued);
   if (status == 'FAILED' && resultAssessment == 'INSUFFICIENT') {
     return tr(Msg.homeInsufficient);
   }

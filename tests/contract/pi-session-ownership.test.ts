@@ -31,6 +31,41 @@ function partnerRuntime(providerName: string, nativeSessions?: PiNativeSessionSt
 }
 import { createJoiPiSession } from "../../src/main/infrastructure/pi/joi-pi-session.js";
 
+it.each(["legacy released", "managed released", "managed reused", "missing checkpoint"] as const)("resumes a Pi question from saved Work state (%s)", async mode => {
+  const root = await mkdtemp(path.join(tmpdir(), "joi-pi-work-question-"));
+  const store = new PiNativeSessionStore(root);
+  const { faux, runtime } = partnerRuntime("work-question-checkpoint", store);
+  const context = { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] };
+  try {
+    faux.setResponses([
+      fauxAssistantMessage([fauxText("PREVIOUS_PROGRESS_SENTINEL"), fauxToolCall("ask_user", { question: "Which option?" })], { stopReason: "toolUse" }),
+    ]);
+    const previousInstanceId = "question-instance";
+    if (mode !== "missing checkpoint") {
+      const paused = await runtime.runEphemeral(request, revision, {
+        ...context, ...(mode === "legacy released" ? {} : { workInstanceId: previousInstanceId }),
+      });
+      expect(paused.status).toBe("WAITING_INPUT");
+    }
+    const seen: string[] = [];
+    faux.setResponses([call => {
+      seen.push(JSON.stringify(call.messages));
+      return fauxAssistantMessage([fauxText("Continued from the saved state.")]);
+    }]);
+    const resumed = await runtime.runResidentTurn({ ...context, revision,
+      instanceId: mode === "managed reused" ? previousInstanceId : "replacement-instance", restoredMessages: null,
+      request: { ...request, actionId: "resume-action", taskProjection: "Complete the remaining work.", questionContinuation: {
+        origin: { actionId: request.actionId, instanceId: previousInstanceId },
+        context: "The confirmed answer is SELECTED_OPTION_SENTINEL." +
+          (mode === "missing checkpoint" ? " Continue from the saved result PREVIOUS_PROGRESS_SENTINEL." : ""),
+      } } });
+    expect(resumed.status).toBe("COMPLETED");
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.includes("PREVIOUS_PROGRESS_SENTINEL")).toBe(true);
+    expect(seen[0]?.includes("SELECTED_OPTION_SENTINEL")).toBe(true);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 it("PI-SESSION-04 retains official tool prompt metadata in SDK registration with the selected system prompt", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "joi-pi-tool-prompt-"));
   const faux = fauxProvider({ provider: "sdk-tool-prompt-metadata" }), models = createModels();
@@ -142,6 +177,74 @@ it("PI-SESSION-02 delegates automatic compaction to the SDK by default", async (
   } finally { session.dispose(); }
 });
 
+it("HIST-05 lowers the output allowance to send an input that fits the model window", async () => {
+  const faux = fauxProvider({ provider: "capacity-output-fit", models: [{ id: "m", contextWindow: 12_000, maxTokens: 8_000 }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const input = "content ".repeat(3_000) + "CURRENT_REQUEST";
+  const requests: { content: unknown; maxTokens: number | undefined }[] = [];
+  faux.setResponses([(context, options) => {
+    requests.push({ content: context.messages.findLast(message => message.role === "user")?.content, maxTokens: options?.maxTokens });
+    return fauxAssistantMessage("Delivered");
+  }]);
+  const session = await createJoiPiSession({ state: { model: faux.getModel(), systemPrompt: "Policy", thinkingLevel: "off", tools: [], messages: [] } }, models, process.cwd(), {
+    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+  });
+  try {
+    await session.prompt(input, { expandPromptTemplates: false });
+    await session.waitForIdle();
+    expect(requests).toHaveLength(1);
+    expect(JSON.stringify(requests[0]?.content)).toContain(input);
+    expect(requests[0]?.maxTokens).toBeGreaterThan(1_000);
+    expect(requests[0]?.maxTokens).toBeLessThan(4_000);
+    expect(session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop", content: [fauxText("Delivered")] });
+  } finally { session.dispose(); }
+});
+
+it("PI-SESSION-02/HIST-05 recovers from local overflow without replaying a completed tool", async () => {
+  const faux = fauxProvider({ provider: "capacity-tool-recovery", models: [{ id: "m", contextWindow: 32_000, maxTokens: 4_096 }] });
+  const models = createModels();
+  models.setProvider(faux.provider);
+  const manager = SessionManager.inMemory();
+  manager.appendMessage({ role: "user", content: "OLD_HISTORY " + "background ".repeat(7_000), timestamp: 1 });
+  manager.appendMessage(fauxAssistantMessage("Earlier result", { timestamp: 2 }));
+  const receipt = "WRITE_RECEIPT " + "details ".repeat(3_000);
+  const execute = vi.fn(() => Promise.resolve({ content: [fauxText(receipt)], details: {} }));
+  faux.setResponses([
+    fauxAssistantMessage([fauxToolCall("write", {}, { id: "write-once" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage("Summary of the earlier result."),
+    fauxAssistantMessage("Checkpoint for the current task."),
+    context => {
+      const toolResult = context.messages.findLast(message => message.role === "toolResult");
+      expect(toolResult).toMatchObject({ toolCallId: "write-once", content: [fauxText(receipt)] });
+      expect(JSON.stringify(context.messages)).not.toContain("OLD_HISTORY");
+      return fauxAssistantMessage("Delivered after compaction");
+    },
+  ]);
+  const tools = [{ name: "write", label: "Write", description: "Write the result once.", parameters: Type.Object({}), execute }];
+  const session = await createJoiPiSession({ state: { model: faux.getModel(), systemPrompt: "Policy", thinkingLevel: "off", tools, messages: [] } }, models, process.cwd(), {
+    sessionManager: manager,
+    settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { keepRecentTokens: 2_000, reserveTokens: 4_096 } }),
+  });
+  try {
+    await session.prompt("Write the result", { expandPromptTemplates: false });
+    await session.waitForIdle();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(session.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop", content: [fauxText("Delivered after compaction")] });
+    expect(manager.getEntries().filter(entry => entry.type === "compaction")).toHaveLength(1);
+  } finally { session.dispose(); }
+});
+
+it("HIST-05 reports an unrecoverable local overflow through the primary reasoning entry point", async () => {
+  const { faux, models } = partnerRuntime("primary-local-overflow", undefined, {}, { contextWindow: 16_000, maxTokens: 4_096 });
+  const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, thinkingLevel: "off", tools: [],
+    sessionStore: { load: () => Promise.resolve(null), save: () => Promise.resolve() } });
+  await expect(runtime.startTurn({ workbenchId: "wb", sessionId: "primary", modelRevisionId: "mr", sourceRevisionId: "sr",
+    sourceId: "s", modelId: "m", systemPrompt: "Policy", inputId: "i", turnId: "turn", prompt: "Synthetic input ".repeat(4_000),
+  })).rejects.toMatchObject({ code: "model_context_budget_exhausted" });
+  expect(faux.state.callCount).toBe(0);
+});
+
 it("HIST-05 keeps both oversized compaction and its ordinary fallback off the provider", async () => {
   const faux = fauxProvider({ provider: "historic-capacity", models: [{ id: "m", contextWindow: 1_000_000, maxTokens: 16_384 }] });
   const models = createModels();
@@ -163,10 +266,10 @@ it("HIST-05 keeps both oversized compaction and its ordinary fallback off the pr
     await session.prompt("Review current requirements", { expandPromptTemplates: false });
     await session.waitForIdle();
     expect(faux.state.callCount).toBe(0);
-    const last = session.messages.at(-1);
-    if (last?.role !== "assistant") throw new Error("Missing assistant failure");
-    expect(last.stopReason).toBe("error");
-    expect(last.errorMessage).toContain("model_context_budget_exhausted");
+    const last = manager.getEntries().flatMap(entry => entry.type === "message" ? [entry.message] : [])
+      .findLast(message => message.role === "assistant");
+    expect(last?.stopReason).toBe("error");
+    expect(last?.errorMessage).toContain("model_context_budget_exhausted");
   } finally { session.dispose(); }
 });
 

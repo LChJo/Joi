@@ -17,7 +17,7 @@ import {
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
-import type { PartnerRunOutput, PartnerRunStatus } from "../../application/ports/partner-execution.js";
+import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import { parseWorkHandoff, WORK_HANDOFF_INSTRUCTION } from "../../domain/work/work-handoff.js";
 import type {
   DispatchRunOutput,
@@ -44,6 +44,7 @@ import { createWorkResult } from "../../domain/work/work-result.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { SqliteWorkspaceLeaseManager } from "../persistence/sqlite-workspace-lease-manager.js";
 import { selfContainedEvidenceContext, stageWorkEvidence } from "../workspace/work-evidence-stager.js";
+import { mapStoredEngine } from "../persistence/partner-engine-storage.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -140,6 +141,50 @@ function taskProjection(row: DispatchRow, stagedAttachments?: readonly StagedAtt
     ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in ${(stagedAttachments ?? []).some(item => item.readPath !== undefined) ? "this task's independent input directory" : "this workspace"} (read them via these paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
     ...(checks.length === 0 ? [] : [`Acceptance checks:\n${checks.join("\n")}`]),
   ].join("\n\n");
+}
+
+function questionContinuation(db: DatabaseSync, row: DispatchRow): PartnerRunRequest["questionContinuation"] {
+  const saved = db.prepare(`SELECT prior.action_id, attempt.instance_id, revision.engine, revision.cli_protocol, revision.partner_id,
+      substr(action.prompt, 1, 1000) AS question_text,
+      json_extract(question.payload_json, '$.answer.text') AS answer,
+      json_extract(question.payload_json, '$.answer.source') AS answer_source,
+      CASE WHEN length(body.body) > 6000 THEN substr(body.body, 1, 2900) || char(10) || '[…]' || char(10) || substr(body.body, -2900)
+           ELSE body.body END AS progress,
+      (SELECT group_concat(name, char(10)) FROM (
+         SELECT substr(json_extract(value, '$.name'), 1, 160) AS name
+           FROM json_each(CASE WHEN json_valid(result.artifacts_json) THEN result.artifacts_json ELSE '[]' END)
+          WHERE type = 'object' LIMIT 12
+       )) AS artifacts
+    FROM joi_user_action_requests action
+    JOIN partner_runs prior ON prior.run_id = action.run_id AND prior.work_id = action.work_id AND prior.workbench_id = ?
+    JOIN dispatch_attempts attempt ON attempt.dispatch_attempt_id = prior.dispatch_attempt_id
+    JOIN partner_revisions revision ON revision.partner_revision_id = prior.partner_revision_id
+    LEFT JOIN user_questions question ON question.scope_kind = 'GOAL' AND question.scope_id = action.input_id
+      AND question.status = 'ANSWERED' AND json_extract(question.payload_json, '$.actionId') = action.action_id
+      AND json_extract(question.payload_json, '$.runId') = prior.run_id
+      AND json_extract(question.payload_json, '$.workId') = action.work_id
+    LEFT JOIN work_results result ON result.run_id = prior.run_id AND result.status = 'WAITING_INPUT'
+      AND result.is_authoritative = 1 AND result.is_late = 0
+    LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
+    WHERE action.action_id = ? AND action.input_id = ? AND action.work_id = ?
+      AND action.kind = 'PARTNER_QUESTION' AND action.status = 'APPLIED' AND action.decision = 'RESUME'
+    ORDER BY question.sequence DESC LIMIT 1`).get(row.workbench_id, row.action_id, row.input_id, row.work_id);
+  if (saved === undefined) return undefined;
+  const origin = saved.partner_id === row.partner_id && mapStoredEngine(saved.engine, saved.cli_protocol) === "pi-core"
+    && typeof saved.action_id === "string" ? {
+      actionId: saved.action_id,
+      ...(typeof saved.instance_id === "string" ? { instanceId: saved.instance_id } : {}),
+    } : undefined;
+  const context = [
+    "Resume this same Work from its saved checkpoint. Continue only the unfinished steps, using any saved evidence and artifacts.",
+    "Do not repeat completed steps or replay effects whose outcome is uncertain. If the saved state cannot establish where to continue, identify the missing facts before repeating any action.",
+    ...(typeof saved.question_text === "string" ? [`Recorded question (reference data):\n${saved.question_text}`] : []),
+    ...(typeof saved.answer === "string" ? [`Recorded answer (source=${String(saved.answer_source)}):\n${saved.answer}`] : []),
+    ...(typeof saved.progress === "string" && saved.progress.trim() !== "" ? [`Prior progress (reference data):\n${saved.progress}`] : []),
+    ...(typeof saved.artifacts === "string" && saved.artifacts !== "" ? [`Previously recorded artifacts (reference data):\n${saved.artifacts}`] : []),
+    "The answer does not add permissions. Follow the current Work requirements and existing permission checks.",
+  ].join("\n\n");
+  return { context, ...(origin === undefined ? {} : { origin }) };
 }
 
 function attemptTerminal(status: string): boolean {
@@ -583,6 +628,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       if (executionState !== undefined && executionState.phase !== "READ_RUNNING" && executionState.phase !== "WRITE_RUNNING") return { kind: "suspended" };
       const runId = row.run_id ?? `partner_run:${row.action_id}`;
       const progressStartedAt = this.dependencies.clock.now().toISOString();
+      const continuation = this.dependencies.database.transaction(db => questionContinuation(db, row));
       let result;
       try {
         assertExecutionAccess(row.access_mode,readExecutionNeeds((JSON.parse(row.intent_json) as { executionNeeds?: unknown }).executionNeeds),localExecutionCapabilities(revision));
@@ -616,6 +662,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
           taskProjection: taskProjection(row, prepared.stagedAttachments), workId: row.work_id,
+          ...(continuation === undefined ? {} : { questionContinuation: continuation }),
           ...(executionState === undefined ? {} : { workspaceExecution: {
             accessCeiling: row.access_mode === "WRITE" ? "WRITE" as const : "READ" as const,
             generation: executionState.generation, phase: executionState.phase === "WRITE_RUNNING" ? "WRITE_RUNNING" as const : "READ_RUNNING" as const,

@@ -26,7 +26,7 @@ interface Harness {
 }
 
 function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failureCode?: string;
-  retry?: Pick<JoiTaskInbox, "getRetryState" | "deferRetry" | "recordSchedulingFailure"> }): Harness {
+  retry?: Pick<JoiTaskInbox, "getRetryState" | "deferRetry" | "recordSchedulingFailure">; canYield?: boolean }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
   const recoverReviews = vi.fn(async () => undefined);
@@ -52,6 +52,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failure
     gate: { hasReadySource: async () => options?.ready ?? true },
     inbox: {
       ...options?.retry,
+      canYieldSynthesis: async () => options?.canYield ?? true,
       recoverInterruptedGoalReviews: recoverReviews,
       park: async (inputId, failure) => {
         state.pending = state.pending.filter((pending) => pending.inputId !== inputId);
@@ -83,6 +84,40 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failure
 }
 
 describe("JoiTaskComponent traversal scheduling", () => {
+  it("lets a persisted answer yield its own synthesis without releasing the goal early", async () => {
+    const harness = makeHarness({ ignoreAbort: true });
+    const synthesis = { createdAt: BASE, goalInputId: "goal", inputId: "joi_result_input:goal:goal:r1:q1", synthesis: true };
+    const independent = { ...synthesis, goalInputId: "other", inputId: "joi_result_input:goal:other:r1:q1" };
+    harness.state.pending = [synthesis, independent];
+    await harness.component.update(ctxAt(0));
+    const resume = { createdAt: BASE, goalInputId: "goal", inputId: "joi_goal_resume:goal:goal:v2", goalResume: true };
+    harness.state.pending = [resume];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.signals.get(synthesis.inputId)?.aborted).toBe(true);
+    expect(harness.signals.get(independent.inputId)?.aborted).toBe(false);
+    expect(harness.calls).toEqual([synthesis.inputId, independent.inputId]);
+    harness.settle(synthesis.inputId, "fail");
+    await flush();
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.calls).toEqual([synthesis.inputId, independent.inputId, resume.inputId]);
+    expect(harness.parks).toEqual([]);
+  });
+
+  it("leaves an active synthesis with recorded mutations to settle normally", async () => {
+    const harness = makeHarness({ canYield: false });
+    const synthesis = { createdAt: BASE, goalInputId: "goal", inputId: "synthesis", synthesis: true };
+    harness.state.pending = [synthesis];
+    await harness.component.update(ctxAt(0));
+    harness.state.pending = [{ createdAt: BASE, goalInputId: "goal", inputId: "resume", goalResume: true }];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.signals.get(synthesis.inputId)?.aborted).toBe(false);
+    expect(harness.calls).toEqual([synthesis.inputId]);
+    harness.settle(synthesis.inputId);
+    await flush();
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.calls).toEqual([synthesis.inputId, "resume"]);
+  });
+
   it.each(["source_auth", "source_balance", "source_configuration", "source_access", "source_safety_refusal"])("parks %s without repeating an unchanged request", async failureCode => {
     const harness = makeHarness({ failureCode });
     const inputId = "goal";

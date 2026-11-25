@@ -30,6 +30,7 @@ import { settleInterruptedJoiPlanning } from "./sqlite-joi-planning-failure.js";
 import { nextGoalReopenTime } from "./sqlite-goal-reopen-time.js";
 import { enqueueUserQuestionInTransaction, answerUserQuestionInTransaction, listUserQuestionsInTransaction, activateUserQuestionInTransaction } from "./sqlite-user-question-store.js";
 import { normalizeUserQuestion } from "../../application/joi/user-question-service.js";
+import { GOAL_SYNTHESIS_WAITING_FOR_RESULTS_SQL, STALE_GOAL_SYNTHESIS_SQL } from "./sqlite-joi-runnable.js";
 import type { UserQuestionRecord } from "../../application/ports/user-questions.js";
 import type { UserQuestionAnswer, UserQuestionPrompt } from "../../../shared/user-questions.js";
 
@@ -41,6 +42,31 @@ type Row = Record<string, unknown>;
 
 function goalQuestions(connection: DatabaseSync, goalId: string): UserQuestionRecord[] {
   return listUserQuestionsInTransaction(connection, { kind: "GOAL", id: goalId });
+}
+
+function focusedPartnerQuestionReview(connection: DatabaseSync, goalId: string, inputId: string): JoiPendingInput["partnerQuestionReview"] {
+  const row = connection.prepare(`SELECT gate.question_id, action.action_id, action.work_id
+    FROM joi_goal_execution_gates gate
+    JOIN user_questions q ON q.question_id = gate.question_id AND q.version = gate.question_version
+      AND q.scope_kind = 'GOAL' AND q.scope_id = gate.goal_input_id AND q.status = 'ANSWERED' AND q.delivery = 'DELIVERED'
+    JOIN joi_user_action_requests action ON action.action_id = json_extract(q.payload_json, '$.actionId')
+      AND action.input_id = gate.goal_input_id AND action.kind = 'PARTNER_QUESTION'
+      AND action.status = 'RESOLVED' AND action.decision = 'RESUME'
+    JOIN partner_runs run ON run.run_id = action.run_id AND run.work_id = action.work_id
+      AND run.kind = 'LOCAL_PI' AND run.status = 'WAITING_INPUT'
+    JOIN work_items w ON w.work_id = action.work_id AND w.input_id = gate.goal_input_id AND w.status = 'WAITING'
+    WHERE gate.goal_input_id = ? AND gate.resume_input_id = ? AND gate.status = 'REVIEWING'
+      AND NOT EXISTS (SELECT 1 FROM work_items other WHERE other.input_id = gate.goal_input_id AND other.work_id <> w.work_id
+        AND other.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+      AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests other WHERE other.input_id = gate.goal_input_id
+        AND other.action_id <> action.action_id AND other.status IN ('OPEN', 'RESOLVED'))`).get(goalId, inputId);
+  if (typeof row?.action_id !== "string" || typeof row.work_id !== "string") return undefined;
+  const question = goalQuestions(connection, goalId).find(item => item.questionId === row.question_id);
+  const answer = question?.answer;
+  if (question === undefined || answer === undefined || answer.selectedOptionIds.length === 0 || answer.source === "TIMEOUT_DEFAULT") return undefined;
+  const labels = question.options.filter(option => answer.selectedOptionIds.includes(option.id)).map(option => option.label);
+  if (labels.length !== answer.selectedOptionIds.length || labels.join("；") !== answer.text) return undefined;
+  return { actionId: row.action_id, workId: row.work_id };
 }
 
 function retireGoalQuestions(connection: DatabaseSync, goalId: string, status: "CANCELED" | "SUPERSEDED"): void {
@@ -812,6 +838,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       return own;
     });
     const goalId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
+    const partnerQuestionReview = inputId.startsWith("joi_goal_resume:goal:")
+      ? this.database.transaction(connection => focusedPartnerQuestionReview(connection, goalId, inputId)) : undefined;
     const reviewRevision = harnessReviewResultRevision(inputId,goalId);
     const isSynthesis = reviewRevision === undefined && typeof row.goal_input_id === "string" && typeof row.result_revision === "number";
     const reviewBody = reviewRevision === undefined ? undefined : this.database.transaction(db => {
@@ -854,6 +882,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           ? { continuationPrompt: "Continue from the established results and complete the remaining work for this goal." } : {}),
       ...(typeof row.goal_input_id === "string" ? { goalInputId: row.goal_input_id } : {}),
       inputId: row.input_id,
+      ...(partnerQuestionReview === undefined ? {} : { partnerQuestionReview }),
       ...(isSynthesis && typeof row.result_revision === "number" ? { resultRevision: row.result_revision } : {}),
       ...(typeof row.resolved_action_id === "string" && typeof row.resolved_work_id === "string" && row.resolved_decision === "RESUME" ? {
         resolvedAction: { actionId: row.resolved_action_id, decision: "RESUME" as const, workId: row.resolved_work_id },
@@ -1093,6 +1122,24 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         resultRevision: input.result_revision, requirementsRevision: Number(input.requirements_revision ?? 0),
         requireCoverage: completing === true,
         ...(draft === undefined ? {} : { draft }) });
+    });
+  }
+
+  async deferObsoleteSynthesis(inputId: string, turnId?: string): Promise<boolean> {
+    return this.database.transaction(connection => {
+      const row = connection.prepare(`SELECT i.status, (${STALE_GOAL_SYNTHESIS_SQL}) AS stale,
+        (${GOAL_SYNTHESIS_WAITING_FOR_RESULTS_SQL}) AS waiting_for_results, gate.status AS gate_status
+        FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.goal_input_id
+        WHERE i.input_id = ? AND i.result_revision IS NOT NULL AND i.input_id GLOB 'joi_result_input:goal:*'`).get(inputId);
+      if (row === undefined) return false;
+      const retire = row.stale === 1 || row.status === "CONSUMED";
+      if (!retire && row.waiting_for_results !== 1 && (row.gate_status === null || row.gate_status === "OPEN")) return false;
+      const now = this.#clock.now().toISOString();
+      if (turnId !== undefined) connection.prepare(`UPDATE joi_turns SET status = 'ABORTED', updated_at = ?
+        WHERE input_id = ? AND turn_id = ? AND status = 'RUNNING'`).run(now, inputId, turnId);
+      connection.prepare(`UPDATE joi_inbox_messages SET status = ?, updated_at = ?
+        WHERE input_id = ? AND status IN ('PENDING', 'ROUTED')`).run(retire ? "CONSUMED" : "PENDING", now, inputId);
+      return true;
     });
   }
 

@@ -1036,6 +1036,8 @@
   "homeWaitingForExecutionCapacity": "等待执行容量",
   "homeWaitingForWorkspaceReadAccess": "等待工作区可读",
   "homeWaitingToWrite": "等待写入",
+  "homeQuestionContinuationQueued": "已回答，等待接续",
+  "homeQuestionContinued": "已接续",
   "homeAnalyzing": "分析中",
   "homeWriting": "写入执行中",
   "homeValueWorkCompleted": "{p0} 工作完成",

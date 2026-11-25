@@ -3,9 +3,14 @@ import { getCurrentSystemPrompt, getCurrentTools, normalizeContext, type Api, ty
 import { DomainError } from "../../domain/errors.js";
 
 export const PI_REQUEST_CAPACITY_ERROR = "model_context_budget_exhausted";
+// Pi classifies stream errors by message when deciding whether to compact and continue.
+const PI_SESSION_OVERFLOW_MESSAGE = `${PI_REQUEST_CAPACITY_ERROR}: Input exceeds the context window.`;
 
-/** The SDK sends compaction through the same model stream as ordinary inference. */
-export function assertPiRequestCapacity(model: Model<Api>, context: Context, options?: SimpleStreamOptions): void {
+export function isPiRequestCapacityMessage(message: string): boolean {
+  return message === PI_REQUEST_CAPACITY_ERROR || message === PI_SESSION_OVERFLOW_MESSAGE;
+}
+
+function remainingPiOutputTokens(model: Model<Api>, context: Context): number {
   const { messages } = normalizeContext(context);
   const material = JSON.stringify({
     system: getCurrentSystemPrompt(messages),
@@ -21,8 +26,22 @@ export function assertPiRequestCapacity(model: Model<Api>, context: Context, opt
     ? message.content.filter((block) => block.type === "image").length : 0), 0);
   const estimatedTokens = Math.ceil(ascii / 3) + material.length - ascii + images * 4096;
   const window = model.contextWindow > 0 ? model.contextWindow : 120_000;
+  return window - estimatedTokens;
+}
+
+export function assertPiRequestCapacity(model: Model<Api>, context: Context, options?: SimpleStreamOptions): void {
   const reserve = Math.min(options?.maxTokens ?? model.maxTokens, model.maxTokens);
-  if (estimatedTokens + reserve > window) throw new DomainError(PI_REQUEST_CAPACITY_ERROR, PI_REQUEST_CAPACITY_ERROR);
+  if (remainingPiOutputTokens(model, context) < reserve) throw new DomainError(PI_REQUEST_CAPACITY_ERROR, PI_REQUEST_CAPACITY_ERROR);
+}
+
+/** Session inference and compaction can both use a smaller output allowance. */
+export function fitPiSessionRequestOptions(model: Model<Api>, context: Context, options?: SimpleStreamOptions): SimpleStreamOptions | undefined {
+  const remaining = remainingPiOutputTokens(model, context);
+  // The pinned Codex transport rounds a positive allowance below 16 up to 16.
+  const minimum = model.api === "openai-codex-responses" ? 16 : 1;
+  if (remaining < minimum) throw new DomainError(PI_REQUEST_CAPACITY_ERROR, PI_SESSION_OVERFLOW_MESSAGE);
+  const requested = Math.min(options?.maxTokens ?? model.maxTokens, model.maxTokens);
+  return remaining < requested ? { ...options, maxTokens: remaining } : options;
 }
 
 /** Counts refreshed prompts and tool definitions once, after all request-only transformations. */

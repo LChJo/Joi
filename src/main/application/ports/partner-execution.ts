@@ -7,6 +7,8 @@ import type { UserQuestionPrompt } from "../../../shared/user-questions.js";
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
 export interface PartnerRunRequest {
+  /** Private facts from the answered question and its authoritative paused Work result. */
+  questionContinuation?: { context: string; origin?: { actionId: string; instanceId?: string } };
   conversationSegmentId?: string;
   conversationAttachmentContext?: string;
   subagentChild?: boolean;

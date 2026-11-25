@@ -268,6 +268,8 @@ void main() {
     ['WRITE_RUNNING', '', '写入执行中'],
     ['WRITE_QUEUED', 'CAPACITY', '等待执行容量'],
     ['FUTURE_PHASE', 'FUTURE_REASON', '执行中'],
+    ['', '', '已回答，等待接续', 'QUEUED'],
+    ['', '', '已接续', 'CONTINUED'],
   ]) {
     testWidgets(
       'agent record displays ${sample[2]} from the host execution projection',
@@ -275,9 +277,10 @@ void main() {
         final agent = {
           'agentId': 'a',
           'partnerName': '搭档',
-          'status': 'RUNNING',
+          'status': sample.length == 3 ? 'RUNNING' : 'WAITING',
           'executionPhase': sample[0],
           'waitReason': sample[1],
+          if (sample.length > 3) 'questionContinuation': sample[3],
         };
         final controller =
             FakeRemoteController(
@@ -999,6 +1002,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('当前结果与待补充内容'), findsOneWidget);
+    expect(find.text('补充要求并继续'), findsNothing);
     expect(find.text('暂时没有可展示的结果说明，无法列出具体待补充内容。'), findsOneWidget);
     expect(find.text('继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。'), findsOneWidget);
     expect(
@@ -1026,6 +1030,79 @@ void main() {
       containsPair('questionId', 'goal_question:g:v1'),
     );
     expect(controller.actions.last, containsPair('questionVersion', 1));
+  });
+
+  testWidgets('submits goal continuation instructions and retains a refused draft', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+        supportsContinuationInstructions: true,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GoalActions(
+              controller: controller,
+              goal: const RemoteGoalCard(
+                goalId: 'g',
+                title: '任务',
+                status: 'NEEDS_ATTENTION',
+                reasonCode: 'goal_continuation_required',
+                questionId: 'decision',
+                questionVersion: 2,
+                activeWork: 0,
+                completedWork: 1,
+                totalWork: 1,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final field = find.byType(TextField);
+    final submit = find.widgetWithText(OutlinedButton, '补充要求并继续');
+    expect(tester.widget<OutlinedButton>(submit).onPressed, isNull);
+    await tester.enterText(field, '   ');
+    await tester.pump();
+    expect(tester.widget<OutlinedButton>(submit).onPressed, isNull);
+    const draft = '  只补本轮漏项  ';
+    await tester.enterText(field, draft);
+    await tester.pump();
+    controller.actError = const RemoteActionFailure('joi_clarification_unavailable');
+    await tester.ensureVisible(submit);
+    await tester.tap(submit);
+    await tester.pumpAndSettle();
+    expect(controller.actions, isEmpty);
+    expect(tester.widget<TextField>(field).controller!.text, draft);
+
+    controller.actError = null;
+    await tester.showKeyboard(field);
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pumpAndSettle();
+    expect(controller.actions.single, containsPair('inputId', 'g'));
+    expect(controller.actions.single, containsPair('action', 'clarify'));
+    expect(controller.actions.single, containsPair('actionChoice', 'CONTINUE'));
+    expect(controller.actions.single, containsPair('text', '只补本轮漏项'));
+    expect(controller.actions.single, containsPair('questionId', 'decision'));
+    expect(controller.actions.single, containsPair('questionVersion', 2));
+    expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+
+    await tester.enterText(field, '尚未提交的要求');
+    await tester.ensureVisible(find.text('继续完善'));
+    await tester.tap(find.text('继续完善'));
+    await tester.pumpAndSettle();
+    expect(controller.actions.last, containsPair('actionChoice', 'CONTINUE'));
+    expect(controller.actions.last, containsPair('text', null));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

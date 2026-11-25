@@ -111,7 +111,7 @@ class FakeEngine implements PartnerEngineRuntime {
   async health() { return { available: true }; }
   async preflight() { return this.preflightPin; }
   toolOptions() { return [] as readonly string[]; }
-  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onEvent?: (event: NativeAgentEvent) => void | Promise<void>; onProgress?: () => void; onToolTrace?: (trace: ToolTraceDraft) => void | Promise<void>; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onEvent?: (event: NativeAgentEvent) => void | Promise<void>; onProgress?: () => void; onToolTrace?: (trace: ToolTraceDraft) => void | Promise<void>; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }): Promise<ResidentTurnResult> {
     context.onProgress?.();
     for (const event of this.events) await context.onEvent?.(event);
     await context.onToolTrace?.(traceDraft("read"));
@@ -419,6 +419,30 @@ describe("partner-instance-manager", () => {
     });
     expect(resident).toMatchObject({ pendingQuestion: engine.pendingQuestion, status: "WAITING_INPUT" });
     expect(resident.conversation).toEqual([expect.objectContaining({ role: "AGENT" })]);
+  });
+
+  it("keeps an ephemeral Pi question on the same Work instance and reserves it for its answer", async () => {
+    const { engine, manager, messages, repository } = makeManager();
+    const history = [{ role: "assistant", content: "Already checked the evidence." }];
+    const ephemeral = vi.spyOn(engine, "runEphemeral").mockResolvedValueOnce({
+      externalRunId: "paused", externalSessionRef: "checkpoint", messages: history,
+      status: "WAITING_INPUT", output: { artifacts: [], body: "Already checked the evidence.", pendingQuestion: "Which result?" },
+    });
+    const paused = await manager.dispatch({ dispatchAttemptId: "pause-attempt", request, revision });
+    if (paused.instanceId === undefined) throw new Error("missing instance");
+    expect(repository.records[0]).toMatchObject({ status: "IDLE", externalSessionRef: "checkpoint" });
+    expect(ephemeral.mock.calls[0]?.[2]).toMatchObject({ workInstanceId: paused.instanceId });
+    expect(await manager.list()).toEqual([]);
+    await expect(manager.dispatch({ instanceId: paused.instanceId, request: { ...request, workId: "other-work" }, revision }))
+      .rejects.toMatchObject({ code: "partner_instance_unavailable" });
+    const result = await manager.dispatch({ instanceId: paused.instanceId, dispatchAttemptId: "answer-attempt", revision,
+      request: { ...request, actionId: "answered", questionContinuation: {
+        origin: { actionId: request.actionId, instanceId: paused.instanceId }, context: "Use the confirmed choice.",
+      } } });
+    expect(result).toMatchObject({ instanceId: paused.instanceId, status: "COMPLETED" });
+    expect(engine.residentTurns[0]?.restoredMessages).toEqual(history);
+    expect(repository.records).toHaveLength(1);
+    expect(messages.cleared).toEqual([paused.instanceId]);
   });
 
   it("disposes a failed ephemeral run and preserves bounded diagnostic detail", async () => {

@@ -5594,6 +5594,16 @@
     "description": "home: Waiting to write",
     "placeholders": {}
   },
+  "homeQuestionContinuationQueued": "Answered, waiting to resume",
+  "@homeQuestionContinuationQueued": {
+    "description": "Agent card after a user answers its blocking question",
+    "placeholders": {}
+  },
+  "homeQuestionContinued": "Continued",
+  "@homeQuestionContinued": {
+    "description": "Historical Agent card whose answered question continued in another execution",
+    "placeholders": {}
+  },
   "homeAnalyzing": "Analyzing",
   "@homeAnalyzing": {
     "description": "home: Analyzing",

@@ -14,10 +14,14 @@ export interface JoiTaskPendingInput {
   goalInputId?: string;
   /** A bound goal result synthesis can run alongside other goals. */
   synthesis?: boolean;
+  /** The current gate has a persisted answer awaiting review. */
+  goalResume?: boolean;
   /** Persisted user actions are deterministic and do not require a model source. */
   requiresModelSource?: boolean;
   retryState?: JoiTurnRetryState;
 }
+
+export const GOAL_SYNTHESIS_YIELD = Symbol("goal_synthesis_yield");
 
 export interface JoiTaskStaleTurn {
   inputId: string;
@@ -34,6 +38,8 @@ export interface JoiTaskInbox {
   listPendingInputs(): Promise<JoiTaskPendingInput[]>;
   listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]>;
   failTurn(inputId: string, turnId: string): Promise<void>;
+  /** Synthesis can yield while its active turn has no recorded mutation. */
+  canYieldSynthesis?(inputId: string): Promise<boolean>;
   /** True once the goal was canceled by the user; an in-flight turn must then abort. */
   isCanceled(inputId: string): Promise<boolean>;
 }

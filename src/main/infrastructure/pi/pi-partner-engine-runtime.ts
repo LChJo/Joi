@@ -43,7 +43,7 @@ import { trackPiModels } from "./pi-usage.js";
 import type { HistoricalMemoryReader } from "../../application/ports/historical-memory.js";
 import { renderHistoricalContext } from "../../domain/work/historical-context.js";
 import { historicalMemoryTools } from "./pi-historical-memory-tools.js";
-import { PI_REQUEST_CAPACITY_ERROR } from "./pi-model-budget.js";
+import { isPiRequestCapacityMessage } from "./pi-model-budget.js";
 import { PiLatency } from "./pi-latency.js";
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
@@ -240,7 +240,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<ResidentTurnResult> {
-    const instanceId = `local_pi_ephemeral:${request.actionId}`;
+    const instanceId = context.workInstanceId ?? `local_pi_ephemeral:${request.actionId}`;
     try { return await this.runResidentTurn({ ...context, request, revision, instanceId, restoredMessages: null, ...(options?.signal === undefined ? {} : { signal: options.signal }) }); }
     finally { this.evictFromMemory(instanceId); }
   }
@@ -288,7 +288,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const resolved = await this.dependencies.resolver.resolve(pin);
     const workScoped = request.conversationId === undefined;
     const saved = input.sessionState ?? this.#warm.get(input.instanceId);
-    const previous = !workScoped || saved?.executionWorkId === request.workId ? saved : undefined;
+    const current = !workScoped || saved?.executionWorkId === request.workId ? saved : undefined;
+    const previous = current ?? (workScoped ? await this.#loadQuestionCheckpoint(input) : undefined);
     const partnerIdentity = ["partner",request.workbenchId,revision.partnerId,input.instanceId];
     const legacy = workScoped && previous === undefined ? await this.dependencies.nativeSessions?.readContext(partnerIdentity) : undefined;
     const legacyBranch = legacy?.manager.getBranch() ?? [];
@@ -360,7 +361,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       sourceRevisionId: pin.sourceRevisionId, modelRevisionId: pin.modelRevisionId, partnerRevisionId: revision.partnerRevisionId, actionId: request.actionId,
       ...(resolved.sourceName === undefined ? {} : { sourceName: resolved.sourceName }) };
     const models = trackPiModels(resolved.models, undefined, () => usageContext, this.dependencies.diagnostics);
-    const restored = previous !== undefined ? undefined : workScoped
+    const sameQuestionInstance = request.questionContinuation?.origin?.instanceId === input.instanceId;
+    const restored = previous !== undefined ? undefined : workScoped && !sameQuestionInstance
       ? legacyCurrent.flatMap(entry => entry.type === "message" ? [entry.message] : [])
       : input.restoredMessages as AgentMessage[] | null;
     try {
@@ -558,6 +560,27 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     return configured;
   }
 
+  async #loadQuestionCheckpoint(input: ResidentTurnInput): Promise<PartnerSessionState | undefined> {
+    const origin = input.request.questionContinuation?.origin;
+    const store = this.dependencies.nativeSessions;
+    if (origin === undefined || store === undefined || origin.instanceId === input.instanceId) return undefined;
+    const { workbenchId, workId } = input.request;
+    const candidates = [origin.instanceId, `local_pi_ephemeral:${origin.actionId}`];
+    for (const instanceId of candidates) {
+      if (instanceId === undefined) continue;
+      const source = await store.readContext(["partner", workbenchId, input.revision.partnerId, instanceId, workId]);
+      const receipt = source?.manager.getBranch().findLast(entry => {
+        if (entry.type !== "custom" || entry.customType !== "joi.work_result") return false;
+        const data = entry.data as { actionId?: string; result?: ResidentTurnResult } | null;
+        return data?.actionId === origin.actionId && data.result?.status === "WAITING_INPUT";
+      });
+      if (source === null || receipt === undefined) continue;
+      source.manager.branch(receipt.id);
+      return { engine: "pi-core", executionWorkId: workId, messages: source.manager.buildSessionContext().messages };
+    }
+    return undefined;
+  }
+
   #promptRules(input: ResidentTurnInput, tools: AgentTool[], workspace: boolean): string[] {
     const names = tools.map(tool => tool.name);
     const canWrite = names.some(name => ["bash", "edit", "write"].includes(name));
@@ -627,7 +650,7 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     if (message.role !== "assistant" || message.stopReason !== "error") continue;
     const raw = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
     if (raw === undefined) return codedProviderError("assistant_error");
-    if (raw === PI_REQUEST_CAPACITY_ERROR) return codedProviderError("context_too_large");
+    if (isPiRequestCapacityMessage(raw)) return codedProviderError("context_too_large");
     const detail = raw.slice(0, ERROR_DETAIL_CHARS);
     const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
     const status = statusText === undefined ? undefined : Number(statusText);

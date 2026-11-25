@@ -1,6 +1,6 @@
 {
   "name": "joi",
-  "version": "0.1.10",
+  "version": "0.1.12",
   "private": true,
   "description": "joi is a continuously evolving, cross-platform Super Agent with multi-agent orchestration and multi-model support.",
   "author": "joi Contributors",
