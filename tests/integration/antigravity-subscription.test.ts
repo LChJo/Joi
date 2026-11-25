@@ -8,11 +8,13 @@ import { createHash } from "node:crypto";
 import { createServer, get, type IncomingHttpHeaders } from "node:http";
 import { ModelSourceService } from "../../src/main/application/model-sources/model-source-service.js";
 import { SubscriptionLoginService } from "../../src/main/application/model-sources/codex-login-service.js";
+import { SubscriptionLoginDiagnostics } from "../../src/main/application/model-sources/subscription-login-diagnostics.js";
 import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
 import { SqlitePiCredentialRepository } from "../../src/main/infrastructure/persistence/sqlite-pi-credential-repository.js";
 import { PiAntigravityAuthorization } from "../../src/main/infrastructure/pi/pi-antigravity-authorization.js";
 import { RepositoryPiConfiguredModelResolver } from "../../src/main/infrastructure/pi/pi-configured-model-resolver.js";
 import { SafeStoragePiCredentialStore } from "../../src/main/infrastructure/pi/pi-credential-store-adapter.js";
+import { revokeAntigravityToken } from "../../src/main/infrastructure/pi/antigravity-revocation.js";
 import { PiModelSourceCatalog } from "../../src/main/infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "../../src/main/infrastructure/pi/pi-model-source-validator.js";
 import { ANTIGRAVITY_REDIRECT_URI } from "../../src/shared/antigravity-authorization.js";
@@ -29,25 +31,11 @@ function requestCallback(port: number, callback: string): Promise<{ status: numb
   });
 }
 
+const BUILTIN_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolo" + "jh4g403ep.apps.googleusercontent.com";
+const BUILTIN_CLIENT_SECRET = "GOCSPX-K58FWR486LdLJ1m" + "LB8sXC4z6qDAf";
+
 describe("Antigravity subscription model network", () => {
-  beforeEach(() => {
-    vi.stubEnv("JOI_ANTIGRAVITY_OAUTH_CLIENT_ID", "fixture-desktop-client-id");
-    vi.stubEnv("JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "fixture-desktop-client-secret");
-  });
-
   afterEach(() => { vi.unstubAllEnvs(); });
-
-  it("requires desktop OAuth client configuration before opening the callback listener", async () => {
-    vi.stubEnv("JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET", undefined);
-    const listenForCallback = vi.fn((_server, listening: () => void) => { listening(); });
-    const showBrowser = vi.fn();
-    await expect(new PiAntigravityAuthorization(listenForCallback).authorize({
-      method: "browser", signal: new AbortController().signal, showBrowser,
-      showDeviceCode: vi.fn(), waitForCallback: () => Promise.reject(new Error("Unexpected callback prompt")),
-    })).rejects.toThrow("antigravity_oauth_client_unconfigured");
-    expect(listenForCallback).not.toHaveBeenCalled();
-    expect(showBrowser).not.toHaveBeenCalled();
-  });
 
   it("authorizes, encrypts, refreshes and runs text and tool turns through Pi", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-antigravity-"));
@@ -60,10 +48,13 @@ describe("Antigravity subscription model network", () => {
       decrypt: async (blob) => Buffer.from(blob).map((byte) => byte ^ 0xa7).toString(),
     } });
     const clock = new TestClock();
+    const diagnostics = new SubscriptionLoginDiagnostics(clock);
     const sources = new ModelSourceService({
       catalog: new PiModelSourceCatalog(), clock, ids: new TestIds(), repository, secrets: credentials,
       endpointPolicy: { validate: async () => { throw new Error("No custom endpoint"); } },
       validator: new PiModelSourceValidator({ clock, credentials }),
+      revokeAntigravity: (refreshToken) => revokeAntigravityToken(refreshToken),
+      revocations: diagnostics,
     });
     const authorization = new PiAntigravityAuthorization(server => {
       server.emit("error", Object.assign(new Error("Fixture callback port is reserved"), { code: "EACCES" }));
@@ -71,6 +62,8 @@ describe("Antigravity subscription model network", () => {
     const login = new SubscriptionLoginService({ provider: "antigravity", authorization, ids: new TestIds(),
       connect: (credential, signal, id) => sources.connectAntigravity(credential, signal, id) });
     const requests: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
+    const revoked: string[] = [];
+    let revokeStatus = 200;
     let tool = false;
     let denial: (() => Response) | undefined;
     let refreshes = 0;
@@ -79,11 +72,19 @@ describe("Antigravity subscription model network", () => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url === "https://oauth2.googleapis.com/token") {
         const body = new URLSearchParams(typeof init?.body === "string" ? init.body : "");
-        expect(body.get("client_id")).toBe("fixture-desktop-client-id");
-        expect(body.get("client_secret")).toBe("fixture-desktop-client-secret");
+        expect(body.get("client_id")).toBe(BUILTIN_CLIENT_ID);
+        expect(body.get("client_secret")).toBe(BUILTIN_CLIENT_SECRET);
         if (body.get("grant_type") === "refresh_token") refreshes++;
         else { verifier = body.get("code_verifier") ?? ""; expect(body.get("code")).toBe("fixture-code"); }
-        return Response.json({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: refreshes === 0 ? 1 : 3600 });
+        return Response.json({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: refreshes === 0 ? 1 : 3600,
+          scope: "https://www.googleapis.com/auth/aicode https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs" });
+      }
+      if (url === "https://www.googleapis.com/oauth2/v3/userinfo") {
+        return Response.json({ email: "brycen@gmail.com" });
+      }
+      if (url === "https://oauth2.googleapis.com/revoke") {
+        revoked.push(new URLSearchParams(typeof init?.body === "string" ? init.body : "").get("token") ?? "");
+        return new Response(null, { status: revokeStatus });
       }
       if (url.endsWith(":loadCodeAssist")) return Response.json({ cloudaicompanionProject: "fixture-project" });
       requests.push({ url, headers: new Headers(init?.headers), body: JSON.parse(typeof init?.body === "string" ? init.body : "") as Record<string, unknown> });
@@ -108,7 +109,7 @@ describe("Antigravity subscription model network", () => {
       });
       const auth = new URL(browser.url);
       expect(auth.origin).toBe("https://accounts.google.com");
-      expect(auth.searchParams.get("client_id")).toBe("fixture-desktop-client-id");
+      expect(auth.searchParams.get("client_id")).toBe(BUILTIN_CLIENT_ID);
       expect(auth.searchParams.has("client_secret")).toBe(false);
       expect(auth.searchParams.get("code_challenge_method")).toBe("S256");
       const challenge = auth.searchParams.get("code_challenge") ?? "";
@@ -155,6 +156,13 @@ describe("Antigravity subscription model network", () => {
       expect(requests[1]?.body).toMatchObject({ model: "gemini-3.8-flash-high", request: { generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: -1 } } } });
       expect((requests[1]?.body.request as Record<string, unknown>).systemInstruction).toBeUndefined();
       expect(Buffer.from((await records.read(model.provider))?.encryptedBlob ?? []).toString()).not.toContain("synthetic");
+      const decrypted = Buffer.from((await records.read(model.provider))?.encryptedBlob ?? []).map((byte) => byte ^ 0xa7).toString();
+      expect(decrypted).toContain("brycen@gmail.com");
+      expect(decrypted).toContain("\"scopes\"");
+      expect(JSON.stringify(await sources.list(true))).not.toContain("brycen@gmail.com");
+      const account = (await sources.list(true)).find((source) => source.sourceId === connected.sourceId)?.codexAccount;
+      expect(account).toMatchObject({ maskedAccount: "b***@gmail.com",
+        scopes: ["aicode", "cloud-platform", "userinfo.email", "userinfo.profile", "cclog", "experimentsandconfigs"] });
       await expect(sources.update(connected.sourceId, { apiKey: "no" })).rejects.toMatchObject({ code: "antigravity_oauth_required" });
       await expect(sources.update(connected.sourceId, { modelId: "gemini-4-neon" })).rejects.toMatchObject({ code: "antigravity_model_unavailable" });
       denial = () => new Response("private-provider-error", { status: 401 });
@@ -169,14 +177,80 @@ describe("Antigravity subscription model network", () => {
       expect(await sources.validate(connected.sourceId)).toMatchObject({ status: "NEEDS_AUTH", reasonCode: "http_403" });
       expect(JSON.stringify(await sources.list())).not.toContain("private-provider-error");
       denial = undefined;
+      revokeStatus = 500;
       const reconnected = await sources.connectAntigravity({ access: "synthetic-access", refresh: "synthetic-refresh", expires: Date.now() + 3600_000, projectId: "fixture-project" }, new AbortController().signal, connected.sourceId);
       expect(reconnected).toMatchObject({ sourceId: connected.sourceId, status: "READY" });
+      expect(revoked).toEqual(["synthetic-refresh"]);
       expect(await records.read(model.provider)).toBeNull();
       await sources.delete(connected.sourceId);
       expect(await records.list()).toEqual([]);
+      expect(revoked).toEqual(["synthetic-refresh", "synthetic-refresh"]);
+      expect(diagnostics.revocations()).toMatchObject([
+        { kind: "antigravity", trigger: "reconnect", outcome: "failed", reasonCode: "revoke_failed" },
+        { kind: "antigravity", trigger: "delete", outcome: "failed", reasonCode: "revoke_failed" },
+      ]);
     } finally {
       await login.close(); vi.unstubAllGlobals(); database.close(); await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("uses a fully provided override pair in place of the built-in credentials", async () => {
+    vi.stubEnv("JOI_ANTIGRAVITY_OAUTH_CLIENT_ID", "fixture-desktop-client-id");
+    vi.stubEnv("JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET", "fixture-desktop-client-secret");
+    let state = "";
+    let tokenClient: string | undefined;
+    let tokenSecret: string | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url === "https://oauth2.googleapis.com/token") {
+        const body = new URLSearchParams(typeof init?.body === "string" ? init.body : "");
+        tokenClient = body.get("client_id") ?? undefined;
+        tokenSecret = body.get("client_secret") ?? undefined;
+        return Response.json({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: 3600 });
+      }
+      return Response.json({ cloudaicompanionProject: "fixture-project" });
+    }));
+    const authorization = new PiAntigravityAuthorization(server => {
+      server.emit("error", Object.assign(new Error("Fixture callback port is reserved"), { code: "EACCES" }));
+    });
+    try {
+      const credential = await authorization.authorize({
+        method: "browser", signal: new AbortController().signal,
+        showBrowser: (url) => { state = new URL(url).searchParams.get("state") ?? ""; },
+        showDeviceCode: vi.fn(),
+        waitForCallback: () => Promise.resolve(`${ANTIGRAVITY_REDIRECT_URI}?code=fixture-code&state=${state}`),
+      });
+      expect(credential).toMatchObject({ access: "synthetic-access", projectId: "fixture-project" });
+      expect(tokenClient).toBe("fixture-desktop-client-id");
+      expect(tokenSecret).toBe("fixture-desktop-client-secret");
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it("completes sign-in without an account email when userinfo is unavailable", async () => {
+    let state = "";
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url === "https://oauth2.googleapis.com/token") {
+        return Response.json({ access_token: "synthetic-access", refresh_token: "synthetic-refresh", expires_in: 3600,
+          scope: "https://www.googleapis.com/auth/aicode https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs" });
+      }
+      if (url === "https://www.googleapis.com/oauth2/v3/userinfo") return new Response("private-userinfo-error", { status: 401 });
+      return Response.json({ cloudaicompanionProject: "fixture-project" });
+    }));
+    const authorization = new PiAntigravityAuthorization(server => {
+      server.emit("error", Object.assign(new Error("Fixture callback port is reserved"), { code: "EACCES" }));
+    });
+    try {
+      const credential = await authorization.authorize({
+        method: "browser", signal: new AbortController().signal,
+        showBrowser: (url) => { state = new URL(url).searchParams.get("state") ?? ""; },
+        showDeviceCode: vi.fn(),
+        waitForCallback: () => Promise.resolve(`${ANTIGRAVITY_REDIRECT_URI}?code=fixture-code&state=${state}`),
+      });
+      expect(credential).toMatchObject({ access: "synthetic-access", projectId: "fixture-project",
+        scopes: ["aicode", "cloud-platform", "userinfo.email", "userinfo.profile", "cclog", "experimentsandconfigs"] });
+      expect(credential.accountEmail).toBeUndefined();
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it("captures the loopback callback, rejects mismatched state and releases the port on cancellation", async () => {

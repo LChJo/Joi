@@ -278,6 +278,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       modelSources: modelSourceStack.modelSources,
       codexLogin: modelSourceStack.codexLogin,
       antigravityLogin: modelSourceStack.antigravityLogin,
+      antigravityDiagnostics: modelSourceStack.antigravityDiagnostics,
       operations,
       partners: partnerStack.partners,
       scenarioPacks: partnerStack.scenarioPacks,

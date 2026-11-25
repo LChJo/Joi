@@ -51,6 +51,7 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/auth/session",
   "GET /api/v1/auth/sessions",
   "GET /api/v1/model-sources",
+  "GET /api/v1/model-sources/antigravity-diagnostics",
   "GET /api/v1/model-sources/codex-login/:attemptId",
   "GET /api/v1/model-sources/antigravity-login/:attemptId",
   "GET /api/v1/joi",

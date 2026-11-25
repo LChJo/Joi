@@ -17,6 +17,7 @@ import type { LifeService } from "../../application/lives/life-service.js";
 import type { OperationsService } from "../../application/operations/operations-service.js";
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { CodexLoginService, SubscriptionLoginService } from "../../application/model-sources/codex-login-service.js";
+import type { SubscriptionLoginDiagnostics } from "../../application/model-sources/subscription-login-diagnostics.js";
 import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js";
 import type { WorkbenchRegistryService } from "../../application/joi/workbench-registry-service.js";
 import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
@@ -83,6 +84,7 @@ export interface ApiDependencies {
   lives: LifeService;
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   antigravityLogin?: Pick<SubscriptionLoginService, "start" | "status" | "submitCallback" | "cancel">;
+  antigravityDiagnostics?: Pick<SubscriptionLoginDiagnostics, "latest" | "revocations">;
   codexLogin?: Pick<CodexLoginService, "start" | "status" | "submitCallback" | "cancel">;
   operations: OperationsService;
   partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "revealPrompt" | "update">;

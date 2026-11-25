@@ -2,10 +2,7 @@ export const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_LOCATION_DENIED = "LOCATION_NOT_ELIGIBLE";
 const ENDPOINTS = [ANTIGRAVITY_ENDPOINT, "https://cloudcode-pa.googleapis.com"];
 const ERROR_BODY_LIMIT = 8_192;
-export const ANTIGRAVITY_HEADERS = {
-  "content-type": "application/json",
-  "user-agent": "antigravity/cli/1.5.5 (aidev_client; os_type=linux; arch=amd64; cl=982146307; auth_method=consumer)",
-};
+export { antigravityHeaders } from "./antigravity-oauth-client.js";
 
 /** Retains only explicit, recognized eligibility facts from the provider's error body. */
 export async function safeAntigravityHttpError(response: Response): Promise<string> {

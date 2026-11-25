@@ -5,6 +5,7 @@ import type { Credential, CredentialInfo, CredentialStore } from "@earendil-work
 
 import type { CredentialVault } from "../../application/ports/a2a-ports.js";
 import type { ModelSourceOAuthCredential, PiCredentialRecordStore } from "../../application/ports/model-source-ports.js";
+import { maskEmail } from "../../application/ports/runtime-diagnostics.js";
 import type { CodexAccountDto } from "../../../shared/joi.js";
 
 const PLAN_NAMES = new Map([
@@ -30,8 +31,17 @@ function describeAccess(access: string): { maskedAccount?: string; plan?: string
   }
 }
 
-function parseCredential(serialized: string): Credential {
-  const value: unknown = JSON.parse(serialized);
+const EMAIL_PATTERN = /^[^\s@]{1,64}@[^\s@.]+(\.[^\s@.]+)+$/u;
+
+/** Optional OAuth lifecycle fields are tolerated when absent and rejected when malformed. */
+function validOAuthLifecycleFields(record: Record<string, unknown>): boolean {
+  const email = record.accountEmail;
+  const scopes = record.scopes;
+  return (email === undefined || (typeof email === "string" && EMAIL_PATTERN.test(email)))
+    && (scopes === undefined || (Array.isArray(scopes) && scopes.every((scope) => typeof scope === "string" && /^[A-Za-z0-9_.-]{1,80}$/u.test(scope))));
+}
+
+function validateCredential(value: unknown): Credential {
   if (value === null || Array.isArray(value) || typeof value !== "object") throw new Error("pi_credential_invalid");
   const record = value as Record<string, unknown>;
   if (record.type === "api_key") {
@@ -42,10 +52,15 @@ function parseCredential(serialized: string): Credential {
     }
     return value as Credential;
   }
-  if (record.type === "oauth" && typeof record.access === "string" && typeof record.refresh === "string" && typeof record.expires === "number") {
+  if (record.type === "oauth" && typeof record.access === "string" && typeof record.refresh === "string" && typeof record.expires === "number"
+    && validOAuthLifecycleFields(record)) {
     return value as Credential;
   }
   throw new Error("pi_credential_invalid");
+}
+
+function parseCredential(serialized: string): Credential {
+  return validateCredential(JSON.parse(serialized));
 }
 
 export class SafeStoragePiCredentialStore implements CredentialStore {
@@ -75,7 +90,9 @@ export class SafeStoragePiCredentialStore implements CredentialStore {
       const current = record === null ? undefined : await this.#decrypt(record.encryptedBlob);
       const next = await fn(current);
       if (next === undefined) return current;
-      const encryptedBlob = await this.#vault.encrypt(JSON.stringify(next));
+      // Writes pass the same validation as reads: a malformed credential never reaches storage.
+      const validated = validateCredential(next);
+      const encryptedBlob = await this.#vault.encrypt(JSON.stringify(validated));
       await this.#records.write({
         encryptedBlob,
         providerId,
@@ -103,10 +120,26 @@ export class SafeStoragePiCredentialStore implements CredentialStore {
     return this.#version(providerId);
   }
 
+  /** Minimal read for lifecycle actions such as revocation; only the refresh token is exposed. */
+  async readOAuthCredential(providerId: string): Promise<{ refresh?: string } | undefined> {
+    const credential = await this.read(providerId);
+    if (credential?.type !== "oauth") return undefined;
+    return { refresh: credential.refresh };
+  }
+
   async describeOAuth(providerId: string): Promise<CodexAccountDto | undefined> {
     const credential = await this.read(providerId);
     if (credential?.type !== "oauth" || !Number.isFinite(new Date(credential.expires).getTime())) return undefined;
-    return { expiresAt: new Date(credential.expires).toISOString(), ...describeAccess(credential.access) };
+    const described = describeAccess(credential.access);
+    // OpenAI credentials carry their identity in access-token claims; Antigravity stores a masked email.
+    const account = described.maskedAccount ?? (typeof credential.accountEmail === "string" ? maskEmail(credential.accountEmail) : undefined);
+    const scopes = Array.isArray(credential.scopes) ? credential.scopes.filter((scope): scope is string => typeof scope === "string") : [];
+    return {
+      expiresAt: new Date(credential.expires).toISOString(),
+      ...(account === undefined ? {} : { maskedAccount: account }),
+      ...(described.plan === undefined ? {} : { plan: described.plan }),
+      ...(scopes.length > 0 ? { scopes } : {}),
+    };
   }
 
   async #version(providerId: string): Promise<number> {

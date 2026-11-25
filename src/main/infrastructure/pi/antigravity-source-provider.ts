@@ -4,7 +4,7 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { DomainError } from "../../domain/errors.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 import { antigravityOAuth } from "./pi-antigravity-authorization.js";
-import { ANTIGRAVITY_ENDPOINT, ANTIGRAVITY_HEADERS, requestAntigravity, safeAntigravityHttpError } from "./antigravity-http.js";
+import { ANTIGRAVITY_ENDPOINT, antigravityHeaders, requestAntigravity, safeAntigravityHttpError } from "./antigravity-http.js";
 
 // Routing and conservative fallback limits follow pi-antigravity 0.15.0; see docs/antigravity-license.txt.
 const CATALOG = [
@@ -107,7 +107,7 @@ function antigravityFetch(id: string, effort: ModelThinkingLevel, sessionId: str
     const trajectory = randomUUID();
     const response = await requestAntigravity("/v1internal:streamGenerateContent?alt=sse", {
       method: "POST", redirect: "error", signal: init?.signal ?? outgoing.signal,
-      headers: { ...ANTIGRAVITY_HEADERS, authorization: `Bearer ${credential.token}` },
+      headers: { ...antigravityHeaders(), authorization: `Bearer ${credential.token}` },
       body: JSON.stringify({ project: credential.projectId, model: route.model, request,
         requestType: "agent", userAgent: "antigravity", requestId: `agent/${sessionId}/${String(Date.now())}/${trajectory}/1` }),
     });
