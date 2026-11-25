@@ -73,13 +73,15 @@ function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归�
   fireEvent.click(goalMenuItem(name));
 }
 
-it("lets goal details widen from the default width without covering primary navigation", async () => {
+it("lets goal results and details share a width without covering primary navigation", async () => {
   vi.stubGlobal("innerWidth", 1440);
   const api = new DigitalLifeApi("");
   vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-  mockHomeMessages(api).mockResolvedValue({ items: [{
-    inputId: "goal-resize", acceptedAt: "2026-11-24T03:00:00.000Z", status: "CONSUMED", textPreview: "可调整宽度的目标", workbenchId: "resize-workbench",
-  }] });
+  vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [{
+    goalId: "goal-resize", updatedAt: "2026-11-24T03:00:00.000Z", status: "COMPLETED", title: "可调整宽度的目标",
+    workbench: { workbenchId: "resize-workbench", name: "宽度测试" }, agentCount: 0, canDelete: true,
+    work: { active: 0, completed: 0, failed: 0, total: 0 }, completionSummary: "宽度测试结论",
+  }], thinking: [], unassignedActions: [] });
   vi.spyOn(api, "joiGoalDetail").mockResolvedValue({ goalId: "goal-resize", fullTitle: "可调整宽度的目标" });
   vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
   const view = render(<div className="app-shell"><aside className="sidebar">一级导航</aside><JoiHome api={api} /></div>);
@@ -89,13 +91,20 @@ it("lets goal details widen from the default width without covering primary navi
     return this.classList.contains("joi-drawer-backdrop") ? new DOMRect(0, 0, window.innerWidth - 15, 800) : new DOMRect();
   });
   try {
-    fireEvent.click(await screen.findByText("可调整宽度的目标"));
+    fireEvent.click(await screen.findByText("宽度测试结论"));
+    const result = screen.getByRole("dialog");
+    const resultResize = within(result).getByRole("separator", { name: "调整目标详情宽度" });
+    expect(resultResize).toHaveAttribute("aria-controls", result.id);
+    expect(resultResize).toHaveAttribute("aria-valuenow", "980");
+    fireEvent.keyDown(resultResize, { key: "ArrowLeft" });
+    expect(result).toHaveStyle({ width: "1000px" });
+    fireEvent.click(within(result).getByRole("button", { name: "查看详情" }));
     const drawer = screen.getByRole("dialog");
     const resize = within(drawer).getByRole("separator", { name: "调整目标详情宽度" });
     expect(resize).toHaveAttribute("aria-valuemin", "980");
-    expect(resize).toHaveAttribute("aria-valuenow", "980");
-    fireEvent.keyDown(resize, { key: "ArrowLeft" });
     expect(resize).toHaveAttribute("aria-valuenow", "1000");
+    fireEvent.keyDown(resize, { key: "ArrowLeft" });
+    expect(resize).toHaveAttribute("aria-valuenow", "1020");
     fireEvent.keyDown(resize, { key: "End" });
     expect(resize).toHaveAttribute("aria-valuenow", "1217");
     fireEvent.keyDown(resize, { key: "ArrowLeft" });
