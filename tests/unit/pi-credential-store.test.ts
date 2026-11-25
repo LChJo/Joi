@@ -62,4 +62,41 @@ describe("Pi safeStorage credential adapter", () => {
     expect(await store.read(providerId)).toBeUndefined();
     expect(await store.list()).toEqual([]);
   });
+
+  it("keeps lifecycle fields optional, exposes the masked account and a minimal refresh read", async () => {
+    const records = new MemoryEncryptedStore();
+    const store = new SafeStoragePiCredentialStore({ records, vault: new FakeSafeStorageVault() });
+    const providerId = "joi-source:source_3";
+    const expires = Date.now() + 3600_000;
+    await store.saveOAuth(providerId, {
+      access: "synthetic-access", refresh: "synthetic-refresh", expires,
+      accountEmail: "brycen@gmail.com", scopes: ["aicode", "cloud-platform"],
+    });
+
+    expect(await store.describeOAuth(providerId)).toEqual({
+      expiresAt: new Date(expires).toISOString(),
+      maskedAccount: "b***@gmail.com",
+      scopes: ["aicode", "cloud-platform"],
+    });
+    expect(await store.readOAuthCredential(providerId)).toEqual({ refresh: "synthetic-refresh" });
+
+    // Legacy credentials without the new fields keep working and hide the account line.
+    await store.saveOAuth(providerId, { access: "synthetic-access", refresh: "synthetic-refresh", expires });
+    expect(await store.describeOAuth(providerId)).toEqual({ expiresAt: new Date(expires).toISOString() });
+    expect(await store.readOAuthCredential(providerId)).toEqual({ refresh: "synthetic-refresh" });
+    expect(await store.readOAuthCredential("joi-source:absent")).toBeUndefined();
+  });
+
+  it("rejects credentials whose lifecycle fields are present but malformed", async () => {
+    const records = new MemoryEncryptedStore();
+    const store = new SafeStoragePiCredentialStore({ records, vault: new FakeSafeStorageVault() });
+    const providerId = "joi-source:source_4";
+    const expires = Date.now() + 3600_000;
+    await expect(store.modify(providerId, async () => ({
+      type: "oauth", access: "synthetic-access", refresh: "synthetic-refresh", expires, accountEmail: "not-an-email",
+    }))).rejects.toMatchObject({ message: "pi_credential_invalid" });
+    await expect(store.modify(providerId, async () => ({
+      type: "oauth", access: "synthetic-access", refresh: "synthetic-refresh", expires, scopes: ["ok", 42],
+    }))).rejects.toMatchObject({ message: "pi_credential_invalid" });
+  });
 });

@@ -15,9 +15,14 @@ import { modelSourceService } from "../api-dependencies.js";
 import { exact, pattern, type RouteContext, type RouteDefinition } from "../route-types.js";
 
 type SubscriptionProvider = "codex" | "antigravity";
-async function desktopSubscriptionLogin(ctx: RouteContext, provider: SubscriptionProvider) {
+async function desktopSession(ctx: RouteContext) {
   const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
   if (session.kind !== "desktop") throw new HttpError("desktop_required", "Subscription sign-in is available from the desktop app.", 403);
+  return session;
+}
+
+async function desktopSubscriptionLogin(ctx: RouteContext, provider: SubscriptionProvider) {
+  const session = await desktopSession(ctx);
   const service = provider === "codex" ? ctx.dependencies.codexLogin : ctx.dependencies.antigravityLogin;
   if (service === undefined) throw new HttpError(`${provider}_login_unavailable`, "Subscription sign-in is unavailable.", 503);
   return { service, owner: session.sessionHash };
@@ -75,6 +80,17 @@ export const MODEL_SOURCE_READ_ROUTES: RouteDefinition[] = [
       const includeCodexAccount = ctx.url.searchParams.get("include") === "codex-account"
         && (await ctx.dependencies.auth.authenticate(sessionToken(ctx.request))).kind === "desktop";
       sendJson(ctx.response, 200, { items: await modelSourceService(ctx.dependencies).list(includeCodexAccount) });
+    },
+  },
+  {
+    auth: "read",
+    id: "GET /api/v1/model-sources/antigravity-diagnostics",
+    match: exact("GET", "/api/v1/model-sources/antigravity-diagnostics"),
+    handle: async (ctx) => {
+      await desktopSession(ctx);
+      const diagnostics = ctx.dependencies.antigravityDiagnostics;
+      if (diagnostics === undefined) throw new HttpError("antigravity_diagnostics_unavailable", "Antigravity diagnostics are unavailable.", 503);
+      sendJson(ctx.response, 200, { login: diagnostics.latest("antigravity"), revocations: diagnostics.revocations() });
     },
   },
   ...subscriptions.flatMap(({ read }) => read),

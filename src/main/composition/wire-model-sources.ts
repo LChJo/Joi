@@ -4,6 +4,7 @@ import { StatisticsService } from "../application/statistics/statistics-service.
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ModelSourceService } from "../application/model-sources/model-source-service.js";
 import { CodexLoginService, SubscriptionLoginService } from "../application/model-sources/codex-login-service.js";
+import { SubscriptionLoginDiagnostics } from "../application/model-sources/subscription-login-diagnostics.js";
 import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
 import { ModelSourceRecovery } from "../application/model-sources/model-source-recovery.js";
 import { ModelSourceNetworkPolicy } from "../infrastructure/pi/model-source-network-policy.js";
@@ -14,6 +15,7 @@ import { SafeStoragePiCredentialStore } from "../infrastructure/pi/pi-credential
 import { RepositoryPiConfiguredModelResolver } from "../infrastructure/pi/pi-configured-model-resolver.js";
 import { PiAntigravityAuthorization } from "../infrastructure/pi/pi-antigravity-authorization.js";
 import { PiCodexAuthorization } from "../infrastructure/pi/pi-codex-authorization.js";
+import { revokeAntigravityToken } from "../infrastructure/pi/antigravity-revocation.js";
 import type { CredentialVault } from "../application/ports/a2a-ports.js";
 import type { PersistenceBundle } from "./wire-persistence.js";
 
@@ -31,6 +33,7 @@ export function wireModelSources(input: {
     vault,
   });
   const validator = new PiModelSourceValidator({ clock, credentials: piCredentials, usage: statistics });
+  const loginDiagnostics = new SubscriptionLoginDiagnostics(clock);
   const modelSources = new ModelSourceService({
     catalog: new PiModelSourceCatalog(),
     clock,
@@ -42,9 +45,12 @@ export function wireModelSources(input: {
     repository: persistence.modelSourceRepository,
     secrets: piCredentials,
     validator,
+    revokeAntigravity: (refreshToken) => revokeAntigravityToken(refreshToken),
+    revocations: loginDiagnostics,
   });
   return {
     antigravityLogin: new SubscriptionLoginService({ provider: "antigravity", authorization: new PiAntigravityAuthorization(), ids,
+      diagnostics: loginDiagnostics,
       connect: (credential, signal, id) => modelSources.connectAntigravity(credential, signal, id) }),
     codexLogin: new CodexLoginService({ authorization: new PiCodexAuthorization(), ids, sources: modelSources }),
     recovery: new ModelSourceRecovery({ clock, repository: persistence.modelSourceRepository, queue: persistence.modelSourceRepository, validator }),
@@ -54,6 +60,7 @@ export function wireModelSources(input: {
       repository: persistence.modelSourceRepository,
     }),
     modelSources,
+    antigravityDiagnostics: loginDiagnostics,
     piCredentials,
     reasoningSources: new ReasoningSourceSelector(persistence.modelSourceRepository, { clock, validator }),
   };

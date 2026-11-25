@@ -2,10 +2,11 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { UpdateModelSourceRequest } from "../../src/main/application/model-sources/model-source-service.js";
 import { SubscriptionLoginService } from "../../src/main/application/model-sources/codex-login-service.js";
+import { SubscriptionLoginDiagnostics } from "../../src/main/application/model-sources/subscription-login-diagnostics.js";
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import type { ModelSourceDto } from "../../src/shared/joi.js";
-import { createRuntimeFixture, TestIds } from "../support/runtime-fixture.js";
+import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
 function cookieFrom(response: Response): string {
   const value = response.headers.get("set-cookie");
@@ -296,6 +297,55 @@ describe("model source HTTP API", () => {
       expect((await patch({ thinkingEffort: "minimal" })).status).toBe(400);
       expect((await patch({ thinkingEffort: 3 })).status).toBe(400);
     } finally {
+      await listeners.close();
+      await fixture.close();
+    }
+  });
+
+  it("exposes sanitized antigravity diagnostics only to the desktop session", async () => {
+    const fixture = await createRuntimeFixture();
+    const diagnostics = new SubscriptionLoginDiagnostics(new TestClock());
+    const recorder = diagnostics.start("antigravity", "antigravity_login_test_0001");
+    recorder.record({ stage: "client_credentials", outcome: "ok" });
+    recorder.note({ accountEmail: "brycen@gmail.com", clientSource: "builtin" });
+    recorder.record({ stage: "token_exchange", outcome: "failed", reasonCode: "token_exchange_rejected" });
+    recorder.finish("failed");
+    diagnostics.recordRevocation({ kind: "antigravity", trigger: "delete", outcome: "revoked" });
+
+    const missing = await startRuntimeListeners({ handler: createApiHandler({ ...fixture }), loopbackPort: 0 });
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, antigravityDiagnostics: diagnostics }), loopbackPort: 0 });
+    try {
+      const bootstrap = await fixture.auth.issueDesktopBootstrap();
+      const grantResponse = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
+        body: JSON.stringify({ nonce: bootstrap.nonce }), headers: { "content-type": "application/json", origin: "null" }, method: "POST",
+      });
+      const cookie = cookieFrom(grantResponse);
+      const grant = await grantResponse.json() as { csrfToken: string };
+      await fetch(`${listeners.loopback.url}/api/v1/auth/setup`, {
+        body: JSON.stringify({ password: "disposable antigravity diagnostics" }),
+        headers: { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": grant.csrfToken }, method: "POST",
+      });
+      const lanLogin = await fetch(`${listeners.loopback.url}/api/v1/auth/login`, {
+        body: JSON.stringify({ password: "disposable antigravity diagnostics" }),
+        headers: { "content-type": "application/json", origin: listeners.loopback.url }, method: "POST",
+      });
+      const lanCookie = cookieFrom(lanLogin);
+
+      const path = `${listeners.loopback.url}/api/v1/model-sources/antigravity-diagnostics`;
+      expect((await fetch(path, { headers: { cookie: lanCookie } })).status).toBe(403);
+      expect((await fetch(`${missing.loopback.url}/api/v1/model-sources/antigravity-diagnostics`, { headers: { cookie } })).status).toBe(503);
+      const response = await fetch(path, { headers: { cookie } });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const body = await response.text();
+      const payload = JSON.parse(body) as { login?: Record<string, unknown>; revocations: unknown[] };
+      expect(payload.login).toMatchObject({ provider: "antigravity", outcome: "failed", accountEmail: "b***@gmail.com", clientSource: "builtin" });
+      expect(payload.revocations).toMatchObject([{ kind: "antigravity", trigger: "delete", outcome: "revoked" }]);
+      expect(body).not.toMatch(/brycen|private-|C:\\\\/u);
+      expect(Object.keys(payload.login ?? {}).every((key) =>
+        ["provider", "attemptId", "startedAt", "finishedAt", "outcome", "stages", "accountEmail", "grantedScopes", "missingScopes", "clientSource"].includes(key))).toBe(true);
+    } finally {
+      await missing.close();
       await listeners.close();
       await fixture.close();
     }

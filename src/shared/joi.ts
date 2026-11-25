@@ -111,15 +111,55 @@ export type ModelSourceStatusDto = "DRAFT" | "VALIDATING" | "READY" | "DEGRADED"
 
 export type CodexLoginMethod = "browser" | "device_code";
 export type CodexLoginState =
-  | { status: "starting" | "validating" | "canceled" | "failed" | "expired" }
+  | { status: "starting" | "validating" | "canceled" | "expired" }
   | { status: "browser"; url: string; acceptsCallback: boolean }
   | { status: "device_code"; url: string; userCode: string }
-  | { status: "completed"; source: ModelSourceDto };
+  | { status: "completed"; source: ModelSourceDto }
+  /** Bounded reason for the failure; only sources that report diagnostics carry it. */
+  | { status: "failed"; reasonCode?: string };
 export type CodexLoginDto = { attemptId: string } & CodexLoginState;
 export interface CodexAccountDto {
   expiresAt: string;
   maskedAccount?: string;
   plan?: string;
+  /** Granted subscription scopes as short names; absent for sources that do not report them. */
+  scopes?: string[];
+}
+
+/** One sanitized stage of a subscription sign-in attempt; stage and reason codes are bounded ASCII. */
+export interface AntigravityLoginStageDto {
+  stage: string;
+  outcome: "ok" | "fallback" | "failed" | "skipped";
+  reasonCode?: string;
+  at: string;
+  latencyMs: number;
+}
+
+export interface AntigravityLoginDiagnosticsDto {
+  provider: string;
+  attemptId?: string;
+  startedAt: string;
+  finishedAt?: string;
+  outcome: "in_progress" | "completed" | "failed" | "canceled" | "expired";
+  stages: AntigravityLoginStageDto[];
+  /** Only ever the masked form of the account email. */
+  accountEmail?: string;
+  grantedScopes?: string[];
+  missingScopes?: string[];
+  clientSource?: "builtin" | "env";
+}
+
+export interface AntigravityRevocationDto {
+  kind: "antigravity";
+  trigger: "reconnect" | "delete";
+  outcome: "revoked" | "already_invalid" | "failed" | "skipped";
+  reasonCode?: string;
+  at: string;
+}
+
+export interface AntigravityDiagnosticsDto {
+  login?: AntigravityLoginDiagnosticsDto;
+  revocations: AntigravityRevocationDto[];
 }
 
 export interface WorkbenchDto {

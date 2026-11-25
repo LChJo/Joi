@@ -8,6 +8,7 @@ import {
   type ModelSourceProtocol,
 } from "../../domain/model-sources/model-source.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import type { SubscriptionLoginDiagnostics } from "./subscription-login-diagnostics.js";
 import type {
   EffectiveModelLimits,
   ModelLimitReader,
@@ -71,6 +72,9 @@ export class ModelSourceService {
     repository: ModelSourceRepository;
     secrets: ModelSourceSecretStore;
     validator: ModelSourceValidator;
+    /** Antigravity-only lifecycle hooks; absent when revocation is not wired. */
+    revokeAntigravity?: (refreshToken: string) => Promise<"revoked" | "already_invalid" | "failed" | "skipped">;
+    revocations?: Pick<SubscriptionLoginDiagnostics, "recordRevocation">;
   }) {}
 
   create(input: CreateModelSourceRequest): Promise<ModelSourceDto> {
@@ -118,10 +122,37 @@ export class ModelSourceService {
         await secrets.delete(providerId).catch(() => undefined);
         throw error;
       }
+      await this.#revokeReplacedCredential("reconnect", kind, current.source.activeSourceRevision.credentialRef);
       await secrets.delete(current.source.activeSourceRevision.credentialRef);
       return revised;
     });
     return this.validate(source.sourceId, signal);
+  }
+
+  /**
+   * Best-effort Google-side revocation before a replaced or deleted credential disappears
+   * locally. Failure never blocks the calling flow; the bounded outcome lands in the
+   * revocation history for the diagnostics view.
+   */
+  async #revokeReplacedCredential(trigger: "reconnect" | "delete", kind: string, credentialRef: string): Promise<void> {
+    const { revocations, revokeAntigravity, secrets } = this.dependencies;
+    if (kind !== "antigravity" || revocations === undefined || revokeAntigravity === undefined) return;
+    let outcome: "revoked" | "already_invalid" | "failed" | "skipped";
+    let reasonCode: string | undefined;
+    try {
+      const previous = await secrets.readOAuthCredential?.(credentialRef);
+      if (previous === undefined || typeof previous.refresh !== "string" || previous.refresh.length === 0) {
+        outcome = "skipped";
+        reasonCode = "old_credential_unreadable";
+      } else {
+        outcome = await revokeAntigravity(previous.refresh);
+        if (outcome === "failed") reasonCode = "revoke_failed";
+      }
+    } catch {
+      outcome = "skipped";
+      reasonCode = "old_credential_unreadable";
+    }
+    revocations.recordRevocation({ kind: "antigravity", trigger, outcome, ...(reasonCode === undefined ? {} : { reasonCode }) });
   }
 
   #serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -212,7 +243,7 @@ export class ModelSourceService {
     if (!includeCodexAccount) return records.map((record) => this.#toDto(record));
     return Promise.all(records.map(async (record) => {
       const dto = this.#toDto(record);
-      if (dto.kind === "codex") {
+      if (dto.kind === "codex" || dto.kind === "antigravity") {
         const codexAccount = await this.dependencies.secrets.describeOAuth?.(record.source.activeSourceRevision.credentialRef).catch(() => undefined);
         if (codexAccount !== undefined) dto.codexAccount = codexAccount;
       }
@@ -311,6 +342,7 @@ export class ModelSourceService {
     return this.#serialize(async () => {
       const current = await this.#get(sourceId);
       await this.dependencies.repository.delete(sourceId);
+      await this.#revokeReplacedCredential("delete", current.source.activeSourceRevision.kind, current.source.activeSourceRevision.credentialRef);
       await this.dependencies.secrets.delete(current.source.activeSourceRevision.credentialRef);
       const remaining = await this.dependencies.repository.list();
       if (remaining.length > 0) await this.dependencies.repository.setOrder(remaining.map((record) => record.source.sourceId));

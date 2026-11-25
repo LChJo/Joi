@@ -1,8 +1,10 @@
 import type { CodexLoginDto, CodexLoginMethod, CodexLoginState } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
-import type { CodexAuthorizationPort } from "../ports/model-source-ports.js";
+import type { CodexAuthorizationPort, SubscriptionLoginFacts, SubscriptionLoginStageEvent } from "../ports/model-source-ports.js";
 import type { IdGenerator } from "../ports/runtime-store.js";
+import { subscriptionLoginReasonCode } from "../ports/runtime-diagnostics.js";
 import type { ModelSourceService } from "./model-source-service.js";
+import type { SubscriptionLoginDiagnostics, SubscriptionLoginRecorder } from "./subscription-login-diagnostics.js";
 import { ANTIGRAVITY_REDIRECT_URI } from "../../../shared/antigravity-authorization.js";
 
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
@@ -27,6 +29,8 @@ export class SubscriptionLoginService {
     authorization: CodexAuthorizationPort;
     ids: IdGenerator;
     connect: ModelSourceService["connectCodex"];
+    /** Antigravity-only sanitized diagnostics; codex sign-ins keep their exact previous shape. */
+    diagnostics?: Pick<SubscriptionLoginDiagnostics, "start" | "latest">;
   }) {}
 
   #error(suffix: string, message: string): DomainError {
@@ -99,6 +103,10 @@ export class SubscriptionLoginService {
   async #run(attempt: LoginAttempt, method: CodexLoginMethod, sourceId: string | undefined): Promise<void> {
     const signal = attempt.controller.signal;
     const timer = setTimeout(() => this.#abort(attempt, "expired"), LOGIN_TIMEOUT_MS);
+    const diagnostics = this.dependencies.provider === "antigravity" ? this.dependencies.diagnostics : undefined;
+    const recorder: SubscriptionLoginRecorder | undefined = diagnostics?.start("antigravity", attempt.id);
+    const record = (event: SubscriptionLoginStageEvent): void => recorder?.record(event);
+    const note = (facts: SubscriptionLoginFacts): void => recorder?.note(facts);
     try {
       const credential = await this.dependencies.authorization.authorize({
         method,
@@ -110,14 +118,30 @@ export class SubscriptionLoginService {
           if (!signal.aborted) attempt.state = { status: "device_code", url, userCode };
         },
         waitForCallback: (promptSignal) => this.#waitForCallback(attempt, promptSignal),
+        ...(recorder === undefined ? {} : { onStage: record, onFacts: note }),
       });
       signal.throwIfAborted();
       clearTimeout(timer);
       attempt.state = { status: "validating" };
-      const source = await this.dependencies.connect(credential, signal, sourceId);
+      let source: Awaited<ReturnType<ModelSourceService["connectCodex"]>>;
+      try {
+        source = await this.dependencies.connect(credential, signal, sourceId);
+      } catch (error) {
+        record({ stage: "credential_store", outcome: "failed", reasonCode: subscriptionLoginReasonCode(error) });
+        throw error;
+      }
+      record({ stage: "credential_store", outcome: "ok" });
       if (!signal.aborted) attempt.state = { status: "completed", source };
-    } catch {
-      if (!signal.aborted) attempt.state = { status: "failed" };
+      recorder?.finish("completed");
+    } catch (error) {
+      if (!signal.aborted) {
+        attempt.state = recorder === undefined
+          ? { status: "failed" }
+          : { status: "failed", reasonCode: subscriptionLoginReasonCode(error) };
+        recorder?.finish("failed");
+      } else {
+        recorder?.finish(attempt.state.status === "expired" ? "expired" : "canceled");
+      }
     } finally {
       clearTimeout(timer);
       delete attempt.submitCallback;
