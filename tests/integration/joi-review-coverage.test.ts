@@ -50,6 +50,17 @@ it("reuses unchanged requirement evidence alongside new evidence and reports the
       claims: [{ ...claim, requirementIds: ["audit"], resultIds: ["result-1"] }] }, true))
       .rejects.toMatchObject({ issues: { missingRequirementIds: ["report", "audit", "appendix"] } });
     await read("result-2");
+    const optionalReview = { description: "An additional independent review could increase confidence", requirementIds: ["report"], resultIds: [] };
+    const advisory = { ...optionalReview, advisory: true as const };
+    await expect(fixture.inbox.validateSynthesisState(fixture.inputId, { ...synthesisState, unresolved: [advisory] }, true)).resolves.toBeUndefined();
+    await expect(fixture.inbox.validateSynthesisState(fixture.inputId, { ...synthesisState, unresolved: [optionalReview] }, true))
+      .rejects.toMatchObject({ code: "goal_synthesis_coverage_incomplete" });
+    await expect(fixture.inbox.validateSynthesisState(fixture.inputId, { ...synthesisState, claims: [], unresolved: [advisory] }, true))
+      .rejects.toMatchObject({ code: "goal_synthesis_coverage_incomplete" });
+    await expect(fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", {
+      outcome: "RESULT_CONTINUE", completionSummary: "Only an optional review remains.",
+      synthesisState: { ...synthesisState, unresolved: [advisory] },
+    })).rejects.toMatchObject({ code: "goal_synthesis_state_invalid" });
     await expect(fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", {
       outcome: "RESULT_SYNTHESIZED", completionSummary: "Existing report and new checks delivered.",
       synthesisState: { ...synthesisState, conflicts: [{ description: "Conflicting report review",

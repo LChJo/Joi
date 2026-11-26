@@ -10,7 +10,7 @@ import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/wo
 import { DomainError } from "../../domain/errors.js";
 import { assertCurrentRequirements, hasOnlyInitialRequirementSource } from "../../domain/work/goal-requirements.js";
 import { assessGoalSynthesis, hasCurrentGoalSynthesisCoverage, buildGoalSynthesisState, readStoredSynthesisState } from "./sqlite-goal-synthesis-state.js";
-import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+import { assertMaterialContinuationDraft, type GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
@@ -1299,6 +1299,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const committedAt = explicitResume && reopenedAt > completionTime ? reopenedAt : completionTime;
         const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED"
           : completion.outcome === "RESULT_CONTINUE" ? "CONTINUE" : "BLOCKED";
+        if (disposition === "CONTINUE") assertMaterialContinuationDraft(completion.synthesisState);
         const previousContinuation = disposition === "CONTINUE" ? connection.prepare(`
           SELECT o.synthesis_state_json FROM joi_goal_outcomes o JOIN joi_inbox_messages g ON g.input_id = o.input_id
           JOIN joi_harness_maps m ON m.goal_input_id = o.input_id AND m.reviewed_revision >= o.result_revision
@@ -1387,7 +1388,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
       connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
         WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')
-          AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);
+          AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')
+          AND NOT EXISTS (SELECT 1 FROM joi_automations a JOIN joi_harness_maps m ON m.goal_input_id = joi_automation_runs.input_id
+            WHERE a.routine_id = joi_automation_runs.routine_id AND a.target_kind = 'GOAL_CONTINUATION' AND m.status = 'ACTIVE')`).run(now, inputId, inputId);
+      connection.prepare(`UPDATE joi_automation_runs SET status = 'RUNNING', result = 'RUNNING', reason_code = NULL
+        WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')
+          AND EXISTS (SELECT 1 FROM joi_automations a JOIN joi_harness_maps m ON m.goal_input_id = joi_automation_runs.input_id
+            WHERE a.routine_id = joi_automation_runs.routine_id AND a.target_kind = 'GOAL_CONTINUATION' AND m.status = 'ACTIVE')`).run(inputId);
       connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
       connection.prepare("UPDATE partner_result_events SET consumed_at = ? WHERE input_id = ? AND consumed_at IS NULL").run(now, inputId);
       const historicalRecovery = inputId.startsWith("joi_goal_resume:goal:") ? connection.prepare(`SELECT i.goal_input_id, i.workbench_id, m.review_recovery_epoch

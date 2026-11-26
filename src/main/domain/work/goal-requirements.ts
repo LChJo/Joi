@@ -11,6 +11,7 @@ export interface GoalRequirement {
   kind: "OBJECTIVE" | "DELIVERABLE" | "CONSTRAINT" | "PREFERENCE";
   mandatory: boolean;
   scope: "GLOBAL" | "SCOPED";
+  lifetime?: "EXECUTION";
   text: string;
   source: RequirementSource;
   explicitUserCorrection?: true;
@@ -38,7 +39,8 @@ export interface RequirementsUpdate {
 }
 
 export function sameGoalRequirement(left: GoalRequirement, right: GoalRequirement): boolean {
-  return left.text === right.text && left.kind === right.kind && left.mandatory === right.mandatory && left.scope === right.scope;
+  return left.text === right.text && left.kind === right.kind && left.mandatory === right.mandatory && left.scope === right.scope
+    && left.lifetime === right.lifetime;
 }
 
 export function assertCurrentRequirements(contract: GoalRequirements, expectedRevision?: number): void {
@@ -78,7 +80,8 @@ export function mergeGoalRequirements(current: GoalRequirements, update: Require
     if ("text" in change) {
       const item = change as GoalRequirement;
       if (!item.text.trim() || !["OBJECTIVE", "DELIVERABLE", "CONSTRAINT", "PREFERENCE"].includes(item.kind)
-        || !["GLOBAL", "SCOPED"].includes(item.scope) || typeof item.mandatory !== "boolean") {
+        || !["GLOBAL", "SCOPED"].includes(item.scope) || typeof item.mandatory !== "boolean"
+        || (item.lifetime !== undefined && !["EXECUTION"].includes(item.lifetime))) {
         throw new DomainError("goal_requirements_invalid", "A requirement must have text, kind and scope.");
       }
       // Existing identifiers retain their own correction and provenance even when their texts converge.
@@ -107,7 +110,7 @@ export function renderGoalRequirements(contract: GoalRequirements, selectedIds?:
   ];
   const guidance = contract.status === "DIRTY" ? ["Before dispatch, resume or a versioned completion tool: page through all unprocessed goal_read_inputs sources, merge goal_update_requirements, preserve every unmentioned requirement. Only an explicit user correction may replace or retire one. Read pages sequentially; checkpoint newly extracted requirements from each page while keeping processedSourceRevision unchanged until that entire source is read. Acknowledge even inputs that do not change requirements."] : [];
   const lines = requirements.map(item => ({ priority: item.mandatory ? item.kind === "CONSTRAINT" ? 0 : 1 : 2,
-    text: JSON.stringify({ id: item.id, kind: item.kind, mandatory: item.mandatory, scope: item.scope, text: item.text }) }));
+    text: JSON.stringify({ id: item.id, kind: item.kind, mandatory: item.mandatory, scope: item.scope, lifetime: item.lifetime ?? "GOAL", text: item.text }) }));
   const rendered = [...header, ...lines.map(line => line.text), ...guidance].join("\n");
   if (maxCharacters === undefined || characterCount(rendered) <= maxCharacters) return rendered;
   const omission = (count: number) => `omittedRequirements=${String(count)}. Read work_read_evidence(mode=roadmap,section=requirements) to enumerate all requirements and goal_read_inputs for their complete source text.`;

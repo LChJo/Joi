@@ -43,6 +43,13 @@ describe("effective requirement merge invariants", () => {
     expect(renderGoalRequirements({ ...contract, requirements: merged }, [rule.id], false)).toContain(other.text);
   });
 
+  it("retains the existing durable requirement unless the user explicitly changes its lifetime", () => {
+    const temporary: GoalRequirement = { ...rule, lifetime: "EXECUTION", source: correction };
+    expect(() => mergeGoalRequirements(contract, update({ upserts: [temporary] }))).toThrow(expect.objectContaining({ code: "goal_requirements_user_correction_required" }));
+    expect(mergeGoalRequirements(contract, update({ upserts: [{ ...temporary, explicitUserCorrection: true }] }))).toEqual([{ ...temporary, explicitUserCorrection: true }]);
+    expect(renderGoalRequirements({ ...contract, requirements: [temporary] })).toContain('"lifetime":"EXECUTION"');
+  });
+
   it.each([
     { id: "" }, { id: "x".repeat(121) }, { text: " " }, { kind: "UNKNOWN" }, { scope: "UNKNOWN" }, { mandatory: "yes" },
   ])("rejects malformed requirements %j", patch => {

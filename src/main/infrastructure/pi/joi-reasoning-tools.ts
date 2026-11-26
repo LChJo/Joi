@@ -28,7 +28,7 @@ import type { GoalRequirementsRepository } from "../../application/ports/goal-re
 import type { MethodEvidenceRead } from "../../application/ports/method-learning.js";
 import { withGoalRequirementsTools } from "./joi-requirements-tools.js";
 import { DomainError } from "../../domain/errors.js";
-import { GOAL_SYNTHESIS_STATE_SCHEMA, GoalSynthesisCoverageError, parseGoalSynthesisDraft, type GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+import { assertMaterialContinuationDraft, GOAL_SYNTHESIS_STATE_SCHEMA, GoalSynthesisCoverageError, parseGoalSynthesisDraft, type GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { partnerClusterKey, partnerClusterName } from "../../domain/workbench/workbench-naming.js";
 import { PI_PARTNER_TOOL_NAMES } from "./pi-coding-tool-factory.js";
 
@@ -848,6 +848,7 @@ export function createJoiReasoningTools(input: {
       }
       if (input.inputId.startsWith("joi_result_input:goal:")) {
         try {
+          if (arguments_.outcome === "RESULT_CONTINUE") assertMaterialContinuationDraft(synthesisState);
           await input.clarifications.validateSynthesisState?.(input.inputId, synthesisState, arguments_.outcome === "RESULT_SYNTHESIZED");
         } catch (error) {
           if (!(error instanceof DomainError) || !["goal_synthesis_reference_invalid", "goal_synthesis_state_invalid", "goal_synthesis_coverage_incomplete"].includes(error.code)) throw error;
@@ -855,7 +856,7 @@ export function createJoiReasoningTools(input: {
           const exhausted = synthesisCorrections >= 2;
           const coverage = error instanceof GoalSynthesisCoverageError ? error.issues : undefined;
           const hint = coverage === undefined
-            ? "Synthesis was not committed. Use work_read_evidence to copy actual result and requirement IDs, then correct the private synthesis state."
+            ? "Synthesis was not committed. Use work_read_evidence to copy actual result and requirement IDs, then correct the private synthesis state. Advisory observations alone cannot warrant RESULT_CONTINUE; submit RESULT_SYNTHESIZED if verified coverage suffices, or identify the material gap."
             : "Synthesis was not committed. Fix the listed links or read receipts using existing Work. If a required gap remains, submit RESULT_CONTINUE only for a concrete safe next step, or RESULT_BLOCKED when there is none. Describe the confirmed findings and the specific gaps in the visible answer.";
           return { ...result({ reasonCode: error.code, status: exhausted ? "FAILED" : "RETRY_REQUIRED", hint,
             ...(coverage === undefined ? {} : { coverage }) }, exhausted), isError: true, details: {

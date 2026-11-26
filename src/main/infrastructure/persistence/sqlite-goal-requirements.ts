@@ -37,6 +37,19 @@ export function assertGoalRequirementsReady(db: DatabaseSync, goalInputId: strin
   return contract;
 }
 
+/** Only a successfully claimed new scheduled occurrence expires execution-scoped requirements. */
+export function expireExecutionRequirements(db: DatabaseSync, goalInputId: string): void {
+  const current = loadGoalRequirements(db, goalInputId);
+  if (current === null) return;
+  const requirements = current.requirements.filter(item => item.lifetime !== "EXECUTION");
+  if (requirements.length === current.requirements.length) return;
+  const revision = current.revision + 1;
+  db.prepare("INSERT INTO joi_goal_requirement_snapshots (goal_input_id, revision, requirements_json) VALUES (?, ?, ?)")
+    .run(goalInputId, revision, JSON.stringify(requirements));
+  db.prepare("UPDATE joi_goal_requirements SET revision = ? WHERE goal_input_id = ?").run(revision, goalInputId);
+  db.prepare("UPDATE joi_harness_maps SET reviewed_revision = 0, reviewed_requirements_revision = NULL WHERE goal_input_id = ?").run(goalInputId);
+}
+
 export function goalRequirementsCurrentSql(goalExpression: string, revisionExpression: string): string {
   return `NOT EXISTS (SELECT 1 FROM joi_goal_requirements gr WHERE gr.goal_input_id = ${goalExpression}
     AND (COALESCE(${revisionExpression}, -1) <> gr.revision OR gr.processed_source_revision <

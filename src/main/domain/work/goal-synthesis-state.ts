@@ -1,7 +1,7 @@
 import { DomainError } from "../errors.js";
 
 export interface GoalSynthesisClaim { statement: string; requirementIds: string[]; resultIds: string[] }
-export interface GoalSynthesisGap { description: string; requirementIds: string[]; resultIds: string[] }
+export interface GoalSynthesisGap { description: string; requirementIds: string[]; resultIds: string[]; advisory?: true }
 export interface GoalSynthesisConflict {
   description: string;
   resultIds: string[];
@@ -21,17 +21,30 @@ export interface GoalSynthesisState extends Omit<GoalSynthesisDraft, "claims"> {
   source: "MODEL" | "LEGACY";
 }
 
+/** Additional verification is not a reason for another automatic evidence layer. */
+export function assertMaterialContinuationDraft(draft: GoalSynthesisDraft | undefined): void {
+  if (draft !== undefined && draft.unresolved.length > 0
+    && draft.unresolved.every(gap => gap.advisory === true)
+    && draft.conflicts.every(conflict => conflict.resolution !== undefined)) {
+    throw new DomainError("goal_synthesis_state_invalid", "Only advisory observations remain. Submit RESULT_SYNTHESIZED with verified coverage, or identify a material gap.");
+  }
+}
+
 /** A repeat must have the same gaps and no newly verified evidence in their scope. */
 export function hasRepeatedSynthesisGaps(
   previous: GoalSynthesisState,
   current: GoalSynthesisState,
   supportsGap: (resultId: string, requirementIds: ReadonlySet<string> | undefined) => boolean,
 ): boolean {
-  if (previous.source !== "MODEL" || current.source !== "MODEL"
-    || previous.requirementsRevision !== current.requirementsRevision || previous.resultRevision >= current.resultRevision) return false;
-  const gaps = (state: GoalSynthesisState) => [...state.unresolved, ...state.conflicts.filter(item => item.resolution === undefined)];
-  const signatures = (items: ReturnType<typeof gaps>) => items.map(({ description, requirementIds }) =>
-    JSON.stringify([description.trim().replace(/\s+/gu, " "), [...new Set(requirementIds)].sort()])).sort();
+  if (previous.requirementsRevision !== current.requirementsRevision || previous.resultRevision >= current.resultRevision) return false;
+  const gaps = (state: GoalSynthesisState) => [
+    ...state.unresolved.filter(item => item.advisory !== true).map(item => ({ ...item, kind: "gap" })),
+    ...state.conflicts.filter(item => item.resolution === undefined).map(item => ({ ...item, kind: "conflict" })),
+  ];
+  // Scoped gaps have a stable requirement identity; unscoped gaps still need matching descriptions.
+  const signatures = (items: ReturnType<typeof gaps>) => [...new Set(items.flatMap(({ kind, description, requirementIds }) =>
+    requirementIds !== undefined && requirementIds.length > 0 ? requirementIds.map(id => JSON.stringify([kind, id]))
+      : [JSON.stringify([kind, description.trim().replace(/\s+/gu, " ")])]))].sort();
   const currentGaps = gaps(current);
   if (currentGaps.length === 0 || JSON.stringify(signatures(currentGaps)) !== JSON.stringify(signatures(gaps(previous)))) return false;
   const gapScope = currentGaps.some(item => (item.requirementIds?.length ?? 0) === 0)
@@ -70,7 +83,7 @@ export const GOAL_SYNTHESIS_STATE_SCHEMA = { type: "object", additionalPropertie
     claims: { type: "array", maxItems: 128, items: { type: "object", additionalProperties: false,
       required: ["statement", "requirementIds", "resultIds"], properties: { statement: description, requirementIds: references, resultIds: references } } },
     unresolved: { type: "array", maxItems: 64, items: { type: "object", additionalProperties: false,
-      required: ["description", "requirementIds", "resultIds"], properties: { description, requirementIds: references, resultIds: references } } },
+      required: ["description", "requirementIds", "resultIds"], properties: { description, requirementIds: references, resultIds: references, advisory: { type: "boolean", const: true } } } },
     conflicts: { type: "array", maxItems: 64, items: { type: "object", additionalProperties: false,
       required: ["description", "resultIds"], properties: {
         description, resultIds: references, requirementIds: references,
@@ -100,13 +113,19 @@ function conflict(value: unknown): boolean {
   return row(resolution, "rationale", false) && (resolution as { resultIds: string[] }).resultIds.length > 0;
 }
 
+function gap(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const { advisory, ...base } = value as Record<string, unknown>;
+  return (advisory === undefined || advisory === true) && row(base, "description", true);
+}
+
 /** Validates semantic state only; evidence identity and acceptance are runtime facts. */
 export function parseGoalSynthesisDraft(value: unknown): GoalSynthesisDraft | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
   const data = value as Record<string, unknown>;
   if (data.version !== 1 || Object.keys(data).length !== 4 || Object.keys(data).some(key => !["version", "claims", "unresolved", "conflicts"].includes(key))
     || !Array.isArray(data.claims) || data.claims.length > 128 || !data.claims.every(item => row(item, "statement", true))
-    || !Array.isArray(data.unresolved) || data.unresolved.length > 64 || !data.unresolved.every(item => row(item, "description", true))
+    || !Array.isArray(data.unresolved) || data.unresolved.length > 64 || !data.unresolved.every(gap)
     || !Array.isArray(data.conflicts) || data.conflicts.length > 64 || !data.conflicts.every(conflict)
     || JSON.stringify(value).length > 60_000) return undefined;
   return JSON.parse(JSON.stringify(value)) as GoalSynthesisDraft;
