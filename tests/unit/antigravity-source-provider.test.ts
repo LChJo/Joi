@@ -1,7 +1,7 @@
 /* Synthetic responses exercise the production Pi transport without account files. */
 /* eslint-disable @typescript-eslint/require-await */
 import { createModels, type CredentialStore } from "@earendil-works/pi-ai";
-import { createAntigravitySourceProvider, antigravityModelLimits } from "../../src/main/infrastructure/pi/antigravity-source-provider.js";
+import { createAntigravitySourceProvider, antigravityModelLimits, antigravityDefaultThinkingEffort, antigravityDefaultCompactionPercent } from "../../src/main/infrastructure/pi/antigravity-source-provider.js";
 import { PiModelSourceCatalog } from "../../src/main/infrastructure/pi/pi-model-source-catalog.js";
 import { isAntigravityAuthorizationUrl } from "../../src/shared/antigravity-authorization.js";
 
@@ -18,6 +18,11 @@ describe("Antigravity source routing", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it.each([
+    ["gemini-4-neon", "xhigh", "gemini-4-neon-xhigh", -1],
+    ["gemini-4-neon", "off", "gemini-4-neon-low", 0],
+    ["gemini-4-hydrogen", "medium", "gemini-4-hydrogen-medium", 4000],
+    ["gemini-4-carbon", "high", "gemini-4-carbon-high", -1],
+    ["future-model-preview", "high", "future-model-preview", -1],
     ["gemini-3.8-flash", "high", "gemini-3.8-flash-high", -1],
     ["gemini-3.7-flash", "medium", "gemini-3.7-flash-medium", 4000],
     ["gemini-3.6-flash", "off", "gemini-3.6-flash-low", 0],
@@ -41,12 +46,47 @@ describe("Antigravity source routing", () => {
 
   it("limits output, rejects foreign protocols and keeps models unproven until tools execute", () => {
     const catalog = new PiModelSourceCatalog();
-    expect(catalog.resolve("antigravity")).toMatchObject({ protocol: "google", accessMode: "coding-plan", capability: "custom-unverified-tools" });
+    expect(catalog.resolve("antigravity")).toMatchObject({ modelId: "gemini-4-neon", protocol: "google", accessMode: "coding-plan", capability: "custom-unverified-tools" });
+    expect(catalog.resolve("antigravity", "")).toMatchObject({ modelId: "gemini-4-neon" });
     for (const protocol of ["openai", "anthropic"] as const) expect(() => catalog.resolve("antigravity", undefined, undefined, protocol)).toThrow();
     expect(() => catalog.resolve("generic-openai", "fixture", "custom", "google")).toThrow();
-    expect(() => catalog.resolve("antigravity", "unknown-model")).toThrow();
+    expect(catalog.resolve("antigravity", "unknown-model")).toMatchObject({ modelId: "unknown-model" });
+    expect(antigravityModelLimits({ sourceId: "fixture", modelId: "unknown-model" }))
+      .toEqual({ contextWindow: 128_000, maxOutputTokens: 16_384 });
+    expect(antigravityModelLimits({ sourceId: "fixture", modelId: "unknown-model", contextWindow: 512_000, maxOutputTokens: 64_000 }))
+      .toEqual({ contextWindow: 512_000, maxOutputTokens: 64_000 });
     expect(antigravityModelLimits({ sourceId: "fixture", modelId: "gemini-3.8-flash", contextWindow: 2_000_000, maxOutputTokens: 131_072 }))
       .toEqual({ contextWindow: 1_048_576, maxOutputTokens: 65_536 });
+    expect(antigravityModelLimits({ sourceId: "fixture", modelId: "gemini-4-neon" }))
+      .toEqual({ contextWindow: 524_288, maxOutputTokens: 65_536 });
+    expect(antigravityModelLimits({ sourceId: "fixture", modelId: "gemini-4-neon", contextWindow: 2_000_000, maxOutputTokens: 131_072 }))
+      .toEqual({ contextWindow: 524_288, maxOutputTokens: 65_536 });
+  });
+
+  it("defaults Neon to high thinking and a compaction reserve that covers its output cap", () => {
+    expect(antigravityDefaultThinkingEffort("gemini-4-neon")).toBe("high");
+    expect(antigravityDefaultThinkingEffort("gemini-3.8-flash")).toBe("low");
+    expect(antigravityDefaultThinkingEffort("future-model-preview")).toBe("low");
+    expect(antigravityDefaultCompactionPercent("gemini-4-neon")).toBe(85);
+    expect(antigravityDefaultCompactionPercent("gemini-3.8-flash")).toBeUndefined();
+    expect(antigravityDefaultCompactionPercent("future-model-preview")).toBeUndefined();
+    const window = 524_288;
+    const percent = antigravityDefaultCompactionPercent("gemini-4-neon");
+    if (percent === undefined) throw new Error("Neon needs a default compaction threshold");
+    expect(window - Math.floor(window * percent / 100)).toBeGreaterThanOrEqual(65_536);
+  });
+
+  it("routes an unset Neon turn at its default thinking level", async () => {
+    const provider = createAntigravitySourceProvider({ kind: "antigravity", credentialRef: "fixture", sourceId: "fixture", modelId: "gemini-4-neon" });
+    const models = fixture(); models.setProvider(provider);
+    const model = provider.getModels()[0];
+    if (model === undefined) throw new Error("Missing fixture model");
+    const fetch = vi.fn(async () => new Response('data: {"response":{"candidates":[{"content":{"parts":[{"text":"OK"}]},"finishReason":"STOP"}]}}\n\n', { headers: { "content-type": "text/event-stream" } }));
+    vi.stubGlobal("fetch", fetch);
+    const result = await models.completeSimple(model, { messages: [{ role: "user", content: "fixture", timestamp: 1 }] }, { maxTokens: 64, maxRetries: 0 });
+    expect(result.stopReason, result.errorMessage).toBe("stop");
+    const body = JSON.parse(((fetch.mock.calls[0] as unknown as [unknown, RequestInit])[1].body as string)) as unknown;
+    expect(body).toMatchObject({ model: "gemini-4-neon-high", request: { generationConfig: { thinkingConfig: { thinkingBudget: -1 } } } });
   });
 
   it("allows only the Google authorization endpoint", () => {

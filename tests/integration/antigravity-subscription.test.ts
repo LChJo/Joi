@@ -122,7 +122,7 @@ describe("Antigravity subscription model network", () => {
         if (result.status !== "completed") throw new Error("pending");
         return result.source;
       });
-      expect(connected, connected.reasonCode).toMatchObject({ kind: "antigravity", status: "READY", accessMode: "coding-plan", protocol: "google" });
+      expect(connected, connected.reasonCode).toMatchObject({ kind: "antigravity", status: "READY", accessMode: "coding-plan", protocol: "google", activeModel: { id: "gemini-4-neon" } });
       expect(verifier.length).toBeGreaterThanOrEqual(43);
       expect(createHash("sha256").update(verifier).digest("base64url")).toBe(challenge);
       expect(refreshes).toBe(1);
@@ -132,6 +132,9 @@ describe("Antigravity subscription model network", () => {
         modelId: connected.activeModel.id, modelRevisionId: connected.activeModel.revisionId,
       });
       const { model, models } = resolved;
+      expect(resolved.thinkingLevel).toBe("high");
+      expect(resolved.compactionThresholdPercent).toBe(85);
+      expect(model).toMatchObject({ contextWindow: 524_288, maxTokens: 65_536 });
       const messages = [{ role: "system" as const, timestamp: 1, content: "A long system instruction. ".repeat(12),
         toolsAdded: [{ name: "fixture_tool", description: "Fixture", parameters: Type.Object({}) }] },
       { role: "user" as const, timestamp: 2, content: "Use fixture" }];
@@ -153,7 +156,7 @@ describe("Antigravity subscription model network", () => {
         expect(request.headers.has("x-goog-api-key")).toBe(false);
         expect(request.body).toMatchObject({ project: "fixture-project", requestType: "agent", userAgent: "antigravity" });
       }
-      expect(requests[1]?.body).toMatchObject({ model: "gemini-3.8-flash-high", request: { generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: -1 } } } });
+      expect(requests[1]?.body).toMatchObject({ model: "gemini-4-neon-high", request: { generationConfig: { maxOutputTokens: 64, thinkingConfig: { thinkingBudget: -1 } } } });
       expect((requests[1]?.body.request as Record<string, unknown>).systemInstruction).toBeUndefined();
       expect(Buffer.from((await records.read(model.provider))?.encryptedBlob ?? []).toString()).not.toContain("synthetic");
       const decrypted = Buffer.from((await records.read(model.provider))?.encryptedBlob ?? []).map((byte) => byte ^ 0xa7).toString();
@@ -164,7 +167,9 @@ describe("Antigravity subscription model network", () => {
       expect(account).toMatchObject({ maskedAccount: "b***@gmail.com",
         scopes: ["aicode", "cloud-platform", "userinfo.email", "userinfo.profile", "cclog", "experimentsandconfigs"] });
       await expect(sources.update(connected.sourceId, { apiKey: "no" })).rejects.toMatchObject({ code: "antigravity_oauth_required" });
-      await expect(sources.update(connected.sourceId, { modelId: "gemini-4-neon" })).rejects.toMatchObject({ code: "antigravity_model_unavailable" });
+      await expect(sources.update(connected.sourceId, { modelId: "future-model-preview" })).resolves.toMatchObject({ activeModel: { id: "future-model-preview" } });
+      expect(await sources.validate(connected.sourceId)).toMatchObject({ status: "READY" });
+      expect(requests.at(-1)?.body).toMatchObject({ model: "future-model-preview" });
       denial = () => new Response("private-provider-error", { status: 401 });
       expect(await sources.validate(connected.sourceId)).toMatchObject({ status: "NEEDS_AUTH", reasonCode: "auth_failed" });
       denial = () => Response.json({ error: { details: [{ reason: "LOCATION_NOT_ELIGIBLE" }],message: "private-provider-error" } }, { status: 403 });

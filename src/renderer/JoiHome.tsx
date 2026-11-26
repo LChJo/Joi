@@ -2,6 +2,7 @@ import { localizeProductText, currentLocale, errorNotice, noticeMessage, t, tran
 import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
 import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { GOAL_CONTINUATION_STALLED_PROMPT } from "../shared/joi.js";
+import { ANTIGRAVITY_RECOMMENDED_MODELS, DEFAULT_ANTIGRAVITY_MODEL } from "../shared/antigravity-models.js";
 import { ResultExportMenu } from './ResultExportMenu';
 import { GoalResultHistory } from './GoalResultHistory';
 import { GoalDrawerResizeHandle, GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
@@ -316,6 +317,16 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [notice, setNotice] = useNotice();
   const [noticeWarns, setNoticeWarns] = useState(false);
   const tell = useCallback((text: string, warn = false) => { setNotice(text); setNoticeWarns(warn); }, [setNotice]);
+  const [sourceNotices, setSourceNotices] = useState<ReadonlyMap<string, { text: string; warn: boolean }>>(new Map());
+  const recommendationsId = useId();
+  const tellSource = (sourceId: string, text: string, warn = false) =>
+    setSourceNotices(current => new Map(current).set(sourceId, { text, warn }));
+  const clearSourceNotice = (sourceId: string) => setSourceNotices(current => {
+    if (!current.has(sourceId)) return current;
+    const next = new Map(current);
+    next.delete(sourceId);
+    return next;
+  });
   const load = useCallback(async () => {
     try { setSources((await api.listModelSources(true)).items); }
     catch { tell(t("home.couldNotLoadModelConnectionSettings")); return; }
@@ -342,10 +353,11 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     try {
       await api.deleteModelSource(sourceId);
       setEditing((current) => current === sourceId ? null : current);
+      clearSourceNotice(sourceId);
       tell(t("home.modelConnectionDeleted"));
       await load();
     } catch {
-      tell(t("home.couldNotDeleteTheModelConnectionTryAgain"));
+      tellSource(sourceId, t("home.couldNotDeleteTheModelConnectionTryAgain"), true);
     }
   };
   const replaceSource = (source: JoiSnapshotDto["modelSources"][number]) => {
@@ -356,6 +368,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   };
   const runSourceAction = async (sourceId: string, action: () => Promise<void>) => {
     if (running.current.has(sourceId)) return;
+    clearSourceNotice(sourceId);
     running.current.add(sourceId);
     setBusySources(new Set(running.current));
     try { await action(); }
@@ -369,7 +382,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     try {
       replaceSource(await api.validateModelSource(sourceId));
       await load();
-    } catch { tell(t("home.validationFailed"), true); }
+    } catch { tellSource(sourceId, t("home.validationFailed"), true); }
   });
   const saveEdit = async (event: SyntheticEvent<HTMLFormElement>, source: JoiSnapshotDto["modelSources"][number]) => {
     event.preventDefault();
@@ -408,9 +421,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       let saved: typeof source;
       try { saved = await api.updateModelSource(source.sourceId, body); }
       catch (error) {
-        const unsupportedModel = source.kind === "antigravity" && error instanceof ApiError && error.code === "antigravity_model_unavailable";
-        tell(unsupportedModel ? t("home.antigravityModelUnavailable")
-          : error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"), true);
+        tellSource(source.sourceId, error instanceof ApiError ? error.displayMessage : t("home.modelConnectionChangesCouldNotBeSaved"), true);
         return;
       }
       setEditing((current) => current === source.sourceId ? null : current);
@@ -418,12 +429,12 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       const validated = await api.validateModelSource(saved.sourceId).catch(() => saved);
       replaceSource(validated);
       if (validated.status === "READY") {
-        tell(t("home.modelChangesValidated"));
+        tellSource(source.sourceId, t("home.modelChangesValidated"));
         return;
       }
       const pinned = partners.filter((partner) => partner.status !== "DELETED" && partner.modelSourceId === source.sourceId);
       const named = pinned.slice(0, 3).map((partner) => partner.displayName).join("、");
-      tell(pinned.length === 0
+      tellSource(source.sourceId, pinned.length === 0
         ? t("home.modelChangesValidationFailed")
         : t("home.modelChangesValidationFailedPinned", { p0: String(pinned.length), p1: named, p2: pinned.length > 3 ? t("home.andOthers") : "" }),
       true);
@@ -432,8 +443,11 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   return <section className="model-source-manager">
     <header><div><h2>{t("home.modelConnections")}</h2><p>{t("home.primaryAndBackupConnectionsAreUsedInThisOrder")}</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? t("home.collapse") : t("home.addConnection")}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
+    {notice === null ? null : <p className={noticeWarns ? "inline-notice warning" : "inline-notice info"} role={noticeWarns ? "alert" : "status"}>{notice}</p>}
+    <datalist id={recommendationsId}>{ANTIGRAVITY_RECOMMENDED_MODELS.map(id => <option key={id} value={id} />)}</datalist>
     <div className="model-source-list">{sources.map((source, index) => {
       const busy = busySources.has(source.sourceId);
+      const sourceNotice = sourceNotices.get(source.sourceId);
       return <article className="model-source-item" key={source.sourceId}>
       <div className="model-source-summary">
         <div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div>
@@ -459,7 +473,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <button className="button ghost" disabled={busy || index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">{t("home.moveDown")}</button>
         <button className="button quiet" disabled={busy} onClick={() => void validateSource(source.sourceId)} type="button">{t(source.status === "DISABLED" ? "home.enable" : "home.validate")}</button>
         <ModelSourceMenu label={source.displayName} disabled={busy} items={[
-          { label: t("common.edit"), run: () => { setReconnecting(null); setEditing(source.sourceId); } },
+          { label: t("common.edit"), run: () => { clearSourceNotice(source.sourceId); setReconnecting(null); setEditing(source.sourceId); } },
           ...((source.kind === "codex" || source.kind === "antigravity") && api.desktop ? [
             { label: t(source.kind === "antigravity" ? "home.antigravityReconnect" : "home.codexReconnect"), run: () => { setEditing(null); setReconnecting(source.sourceId); } },
           ] : []),
@@ -467,12 +481,12 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
             { label: t("home.antigravityDiagnostics"), run: () => void runSourceAction(source.sourceId, async () => {
               setNotice(null);
               try { setDiagnostics({ sourceId: source.sourceId, data: await api.antigravityDiagnostics() }); }
-              catch { tell(t("home.antigravityDiagnosticsFailed"), true); }
+              catch { tellSource(source.sourceId, t("home.antigravityDiagnosticsFailed"), true); }
             }) },
           ] : []),
           { label: t("home.disable"), disabled: source.status === "DISABLED", run: () => void runSourceAction(source.sourceId, async () => {
             try { await api.updateModelSource(source.sourceId, { disabled: true }); await load(); }
-            catch { tell(t("home.modelConnectionChangesCouldNotBeSaved"), true); }
+            catch { tellSource(source.sourceId, t("home.modelConnectionChangesCouldNotBeSaved"), true); }
           }) },
           { label: t("common.delete"), danger: true, run: () => void runSourceAction(source.sourceId, () => removeSource(source.sourceId)) },
         ]} />
@@ -481,7 +495,10 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       {diagnostics?.sourceId === source.sourceId ? <AntigravityDiagnosticsPanel data={diagnostics.data} onClose={() => setDiagnostics(null)} /> : null}
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>{t("home.editDisplayName")}<input defaultValue={source.displayName} name="displayName" required /></label><label>{t("home.editBaseUrl")}<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
-        <label>{t("home.editModelId")}<input defaultValue={source.activeModel.id} name="modelId" required /></label>
+        <label>{t("home.editModelId")}<input defaultValue={source.activeModel.id} name="modelId"
+          list={source.kind === "antigravity" ? recommendationsId : undefined}
+          placeholder={source.kind === "antigravity" ? DEFAULT_ANTIGRAVITY_MODEL : undefined}
+          required={source.kind !== "antigravity"} /></label>
         {(source.kind === "codex" || source.kind === "antigravity") ? null : <label>{t("home.replaceApiKeyLeaveBlankToKeep")}<input autoComplete="off" name="apiKey" type="password" /></label>}
         <details className="model-source-advanced">
           <summary>{t("home.advancedSettings")}</summary>
@@ -497,9 +514,10 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         </details>
         <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{t("home.saveAndValidate")}</button><button className="button ghost" disabled={busy} onClick={() => setEditing(null)} type="button">{t("common.cancel")}</button></div>
       </form> : null}
+      {sourceNotice === undefined ? null : <p className={`inline-notice model-source-notice ${sourceNotice.warn ? "warning" : "info"}`}
+        role={sourceNotice.warn ? "alert" : "status"}>{localizeProductText(sourceNotice.text)}</p>}
       </article>;
     })}</div>
-    {notice === null ? null : <p className={noticeWarns ? "inline-notice warning" : "inline-notice info"} {...(noticeWarns ? { role: "alert" as const } : {})}>{notice}</p>}
   </section>;
 }
 

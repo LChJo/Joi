@@ -105,13 +105,15 @@ Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox �
 
 首次连接和「添加网络」共用紧凑的平台选择按钮，最小高度为 44 像素。通用平台排在所有入口之后，桌面端的订阅入口也遵循该顺序（AC-24/AC-55）。
 
-反重力连通验证将 Google 明确返回的地区拒绝映射为 `region_forbidden`。其他 HTTP 403 显示拒绝及原因未知。编辑目录外的 Model ID 时显示型号提示并停止保存。连接卡只展示安全原因，原始服务响应保留在请求处理边界内。
+反重力连通验证将 Google 明确返回的地区拒绝映射为 `region_forbidden`。其他 HTTP 403 显示拒绝及原因未知。反重力 Model ID 推荐列表不作为保存门禁：新连接及空白 ID 默认 Gemini 4 Neon，任意非空 ID 可保存，未知模型按原 ID 请求后由提供方真实验证；仅 READY 来源可投入执行。编辑与验证的操作结果持久显示在对应连接卡内，不放在长列表底部。连接卡只展示安全原因，原始服务响应保留在请求处理边界内。
 
 本机回调端口被占用或被系统保留时，反重力仍可发起授权，并接受同次授权的完整回调网址。
 
 反重力授权和续期默认使用内置的获准应用凭据（官方 Antigravity 桌面客户端），普通用户无需配置即可发起登录。可选同时提供 `JOI_ANTIGRAVITY_OAUTH_CLIENT_ID` 与 `JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET` 覆盖内置值（两者需同时提供）；`JOI_ANTIGRAVITY_USER_AGENT` 可在上游要求更新 CLI 版本标识时覆盖 User-Agent，非法值静默回落默认指纹。
 
 2026-11-23 反重力订阅模型网络（AC-24/AC-55/AC-65）：桌面端从「模型网络 → 添加网络 → 反重力订阅」发起 Google PKCE 浏览器授权，支持本机回调与同次授权的完整回调网址粘贴。接入参考 [pi-antigravity 0.15.0](https://pi.dev/packages/pi-antigravity)，使用其八个保守模型及路由：Gemini 3.8/3.7/3.6/3.5 Flash、Gemini 3.1 Pro、Claude Sonnet/Opus 4.6、GPT-OSS 120B；默认 Gemini 3.8 Flash，默认思考深度 `low`，实际权益以账号请求结果为准。通过现有 Pi Google API 适配消息、流式文本、图片输入与工具调用，传输层封装 Cloud Code Assist 请求并保留工具签名。固定无工具验证与实际推理共享配置和有效输出上限；只有 READY 来源进入 Joi 与 Pi 搭档网络。凭据及项目标识加密保存在宿主，续期按来源加锁，不读写 Pi 或 Antigravity 的账号文件。重新登录保留网络身份及模型配置，删除清理凭据。Google 协议仅用于该来源；迁移 115 保留既有模型源及历史 Turn 引用。传输或服务端失败可在两个固定 Google 端点间切换，复用同次请求标识；授权错误不切换账号。测试使用合成凭据、临时数据库和本机回调，真实账号授权与服务端模型权益单独验收。上游许可保存在 [antigravity-license.txt](antigravity-license.txt)。
+
+2026-11-26 反重力模型推荐与编辑（AC-24/AC-55/AC-65）：根据 [Google 官方模型目录](https://antigravity.google/docs/models) 和 [CLI 模型标识示例](https://antigravity.google/docs/cli/headless/) 更新为 Gemini 4 Neon、Carbon、Hydrogen 的可编辑建议，排除即将退役的型号；新连接和留空默认 Gemini 4 Neon，保留既有选择。Neon 默认几何为 512K 上下文（官方已记录）与 64K 输出（沿用 Gemini 家族上限；提供方未公布 Neon 输出上限，服务端拒绝仍按观测收紧）；未设置思考深度时默认 `high`（动态预算），压缩默认 85% 占用阈值（预留覆盖 64K 输出）；其他模型保持 `low` 思考与 Pi 默认压缩，验证与推理共享这些默认。推荐列表不是白名单。旧型号保留兼容路由（gemini-4-argon 不在推荐列表但保留低/中/高路由），新款使用已记录的思考档位，自定义 ID 不追加后缀；未知几何使用保守默认值或用户配置及已观测上限，提供方实际权限和验证结果仍决定 READY。失败提示在当前卡内保留至后续操作。回归见 `antigravity-source-provider.test.ts`、`pi-source-provider-thinking.test.ts`、`antigravity-subscription.test.ts`、`joi-home-single-entry.test.tsx`。
 
 2026-11-25 反重力授权补强（AC-24/AC-55/AC-65）：反重力登录默认使用内置的获准应用凭据（官方 Antigravity 桌面客户端），普通用户无需配置即可发起授权；`JOI_ANTIGRAVITY_OAUTH_CLIENT_ID` 与 `JOI_ANTIGRAVITY_OAUTH_CLIENT_SECRET` 须同时提供才覆盖内置值，`JOI_ANTIGRAVITY_USER_AGENT` 可在上游要求更新 CLI 版本标识时覆盖 User-Agent，非法值静默回落默认指纹。该内置凭据与参考实现 pi-antigravity 0.15.0 相同，登录在 Google 侧呈现为获准应用的授权，上游凭据可能随版本轮换、需跟随更新；非官方使用仍受 Google 服务条款约束。登录与续期产生脱敏的分阶段诊断（凭据、回调监听、浏览器打开、回调接收、令牌交换、scope 核对、项目发现、账号信息、凭据保存），失败只输出有界原因码，原始服务响应、凭据与路径不进入 DTO 或诊断；`GET /api/v1/model-sources/antigravity-diagnostics` 仅 desktop 会话可读，反重力连接卡「更多操作 → 诊断」展示阶段轨迹、脱敏账号、授予/缺失 scopes 与撤销记录，登录失败时按有界映射补充具体提示。token 响应的 granted scopes 记入凭据并在缺失关键 scope 时告警（不阻塞）；登录成功后调用 Google userinfo 获取账号邮箱，原文仅存于加密凭据，所有出口只显示脱敏形式，userinfo 失败不影响登录；重新登录覆盖或删除网络时尽力调用 Google revoke 撤销旧 refresh token，失败不阻塞并保留最近撤销记录。旧凭据（无新字段）继续兼容，重新登录后自动补齐；Codex 登录路径与 DTO 保持不变。测试使用合成凭据、临时数据库和本机回调，覆盖 `antigravity-oauth-client.test.ts`、`subscription-login-diagnostics.test.ts`、`antigravity-revocation.test.ts`、`antigravity-subscription.test.ts`、`codex-login-service.test.ts`、`model-source-http-api.test.ts`、`antigravity-subscription-form.test.tsx` 与 `codex-subscription-form.test.tsx`。
 

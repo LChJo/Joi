@@ -740,6 +740,7 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
 .model-source-menu .joi-goal-menu-list { min-width: 148px; }
 .model-source-menu .joi-goal-menu-list .danger { margin-top: 4px; border-top: 1px solid var(--line); border-radius: 0 0 7px 7px; }
 .model-source-item > .model-source-form { grid-column: 1 / -1; }
+.model-source-item > .model-source-notice { grid-column: 1 / -1; width: 100%; margin: 0; }
 .model-source-list span, .model-source-list small { color: var(--muted); }
 .model-source-list .model-source-reason { color: var(--amber); font-size: 12px; font-weight: 600; }
 .model-source-error { margin-top: 2px; }

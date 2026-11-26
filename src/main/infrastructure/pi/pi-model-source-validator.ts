@@ -92,7 +92,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     try {
       if (controller.signal.aborted) throw new Error("validation probe aborted");
       const model = createPiSourceProvider(piSourceProviderInput(record)).getModels()[0];
-      const thinks = defaultThinkingLevel(record.source.activeModelRevision.thinkingEffort, model?.baseUrl, model?.api) !== "off"
+      const thinks = defaultThinkingLevel(record.source.activeModelRevision.thinkingEffort, model?.baseUrl, model?.api, model?.id) !== "off"
         || modelRequiresAlwaysOnThinking(model?.baseUrl);
       timer = setTimeout(() => controller.abort(), thinks ? 30_000 : 15_000);
       timer.unref();
@@ -161,7 +161,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       if (auth === undefined) throw new Error("credential missing");
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
-      const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl, model.api);
+      const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl, model.api, model.id);
       // DeepSeek defaults to thinking even when Pi's model metadata says false.
       // The fixed no-tool probe requests no reasoning when the configured effort is off.
       const probeModel = model.api === "openai-responses" && new URL(model.baseUrl).hostname === "api.deepseek.com"

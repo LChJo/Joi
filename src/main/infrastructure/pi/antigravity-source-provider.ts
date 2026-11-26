@@ -1,13 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { createProvider, type Model, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
-import { DomainError } from "../../domain/errors.js";
+import { DEFAULT_ANTIGRAVITY_MODEL } from "../../../shared/antigravity-models.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 import { antigravityOAuth } from "./pi-antigravity-authorization.js";
 import { ANTIGRAVITY_ENDPOINT, antigravityHeaders, requestAntigravity, safeAntigravityHttpError } from "./antigravity-http.js";
 
-// Routing and conservative fallback limits follow pi-antigravity 0.15.0; see docs/antigravity-license.txt.
-const CATALOG = [
+// Known limits and legacy routing follow the provider documentation and pi-antigravity 0.15.0.
+// The list is metadata, not an availability gate.
+const KNOWN_LIMITS: readonly { id: string; contextWindow?: number; maxTokens?: number }[] = [
+  // The provider documents Neon's 512K window but no output cap; 65_536 is the same ceiling the
+  // documented Gemini family carries, and a server rejection still tightens it through observation.
+  { id: DEFAULT_ANTIGRAVITY_MODEL, contextWindow: 524_288, maxTokens: 65_536 },
   { id: "gemini-3.8-flash", contextWindow: 1_048_576, maxTokens: 65_536 },
   { id: "gemini-3.7-flash", contextWindow: 1_048_576, maxTokens: 65_536 },
   { id: "gemini-3.6-flash", contextWindow: 1_048_576, maxTokens: 65_536 },
@@ -16,7 +20,10 @@ const CATALOG = [
   { id: "claude-sonnet-4-6", contextWindow: 200_000, maxTokens: 64_000 },
   { id: "claude-opus-4-6", contextWindow: 250_000, maxTokens: 64_000 },
   { id: "gpt-oss-120b", contextWindow: 131_072, maxTokens: 32_768 },
-] as const;
+];
+
+const DEFAULT_CONTEXT_WINDOW = 128_000;
+const DEFAULT_MAX_TOKENS = 16_384;
 
 export interface AntigravitySourceProviderInput {
   kind: "antigravity";
@@ -29,30 +36,52 @@ export interface AntigravitySourceProviderInput {
 }
 
 export function resolveAntigravityModelId(modelId?: string): string {
-  const id = modelId === "" ? CATALOG[0].id : modelId ?? CATALOG[0].id;
-  if (!CATALOG.some((model) => model.id === id)) throw new DomainError("antigravity_model_unavailable", "Choose an Antigravity catalog model.");
-  return id;
+  const id = modelId?.trim();
+  return id === undefined || id === "" ? DEFAULT_ANTIGRAVITY_MODEL : id;
+}
+
+/** The flagship default thinks at the provider-managed dynamic budget; other models stay conservative. */
+export function antigravityDefaultThinkingEffort(modelId: string): ModelThinkingLevel {
+  return modelId === DEFAULT_ANTIGRAVITY_MODEL ? "high" : "low";
+}
+
+/** Neon's reserve must cover its 64K output cap so compaction starts before the window can starve a reply. */
+export function antigravityDefaultCompactionPercent(modelId: string): number | undefined {
+  return modelId === DEFAULT_ANTIGRAVITY_MODEL ? 85 : undefined;
 }
 
 export function antigravityModelLimits(input: Pick<AntigravitySourceProviderInput, "modelId" | "sourceId" | "contextWindow" | "maxOutputTokens">) {
-  const model = CATALOG.find((model) => model.id === input.modelId);
-  return model === undefined ? undefined : {
-    contextWindow: Math.min(model.contextWindow, input.contextWindow ?? Infinity, observedContextWindow(input.sourceId, input.modelId) ?? Infinity),
-    maxOutputTokens: Math.min(model.maxTokens, input.maxOutputTokens ?? Infinity, observedMaxOutputTokens(input.sourceId, input.modelId) ?? Infinity),
+  const id = resolveAntigravityModelId(input.modelId);
+  const model = KNOWN_LIMITS.find((model) => model.id === id);
+  return {
+    contextWindow: Math.min(input.contextWindow ?? model?.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+      model?.contextWindow ?? Infinity, observedContextWindow(input.sourceId, id) ?? Infinity),
+    maxOutputTokens: Math.min(input.maxOutputTokens ?? model?.maxTokens ?? DEFAULT_MAX_TOKENS,
+      model?.maxTokens ?? Infinity, observedMaxOutputTokens(input.sourceId, id) ?? Infinity),
   };
 }
 
 function routing(id: string, effort: ModelThinkingLevel) {
   const high = effort === "high" || effort === "xhigh" || effort === "max";
   const off = effort === "off";
-  if (id.startsWith("claude-")) return { model: id === "claude-opus-4-6" ? `${id}-thinking` : id, budget: off ? 0 : 1024 };
-  if (id.startsWith("gpt-oss-")) return { model: `${id}-medium`, budget: off ? 0 : 8192 };
+  if (id === "claude-opus-4-6" || id === "claude-sonnet-4-6") return { model: id === "claude-opus-4-6" ? `${id}-thinking` : id, budget: off ? 0 : 1024 };
+  if (id === "gpt-oss-120b") return { model: `${id}-medium`, budget: off ? 0 : 8192 };
   if (id === "gemini-3.1-pro") return { model: high ? "gemini-pro-agent" : `${id}-low`, budget: off ? 0 : high ? 10_001 : 1_001 };
   if (id === "gemini-3.5-flash") return {
     model: high ? "gemini-3-flash-agent" : effort === "medium" ? `${id}-low` : `${id}-extra-low`,
     budget: off ? 0 : high ? 10_000 : effort === "medium" ? 4_000 : 1_000,
   };
-  return { model: `${id}-${high ? "high" : effort === "medium" ? "medium" : "low"}`, budget: off ? 0 : high ? -1 : effort === "medium" ? 4_000 : 1_000 };
+  const budget = off ? 0 : high ? -1 : effort === "medium" ? 4_000 : 1_000;
+  const level = high ? "high" : effort === "medium" ? "medium" : "low";
+  // The provider documents Neon and Hydrogen with an extra (xhigh) tier; Carbon and Argon carry
+  // low/medium/high only. Argon stays routable for compatibility but is not a recommended model.
+  if (id === "gemini-4-neon" || id === "gemini-4-hydrogen") {
+    return { model: `${id}-${effort === "xhigh" || effort === "max" ? "xhigh" : level}`, budget };
+  }
+  if (["gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash"].includes(id)) {
+    return { model: `${id}-${level}`, budget };
+  }
+  return { model: id, budget };
 }
 
 type Wire = Record<string, unknown>;
@@ -96,6 +125,8 @@ function antigravityFetch(id: string, effort: ModelThinkingLevel, sessionId: str
       else contents.unshift({ role: "user", parts });
       delete request.systemInstruction;
     }
+    // Schema conversion is a transport-family concern: every claude-/gpt-oss- route needs the
+    // legacy shape, including custom IDs whose routing suffix is left untouched.
     if (id.startsWith("claude-") || id.startsWith("gpt-oss-")) {
       const tools = request.tools as { functionDeclarations?: Wire[] }[] | undefined;
       for (const tool of tools ?? []) for (const declaration of tool.functionDeclarations ?? []) {
@@ -146,7 +177,6 @@ function antigravityFetch(id: string, effort: ModelThinkingLevel, sessionId: str
 export function createAntigravitySourceProvider(input: AntigravitySourceProviderInput) {
   const id = resolveAntigravityModelId(input.modelId);
   const limits = antigravityModelLimits(input);
-  if (limits === undefined) throw new Error("antigravity_model_unavailable");
   const model: Model<"google-generative-ai"> = {
     id, api: "google-generative-ai", provider: input.credentialRef, name: id, baseUrl: ANTIGRAVITY_ENDPOINT,
     contextWindow: limits.contextWindow, maxTokens: limits.maxOutputTokens,
@@ -158,9 +188,9 @@ export function createAntigravitySourceProvider(input: AntigravitySourceProvider
   return createProvider({ id: input.credentialRef, name: "Antigravity", baseUrl: ANTIGRAVITY_ENDPOINT,
     models: [model], auth: { oauth: antigravityOAuth }, api: {
       stream: (model, context, options) => api.stream(model, context, { ...options,
-        fetch: antigravityFetch(id, input.thinkingEffort ?? "low", options?.sessionId ?? sessionId, limits.maxOutputTokens) }),
+        fetch: antigravityFetch(id, input.thinkingEffort ?? antigravityDefaultThinkingEffort(id), options?.sessionId ?? sessionId, limits.maxOutputTokens) }),
       streamSimple: (model, context, options) => api.streamSimple(model, context, { ...options,
-        fetch: antigravityFetch(id, options?.reasoning ?? input.thinkingEffort ?? "low", options?.sessionId ?? sessionId, limits.maxOutputTokens) }),
+        fetch: antigravityFetch(id, options?.reasoning ?? input.thinkingEffort ?? antigravityDefaultThinkingEffort(id), options?.sessionId ?? sessionId, limits.maxOutputTokens) }),
     },
   });
 }

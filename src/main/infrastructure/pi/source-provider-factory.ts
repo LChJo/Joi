@@ -16,7 +16,7 @@ import type { ThinkingEffort } from "../../../shared/joi.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 import { withModelSourceHttpTransport } from "./model-source-http-transport.js";
 import { createCodexSourceProvider, type CodexSourceProviderInput } from "./codex-source-provider.js";
-import { createAntigravitySourceProvider, type AntigravitySourceProviderInput } from "./antigravity-source-provider.js";
+import { createAntigravitySourceProvider, antigravityDefaultThinkingEffort, type AntigravitySourceProviderInput } from "./antigravity-source-provider.js";
 
 /** A model's own documented geometry, as configured on the settings page. */
 export interface ModelLimitOverrides {
@@ -37,10 +37,13 @@ export function defaultThinkingLevel(
   effort: ThinkingEffort | undefined,
   baseUrl: string | undefined,
   api?: Api,
+  modelId?: string,
 ): ModelThinkingLevel {
   if (effort !== undefined) return effort;
   if (api === "openai-codex-responses") return "high";
-  if (api === "google-generative-ai" && baseUrl === "https://daily-cloudcode-pa.googleapis.com") return "low";
+  if (api === "google-generative-ai" && baseUrl === "https://daily-cloudcode-pa.googleapis.com") {
+    return modelId === undefined ? "low" : antigravityDefaultThinkingEffort(modelId);
+  }
   return modelRequiresAlwaysOnThinking(baseUrl) ? "low" : "off";
 }
 

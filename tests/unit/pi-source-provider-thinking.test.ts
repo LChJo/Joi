@@ -147,6 +147,13 @@ describe("defaultThinkingLevel", () => {
   it("leaves Kimi's coding-plan host at off, not low", () => {
     expect(defaultThinkingLevel(undefined, "https://api.kimi.com/coding/v1")).toBe("off");
   });
+
+  it("defaults the Antigravity flagship to high and keeps other models low", () => {
+    expect(defaultThinkingLevel(undefined, "https://daily-cloudcode-pa.googleapis.com", "google-generative-ai", "gemini-4-neon")).toBe("high");
+    expect(defaultThinkingLevel(undefined, "https://daily-cloudcode-pa.googleapis.com", "google-generative-ai", "gemini-3.8-flash")).toBe("low");
+    expect(defaultThinkingLevel(undefined, "https://daily-cloudcode-pa.googleapis.com", "google-generative-ai", "future-model-preview")).toBe("low");
+    expect(defaultThinkingLevel("off", "https://daily-cloudcode-pa.googleapis.com", "google-generative-ai", "gemini-4-neon")).toBe("off");
+  });
 });
 
 describe("createPiSourceProvider image input", () => {

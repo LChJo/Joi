@@ -523,20 +523,74 @@ describe("joi home single entry", () => {
   it.each([
     ["region_forbidden", "Google 判定当前账号或位置不符合反重力的地区资格。"],
     ["http_403", "Google 拒绝了反重力请求（HTTP 403）。具体原因未知。"],
-  ])("displays the Antigravity validation reason %s and rejects a model outside the catalog", async (reasonCode, message) => {
+  ])("displays the Antigravity validation reason %s and surfaces a save failure on the selected card", async (reasonCode, message) => {
     const api = new DigitalLifeApi("", true);
     const source: ModelSourceDto = { ...readySource, kind: "antigravity", protocol: "google", displayName: "Antigravity", status: "NEEDS_AUTH", reasonCode };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [source] });
-    vi.spyOn(api, "updateModelSource").mockRejectedValue(new ApiError("antigravity_model_unavailable", "Choose an Antigravity catalog model.", 400));
+    const update = vi.spyOn(api, "updateModelSource").mockRejectedValue(new ApiError("fixture_failure", "Unable to save this model.", 400));
     const validate = vi.spyOn(api, "validateModelSource");
     render(<ModelSourceManager api={api} />);
 
     expect(await screen.findByText(`⚠ ${message}`)).toBeVisible();
     await editModelSource("Antigravity");
-    fireEvent.change(screen.getByLabelText("编辑 Model ID"), { target: { value: "gemini-4-neon" } });
+    const field = screen.getByLabelText("编辑 Model ID");
+    const list = field.getAttribute("list");
+    expect(list).toBeTruthy();
+    const options = document.getElementById(list ?? "")?.querySelectorAll("option");
+    expect(Array.from(options ?? []).map(option => option.value)).toContain("gemini-4-neon");
+    fireEvent.change(field, { target: { value: "future-model-preview" } });
     fireEvent.click(screen.getByRole("button", { name: "保存并验证" }));
-    expect(await screen.findByText("此 Model ID 不在反重力模型目录中。")).toBeVisible();
+    const card = field.closest("article");
+    if (card === null) throw new Error("Model editor is not in its card");
+    expect(await within(card).findByRole("alert")).toBeVisible();
+    expect(update).toHaveBeenCalledWith(source.sourceId, expect.objectContaining({ modelId: "future-model-preview" }));
+    expect(field).toHaveValue("future-model-preview");
     expect(validate).not.toHaveBeenCalled();
+  });
+
+  it("sends a blank antigravity model id as an explicit empty string for the provider default", async () => {
+    const api = new DigitalLifeApi("", true);
+    const source: ModelSourceDto = { ...readySource, kind: "antigravity", protocol: "google", accessMode: "coding-plan", displayName: "Antigravity",
+      activeModel: { capability: "custom-unverified-tools", id: "gemini-4-neon", revisionId: "model-1" } };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [source] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(source);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(source);
+    render(<ModelSourceManager api={api} />);
+
+    await editModelSource("Antigravity");
+    const field = screen.getByLabelText("编辑 Model ID");
+    const card = field.closest("article");
+    if (card === null) throw new Error("Model editor is not in its card");
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存并验证" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(source.sourceId, expect.objectContaining({ modelId: "" })));
+    expect(await within(card).findByRole("status")).toBeVisible();
+  });
+
+  it("keeps a card notice across list refreshes until the next action on that card", async () => {
+    const api = new DigitalLifeApi("", true);
+    const antigravity: ModelSourceDto = { ...readySource, kind: "antigravity", protocol: "google", accessMode: "coding-plan", displayName: "Antigravity", sourceId: "source-ag",
+      activeModel: { capability: "custom-unverified-tools", id: "gemini-4-neon", revisionId: "model-1" } };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [antigravity, readySource] });
+    vi.spyOn(api, "updateModelSource").mockRejectedValue(new ApiError("fixture_failure", "Unable to save this model.", 400));
+    const validate = vi.spyOn(api, "validateModelSource").mockImplementation((sourceId: string) => Promise.resolve(sourceId === "source-ag" ? antigravity : readySource));
+    render(<ModelSourceManager api={api} />);
+
+    await editModelSource("Antigravity");
+    fireEvent.click(screen.getByRole("button", { name: "保存并验证" }));
+    const cards = screen.getAllByRole("article");
+    const agCard = cards.find((card) => within(card).queryByText("Antigravity") !== null);
+    const otherCard = cards.find((card) => within(card).queryByText("DeepSeek") !== null);
+    if (agCard === undefined || otherCard === undefined) throw new Error("Expected both model cards");
+    expect(await within(agCard).findByRole("alert")).toBeVisible();
+
+    fireEvent.click(within(otherCard).getByRole("button", { name: "验证" }));
+    await waitFor(() => expect(validate).toHaveBeenCalledWith("source-1"));
+    expect(within(agCard).getByRole("alert")).toBeVisible();
+
+    fireEvent.click(within(agCard).getByRole("button", { name: "验证" }));
+    await waitFor(() => expect(validate).toHaveBeenCalledWith("source-ag"));
+    expect(within(agCard).queryByRole("alert")).toBeNull();
   });
 
   it("uses one composer when a source is ready and keeps consecutive inputs accepted", async () => {

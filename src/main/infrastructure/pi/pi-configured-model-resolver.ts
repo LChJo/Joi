@@ -1,6 +1,7 @@
 import { createModels, type Api, type CredentialStore, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRepository } from "../../application/ports/model-source-ports.js";
+import { antigravityDefaultCompactionPercent } from "./antigravity-source-provider.js";
 import { createPiSourceProvider, defaultThinkingLevel, piSourceProviderInput } from "./source-provider-factory.js";
 
 export interface ResolvedPiModel {
@@ -54,16 +55,20 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
     models.setProvider(provider);
     const model = provider.getModels().find((candidate) => candidate.id === input.modelId);
     if (model === undefined) throw new Error("model_not_found");
+    const configuredPercent = activeModelRevision.compactionThresholdPercent;
+    const defaultPercent = source.activeSourceRevision.kind === "antigravity"
+      ? antigravityDefaultCompactionPercent(activeModelRevision.modelId) : undefined;
+    const compactionThresholdPercent = configuredPercent ?? defaultPercent;
     return {
       // Re-clamped as a backstop against a hand-edited database: an out-of-range value would
       // otherwise make the runtime constructor throw and take the whole session down.
-      ...(activeModelRevision.compactionThresholdPercent === undefined ? {} : {
-        compactionThresholdPercent: Math.min(95, Math.max(50, activeModelRevision.compactionThresholdPercent)),
+      ...(compactionThresholdPercent === undefined ? {} : {
+        compactionThresholdPercent: Math.min(95, Math.max(50, compactionThresholdPercent)),
       }),
       model,
       sourceName: source.activeSourceRevision.displayName,
       models,
-      thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl, model.api),
+      thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl, model.api, model.id),
     };
   }
 }

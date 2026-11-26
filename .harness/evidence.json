@@ -64,11 +64,11 @@
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "7ff2e3dcbc0c683486dc0c8fddc30231bf7e3920c6911c7930a82469be8bda2c",
-      "observedAt": "2026-11-24T05:42:24.999Z",
+      "hash": "8078c9d93b74844da9231efce7d5d8beba5fe889ab2b8d0f479cf0d537447e5c",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 643
+        "endLine": 649
       }
     },
     {
@@ -456,8 +456,8 @@
       "location": {
         "path": "src/renderer/Console.tsx"
       },
-      "hash": "8439db2ef2ed8a5fdaf9d9418f6634be13e896dec7ddc5609fe493d8b528f6cf",
-      "observedAt": "2026-11-25T05:51:03.233Z",
+      "hash": "fee8c620829d4bb34771407e41dfff26bfe710519cc37b33f42cd83f15e4de04",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
         "endLine": 442
@@ -666,8 +666,8 @@
       "location": {
         "path": "docs/adr/0033-conversation-context-sessions.md"
       },
-      "hash": "ea48f78cdbbe25c1606f4986762256325999941bc417f3d802c21c970269bfb1",
-      "observedAt": "2026-11-17T13:11:52.949300Z",
+      "hash": "6f5f26e7a520024e3a40dc5dbb28cfcf665cf9171f18efc56255672d6b3bb1b4",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
         "endLine": 35
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version. AC-40/53 requires goal-scoped recorded model identity without guessing unavailable history. AC-66 also covers explicit occurrence lifetimes, independently settled runs and advisory-only rejection.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses, editable Antigravity model suggestions, provider-side validation and documented Neon geometry, thinking and compaction defaults. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version. AC-40/53 requires goal-scoped recorded model identity without guessing unavailable history. AC-66 also covers explicit occurrence lifetimes, independently settled runs and advisory-only rejection.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "e57862ad629cc3cdc796ae365aad42ebc3d3becd643aaa905ac9c36f68bc61d7",
-      "observedAt": "2026-11-26T04:55:21.428Z",
+      "hash": "f70b657046c16c040b382f16c8d9a159ff35cb9fe30eb7d0296401b4201160bb",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 805
+        "endLine": 807
       }
     },
     {
@@ -942,15 +942,15 @@
     {
       "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
       "kind": "source-code",
-      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures. Both drawer types use a 22-pixel full-height resize hit area and a 120-280-pixel visible grip. Goal Agent subtitle labels wrap long model identities.",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout. Partner transcript Markdown follows the shared conversation presentation while keeping independent history and local overflow. Model connection cards group account facts and align the overflow actions within narrow settings views. The platform picker uses 44-pixel minimum button height and responsive grid columns. Continuation inputs take a full row and action buttons reflow on narrow surfaces. Diagnostics and learning use compact, responsive sections and native disclosures. Both drawer types use a 22-pixel full-height resize hit area and a 120-280-pixel visible grip. Goal Agent subtitle labels wrap long model identities. Operation notices span the corresponding model card.",
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "fabfb918d7967d7da1cd07fa75097825ab6d175ecd9caa6d27096f8c22780c0a",
-      "observedAt": "2026-11-25T16:57:46.398Z",
+      "hash": "11b668129142e44c1d45e049e6666ac6a4925df638e57a4f0ccc031c1b60de54",
+      "observedAt": "2026-11-26T08:11:42.573Z",
       "range": {
         "startLine": 1,
-        "endLine": 1686
+        "endLine": 1687
       }
     },
     {
@@ -1617,12 +1617,12 @@
       "location": {
         "path": "src/renderer/JoiHome.tsx"
       },
-      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor surfaces a catalog miss. Paused goals support three actions and a retained supplement draft through the original question version. Home detail and conclusion drawers share the active width preference and use the same resize control. Agent cards display an answered queue and a historical continuation with their localized labels. Goal Agent card subtitles show the available recorded network and model, or the localized unrecorded state.",
-      "hash": "593327dfd4ddca0ee08241aa696191b6a5d23d68a38d0ee52e9d171a25a102c1",
-      "observedAt": "2026-11-25T16:57:46.398Z",
+      "claim": "Model forms preserve editable compaction occupancy and explicit reset. The Workbench displays write admission waits distinctly from read admission waits. The homepage, clarification and continuation composers share Enter submission, Shift+Enter line breaks and IME confirmation handling. The workbench and goal partner records share the ordinary Markdown and tool disclosure layout, retaining history, artifacts and explicit local trace actions. First and older pages read messages independently of card aggregation. Active refresh also reads live status and bridges missing pages. Goal detail, home and unassigned ordinary questions render the compact pending queue and versioned answers; resolved questions appear under a collapsed history in goal details and the result drawer, and independent structured confirmations retain their existing separate controls. Both Agent lists offer page navigation with the last successful view retained after errors and the selected transcript preserved across pages. Goal detail requests and displays at most 100 recent Agent cards. Goal failure notices localize recognized reason codes, show the completed Work count and give relevant recovery guidance. Model networks offer Codex subscription, desktop-only account facts and reauthorization. Saving edited settings invokes validation once, reflects the returned state, and preserves the saved revision on validation failure. Ordering and validation are on the card. Disabled connections offer Enable through the same probe. Editing, reauthorization, disable and delete are in the menu. The platform chooser places General Platform after the named providers and applicable desktop subscriptions. Antigravity model cards display region eligibility and generic 403 separately, and the editor offers editable recommended model IDs and retains operation notices on the relevant card. Paused goals support three actions and a retained supplement draft through the original question version. Home detail and conclusion drawers share the active width preference and use the same resize control. Agent cards display an answered queue and a historical continuation with their localized labels. Goal Agent card subtitles show the available recorded network and model, or the localized unrecorded state.",
+      "hash": "660d163b0fa518e890c09e55cd037d0fd11fe1d4de1a561c1012eb04d1e8e19f",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 2054
+        "endLine": 2072
       }
     },
     {
@@ -1631,12 +1631,12 @@
       "location": {
         "path": "tests/renderer/joi-home-single-entry.test.tsx"
       },
-      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy and a rejected Antigravity model draft. Drawer regression checks conclusion resize, width retention into details, navigation bounds, keyboard adjustment and responsive fallback. Goal card tests cover recorded network/model names and absent history.",
-      "hash": "df03b7b70c916b62aca7505cfb4f766d636b7c8e1dcef4623bb9c0f5d9f55339",
-      "observedAt": "2026-11-25T16:57:46.398Z",
+      "claim": "Direct renderer tests check editable model settings, safe Workbench projections and write-wait labels before Pi session startup. Clarification and continuation regressions preserve IME confirmation and submit the intended payload with Enter. Shared partner tool disclosures preserve artifact actions, opted-in trace access and safe live states. Goal detail opens a goal-scoped message page independently of live status. Goal question regression covers two-line home input, manual submission, and expandable receipts in detail and result drawers. Goal detail requests only the recent 100 Agent cards on entry and from the result drawer. Report failure regressions cover legacy synthesis codes, specific reference rejection and model quota while preserving visible completed Work. Safety and content refusal cards show model policy guidance. The homepage route regression checks that historical paths mount after their layer is expanded. First-run tests verify that General Platform is last on desktop and browser. Model connection tests verify region and generic 403 copy, editable Antigravity recommendations, arbitrary and blank ID submission, and a card-local save error that survives list refreshes until the next action on that card. Drawer regression checks conclusion resize, width retention into details, navigation bounds, keyboard adjustment and responsive fallback. Goal card tests cover recorded network/model names and absent history.",
+      "hash": "bc01f515136758a5c80f8f7e7fcd5f645d61807f3e13384a1c68fb60e1ab3977",
+      "observedAt": "2026-11-26T10:45:30.000Z",
       "range": {
         "startLine": 1,
-        "endLine": 2623
+        "endLine": 2677
       }
     },
     {
@@ -2500,8 +2500,8 @@
       "location": {
         "path": "src/renderer/EvolutionSettings.tsx"
       },
-      "hash": "2c883528a5a084583aabe994e2d54b42b338189aba59ab47afd3f803118ca9e1",
-      "observedAt": "2026-11-25T05:45:42.974Z",
+      "hash": "6c3597d0b3b3a552b6a26f8a98191a111c5ad4090bdee4f6c45080dd71b9a16a",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
         "endLine": 252
@@ -2580,12 +2580,12 @@
     {
       "id": "ce15aadc-3f49-421e-abf4-9c1465c28048",
       "kind": "source-code",
-      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts. The Codex probe uses the same reasoning effort as runtime model resolution. Antigravity validation retains the recognized Google location rejection as region_forbidden.",
+      "claim": "Connectivity probes and their bounded same-deadline retry use the effective configured output maximum while preserving thinking compatibility, auth alternatives and safe failure facts. The Codex probe uses the same reasoning effort as runtime model resolution, and Antigravity probes share its model-aware thinking default. Antigravity validation retains the recognized Google location rejection as region_forbidden.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-model-source-validator.ts"
       },
-      "hash": "1feb1bba1ba0ccbff430cc696c2d0f9e5239311d6e1906b56c87e6cbd4ee1eea",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "4e0f3a5552dd79659ebe3a70c7e6354cd73eeed0e9274043469031591996a553",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
         "endLine": 195
@@ -3171,12 +3171,12 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-configured-model-resolver.ts"
       },
-      "claim": "Frozen configured model resolution retains editable compaction percentage, effective limits and immutable source label for runtime settings and usage attribution. Runtime model resolution uses the Codex high thinking default when the source has no explicit setting.",
-      "hash": "56ad04e67d42de38068654dfe697865f2a5faf731d24d98da149606d9c03254a",
-      "observedAt": "2026-11-20T10:09:20.831Z",
+      "claim": "Frozen configured model resolution retains editable compaction percentage, effective limits and immutable source label for runtime settings and usage attribution. Runtime model resolution uses the Codex high thinking default when the source has no explicit setting, and applies the Antigravity model-aware thinking and Neon compaction defaults under the same range clamp.",
+      "hash": "e778532f0ad91f5330af3204a7673e0105f84ef22462d1a3f38dcb31c4f450b4",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 69
+        "endLine": 74
       }
     },
     {
@@ -4326,11 +4326,11 @@
       "location": {
         "path": "src/renderer/CodexSubscriptionForm.tsx"
       },
-      "hash": "3538d9d7904aac8a140f89dad9850f0a4996ec6d239dbd56dcd5f6fb002f68e8",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "81f51b3a97c4dd1ab1f583585b89264722584fcedeaec752a33c4e47fa1de097",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 141
+        "endLine": 157
       }
     },
     {
@@ -4420,15 +4420,15 @@
     {
       "id": "57b8a7bc-045d-401a-9462-40fe4b25653a",
       "kind": "source-code",
-      "claim": "Encrypts and serializes OAuth records and projects only masked account, known plan and expiration.",
+      "claim": "Encrypts and serializes OAuth records, validates optional lifecycle fields, and projects only masked account, known plan, expiration and granted scopes; a minimal refresh-only read serves revocation.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-credential-store-adapter.ts"
       },
-      "hash": "d2a337804265799fe85911ce6a1160207142513f040375deb5de872702ee8107",
-      "observedAt": "2026-11-20T05:13:26.817Z",
+      "hash": "5545b39768ad2d22df8ef3aad48f2080e90db8875bfa40b509025f87b41a3131",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 134
+        "endLine": 167
       }
     },
     {
@@ -4476,15 +4476,15 @@
     {
       "id": "c299d377-598f-4bec-b982-b4b6d2d0ea29",
       "kind": "source-code",
-      "claim": "Subscription sources select their dedicated transport: Codex defaults to high effort and Antigravity to low; explicit settings take precedence.",
+      "claim": "Subscription sources select their dedicated transport: Codex defaults to high effort and Antigravity to a model-aware default (Neon high, other models low); explicit settings take precedence.",
       "location": {
         "path": "src/main/infrastructure/pi/source-provider-factory.ts"
       },
-      "hash": "30e1fb783601228d2d1df6a64a2ff1608684a2107440772e868de3a67fa65377",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "272289f4b7e47d7cd19bd3ff8a5b9b36c21d88ac201e27975eb691c8eb99cbe1",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 312
+        "endLine": 315
       }
     },
     {
@@ -4716,29 +4716,29 @@
     {
       "id": "0b0faa14-a888-49cd-94ed-ae08545e558c",
       "kind": "source-code",
-      "claim": "Google PKCE and loopback/manual callback authorization persist only encrypted source credentials and an opaque project identifier; source-locked refresh preserves that project. If the fixed port is occupied or reserved, the same PKCE flow accepts its manual callback. Desktop OAuth client settings come from the main runtime environment.",
+      "claim": "Google PKCE and loopback/manual callback authorization persist only encrypted source credentials and an opaque project identifier; source-locked refresh preserves that project and silently records granted scopes. If the fixed port is occupied or reserved, the same PKCE flow accepts its manual callback. The OAuth client uses built-in approved credentials with a paired environment override, and sign-in emits bounded stage diagnostics plus granted/missing scope and account email facts without blocking on userinfo.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-antigravity-authorization.ts"
       },
-      "hash": "90da987fdd2a95fe4efc7371f535eec186ce357fba36dbab6d542c9493b28ff1",
-      "observedAt": "2026-11-24T03:37:40.268Z",
+      "hash": "7e1ca590c0c1aef68d2541bf1d981579fa92671d5db573cb0424e530a5cb1bd2",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 125
+        "endLine": 197
       }
     },
     {
       "id": "5afb3c85-7453-41ff-a1c3-6645ed566abc",
       "kind": "source-code",
-      "claim": "The fixed eight-model catalog adapts Pi Google streams to Cloud Code Assist, retains tool signatures and caps requests by effective output limits. Structured Google denial metadata becomes a safe error string before entering Pi.",
+      "claim": "The provider defaults to Gemini 4 Neon with a documented 512K window and a 64K family output ceiling, high thinking and an 85 percent compaction threshold when unset; other models keep low thinking. It retains known legacy routes, including Argon compatibility routing, and accepts custom model IDs unchanged. It adapts Pi Google streams and retains tool signatures; configured and observed limits and known metadata bound requests. Structured Google denial metadata becomes a safe error string before entering Pi.",
       "location": {
         "path": "src/main/infrastructure/pi/antigravity-source-provider.ts"
       },
-      "hash": "9b75a53f237c6121c97332fea1a43d8e32128e11361616a0e46a7fdf774b6a8e",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "38ad7be1e5616716c4a1a11fa223b678236a8bd0cddff2982a7eab38d89c538c",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 166
+        "endLine": 196
       }
     },
     {
@@ -4748,11 +4748,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/antigravity-http.ts"
       },
-      "hash": "3ed79b19ee719207deadaa057d18b9a393e388a7a3ec7de1866f732ae509fba9",
-      "observedAt": "2026-11-23T12:50:07.253Z",
+      "hash": "6a611ec871f9a3df0692807e2d7e341dde938a05d161bdae6f01f3e33e7765e2",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 57
+        "endLine": 54
       }
     },
     {
@@ -4776,25 +4776,25 @@
       "location": {
         "path": "src/renderer/CodexSubscriptionForm.tsx"
       },
-      "hash": "3538d9d7904aac8a140f89dad9850f0a4996ec6d239dbd56dcd5f6fb002f68e8",
-      "observedAt": "2026-11-23T12:21:12.982415Z",
+      "hash": "81f51b3a97c4dd1ab1f583585b89264722584fcedeaec752a33c4e47fa1de097",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
-        "endLine": 141
+        "endLine": 157
       }
     },
     {
       "id": "8698cec8-aea7-4e4b-8586-5bfedafeb555",
       "kind": "source-code",
-      "claim": "Synthetic OAuth, encrypted SQLite, automatic refresh, tool continuations and loopback callback cancellation exercise the production Pi path without personal accounts. Validation exercises rejected credentials, explicit location responses, generic 403, oversized error suppression and model catalog rejection. A reserved-port fixture covers manual authorization and an ephemeral port covers the loopback lifecycle. Configuration is checked before opening the listener, and synthetic values cover sign-in and refresh.",
+      "claim": "Synthetic OAuth, encrypted SQLite, automatic refresh, tool continuations and loopback callback cancellation exercise the production Pi path without personal accounts. Validation exercises rejected credentials, explicit location responses, generic 403, oversized error suppression and default Gemini 4 Neon geometry, thinking and compaction defaults and custom model persistence with actual provider validation. A reserved-port fixture covers manual authorization and an ephemeral port covers the loopback lifecycle. Configuration is checked before opening the listener, and synthetic values cover sign-in and refresh.",
       "location": {
         "path": "tests/integration/antigravity-subscription.test.ts"
       },
-      "hash": "f8b2c7f7b88f5d7cbbd62db359cfa03efdcb165bb3fb57fcf1886497fee1b7ab",
-      "observedAt": "2026-11-24T03:37:40.268Z",
+      "hash": "eccfff0063dde562d19f3f8e369eddf78442825f20a118f9c01d7733b850eb71",
+      "observedAt": "2026-11-26T10:41:12.136Z",
       "range": {
         "startLine": 1,
-        "endLine": 221
+        "endLine": 300
       }
     },
     {
@@ -4804,8 +4804,8 @@
       "location": {
         "path": "src/renderer/EvolutionSettings.tsx"
       },
-      "hash": "2c883528a5a084583aabe994e2d54b42b338189aba59ab47afd3f803118ca9e1",
-      "observedAt": "2026-11-25T05:45:42.975Z",
+      "hash": "6c3597d0b3b3a552b6a26f8a98191a111c5ad4090bdee4f6c45080dd71b9a16a",
+      "observedAt": "2026-11-26T10:50:20.185Z",
       "range": {
         "startLine": 1,
         "endLine": 252
@@ -5083,6 +5083,34 @@
       "range": {
         "startLine": 1,
         "endLine": 439
+      }
+    },
+    {
+      "id": "84bb58a2-055e-47e6-bd24-61d8e9359632",
+      "kind": "source-code",
+      "claim": "Shared recommendation list and default model are based on current documented standalone Gemini 4 identifiers.",
+      "location": {
+        "path": "src/shared/antigravity-models.ts"
+      },
+      "hash": "0aa9408b31a18134733d43431fb5b8bc221f29744d04d5698a6658a908be0010",
+      "observedAt": "2026-11-26T08:11:42.573Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 7
+      }
+    },
+    {
+      "id": "6cb7565d-0526-4d93-9bf5-7fde499c29a9",
+      "kind": "source-code",
+      "claim": "Synthetic provider tests establish default, documented reasoning variants, arbitrary model ID pass-through, fallback limits, Neon geometry and unset thinking/compaction defaults, and preserved legacy routing.",
+      "location": {
+        "path": "tests/unit/antigravity-source-provider.test.ts"
+      },
+      "hash": "3a559b69a572c7488ea233a396f603926533e4886d85593dabc0a10065c491a8",
+      "observedAt": "2026-11-26T10:41:12.136Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 146
       }
     }
   ]
