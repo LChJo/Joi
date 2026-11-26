@@ -326,6 +326,70 @@ describe("Routine persistence", () => {
     }
   });
 
+  it("expires only explicitly execution-scoped requirements and bounds the new cycle budget", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const wb = await fixture.workbenchRegistry.create({ name: "Cycle", personaSummary: "summary", projectLabel: "project", scopeSummary: "scope" });
+      insertGoal(fixture, { inputId: "cycle", status: "CONSUMED", workbenchId: wb.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      const persistent = { id: "persistent", kind: "OBJECTIVE", text: "Deliver report", mandatory: true, scope: "GLOBAL", source: { sourceRevision: 1, start: 0, end: 1 } };
+      const temporary = { ...persistent, id: "temporary", text: "Check this occurrence", lifetime: "EXECUTION" };
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE workbench_workspace_bindings SET status='READY' WHERE workbench_id=?").run(wb.workbenchId);
+        db.prepare("INSERT INTO joi_goal_requirements VALUES ('cycle',?,1,0)").run(wb.workbenchId);
+        db.prepare("INSERT INTO joi_goal_requirement_snapshots VALUES ('cycle',1,?)").run(JSON.stringify([persistent, temporary]));
+        db.prepare(`INSERT INTO joi_harness_maps (goal_input_id,workbench_id,destination,status,continuation_used,continuation_allowance,created_at,updated_at)
+          VALUES ('cycle',?,'scan','CLEARED',10,20,?,?)`).run(wb.workbenchId, now, now);
+      });
+      const store = new SqliteAutomationStore(fixture.database);
+      const service = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
+      await service.create({ frequency: { kind: "interval", hours: 1 }, name: "Cycle", prompt: "Repeat", target: { kind: "GOAL_CONTINUATION", goalId: "cycle" } });
+      fixture.clock.advance(60 * 60 * 1000);
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" })).toHaveLength(1);
+      const snapshot = fixture.database.transaction(db => db.prepare(`SELECT r.revision,s.requirements_json FROM joi_goal_requirements r JOIN joi_goal_requirement_snapshots s
+        ON s.goal_input_id=r.goal_input_id AND s.revision=r.revision WHERE r.goal_input_id='cycle'`).get());
+      expect(snapshot).toMatchObject({ revision: 2, requirements_json: JSON.stringify([persistent]) });
+      expect(fixture.database.transaction(db => db.prepare("SELECT continuation_used,continuation_allowance,scheduled_continuation_granted FROM joi_harness_maps WHERE goal_input_id='cycle'").get()))
+        .toEqual({ continuation_used: 10, continuation_allowance: 12, scheduled_continuation_granted: 2 });
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" })).toEqual([]);
+    } finally { await fixture.close(); }
+  });
+
+  it("does not complete a continuation occurrence when only its planning turn is consumed", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const wb = await fixture.workbenchRegistry.create({ name: "Cycle settlement", personaSummary: "summary", projectLabel: "project", scopeSummary: "scope" });
+      insertGoal(fixture, { inputId: "settle", status: "CONSUMED", workbenchId: wb.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE workbench_workspace_bindings SET status='READY' WHERE workbench_id=?").run(wb.workbenchId);
+        db.prepare(`INSERT INTO joi_harness_maps (goal_input_id,workbench_id,destination,status,created_at,updated_at)
+          VALUES ('settle',?,'scan','CLEARED',?,?)`).run(wb.workbenchId, now, now);
+      });
+      const store = new SqliteAutomationStore(fixture.database);
+      const service = new AutomationService({ clock: fixture.clock, ids: fixture.ids, store, workbenches: fixture.workbenches });
+      const routine = await service.create({ frequency: { kind: "interval", hours: 1 }, name: "Cycle settlement", prompt: "Repeat", target: { kind: "GOAL_CONTINUATION", goalId: "settle" } });
+      fixture.clock.advance(60 * 60 * 1000);
+      const [trigger] = await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" });
+      if (trigger === undefined) throw new Error("Expected scheduled run");
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      await inbox.createTurn({ inputId: "settle", turnId: "cycle-turn", sessionId: "cycle-session", workbenchId: wb.workbenchId, createdAt: fixture.clock.now().toISOString() });
+      await inbox.completeInput("settle", "cycle-turn");
+      expect((await store.get(routine.routineId))?.runs[0]?.status).toBe("RUNNING");
+      fixture.database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET status='CLARIFICATION_REQUIRED' WHERE input_id='settle'").run());
+      expect((await store.get(routine.routineId))?.runs[0]?.status).toBe("BLOCKED");
+      fixture.clock.advance(60 * 60 * 1000);
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" })).toEqual([]);
+      fixture.database.transaction(db => {
+        db.prepare("UPDATE joi_inbox_messages SET status='CONSUMED' WHERE input_id='settle'").run();
+        db.prepare("UPDATE joi_harness_maps SET status='CLEARED' WHERE goal_input_id='settle'").run();
+      });
+      expect(await store.claimDue({ now: fixture.clock.now().toISOString(), timezone: "UTC" })).toHaveLength(1);
+      const oldRun = (await store.get(routine.routineId))?.runs.find(run => run.runId === trigger.runId);
+      expect(oldRun?.status).toBe("COMPLETED");
+    } finally { await fixture.close(); }
+  });
+
   it("waits for an unfinished goal, merges missed occurrences and never resumes a canceled goal", async () => {
     const fixture = await createRuntimeFixture();
     try {

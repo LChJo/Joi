@@ -186,7 +186,8 @@ function assertGoalSynthesisCoverage(connection: DatabaseSync, contract: GoalReq
       blockingConflicts.push({ index, requirementIds: affected, reason: "UNSUPPORTED_RESOLUTION" });
     }
   }
-  const gaps = new Set(state.unresolved.flatMap(gap => gap.requirementIds));
+  // Advisory observations cannot replace missing evidence or resolve conflicts.
+  const gaps = new Set(state.unresolved.filter(gap => gap.advisory !== true).flatMap(gap => gap.requirementIds));
   const missingRequirementIds = mandatory.filter(id => !support.has(id));
   const unresolvedRequirementIds = mandatory.filter(id => gaps.has(id));
   const requirementsStatus = contract.revision === state.requirementsRevision ? contract.status : "STALE";

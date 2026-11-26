@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version. AC-40/53 requires goal-scoped recorded model identity without guessing unavailable history.",
+      "claim": "AC-50 and HIST-02 scope direct replies, including workbench-selection recovery, to the original input result. A first-source tool-free answer avoids Work contract processing and requires no roadmap, review, feedback, or historical settlement. AC-47 distinguishes first Workbench assignment from recovery. A confirmed fresh input is queued again under its own identity. AC-UPD-01 covers stable GitHub comparison, verified downloads, platform installation behavior and backup access. AC-55 uses the selected network's current model for new Pi runs, status and probes. AC-44/66 and AC-PERF-01 cover continued goal planning after layer 32, a durable automatic review allowance and the desktop 100-layer window. Android acceptance adds goal route map paging, recovery visibility, bounded Agent list refresh, task archive and restore, completed-turn branching and valid Flutter ICU resources. Large-goal performance acceptance independently bounds fixture setup, 40 live concurrency samples and individual HTTP requests. AC-24/55 cover compact provider buttons with General Platform last in initial connection and Add network. AC-65 covers explicit Antigravity region errors, unclassified 403 responses and unsupported model IDs. Antigravity manual sign-in remains available if the registered callback port is occupied or reserved. Sign-in and refresh require a configured desktop OAuth client. AC-66 covers scheduled top-ups, repeated gaps, and continuation with new instructions. AC-37/48 specifies a shared resizable conclusion and detail layout with full-height hit area and navigation bounds. AC-53 covers answered card state, safe same-goal scheduling priority, stale synthesis suppression and preloaded review receipts. Android negotiates the new continuation action and preserves the original question version. AC-40/53 requires goal-scoped recorded model identity without guessing unavailable history. AC-66 also covers explicit occurrence lifetimes, independently settled runs and advisory-only rejection.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "5843ad5bccb80810a23537100d2231220ae214ae4ec84475dcd207b4b18a93c4",
-      "observedAt": "2026-11-25T16:57:46.398Z",
+      "hash": "e57862ad629cc3cdc796ae365aad42ebc3d3becd643aaa905ac9c36f68bc61d7",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
         "endLine": 805
@@ -1978,15 +1978,15 @@
     {
       "id": "d163a01d-2706-4679-8bea-de546e1ead3a",
       "kind": "source-code",
-      "claim": "The foreman answers greetings, identity questions, and context-bound queries directly. It creates a roadmap when needed, preserves resource waits, and declares producer-to-review dependencies explicitly.",
+      "claim": "The foreman answers greetings, identity questions, and context-bound queries directly. It creates a roadmap when needed, preserves resource waits, and declares producer-to-review dependencies explicitly. Explicitly occurrence-scoped requirements expire on a new scheduled claim; durable or ambiguous requirements stay active.",
       "location": {
         "path": "src/main/application/joi/joi-system-prompt.ts"
       },
-      "hash": "e70d369361f243c2d5caf48f6fd6444c1a67dcb201c7a1054d9163a4438d6a05",
-      "observedAt": "2026-11-24T13:22:56.800Z",
+      "hash": "6c9d2a90b712acd1c102e4bd2f8f026b68a55ce0925382812038b2d7c33df8c3",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 66
+        "endLine": 67
       }
     },
     {
@@ -2080,11 +2080,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
       },
-      "hash": "c1972be5d92a1323b7fc0a72e8433d7718db0d569643fc26dd9618516989a453",
-      "observedAt": "2026-11-21T15:17:05.658Z",
+      "hash": "100ae8ab71fee1840bdbf53a681b25aafe2d6325f19d49c3d5b9717e5f2ee04e",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 1149
+        "endLine": 1150
       }
     },
     {
@@ -2094,11 +2094,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/joi-requirements-tools.ts"
       },
-      "hash": "b6583ccbe6143b71b7f7d6ce8bc6c4ea9a33cfe0dd4f4c59345a6bf01ba1c565",
-      "observedAt": "2026-11-14T13:17:53.040Z",
+      "hash": "647606662be7eda1feb14f1af5eb7a81ded41a28571832861b0e192084630c04",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 125
+        "endLine": 126
       }
     },
     {
@@ -2724,11 +2724,11 @@
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-joi-inbox-repository.ts"
       },
-      "hash": "df2c0ce9a27ea6ee007d8d37c537e86c40d17d219b38e74a3a824db5343ee6e7",
-      "observedAt": "2026-11-24T13:22:19.250Z",
+      "hash": "1640c88f140ce3761b91ce686600b5d83a02b64a302f0505d6f2387794e6cc4b",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 1939
+        "endLine": 1946
       }
     },
     {
@@ -4022,15 +4022,15 @@
     {
       "id": "b07645af-27aa-4934-aa33-38152d841901",
       "kind": "source-code",
-      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement. Cross-version tests reuse unchanged scopes, enforce reads for current support, retain valid support alongside invalid references and enqueue one review for a partial decision. Recovery may read an existing result and submit a verified full report; missing or withdrawn evidence still requires continuation or blockage.",
+      "claim": "Disposable SQLite tests exercise coverage-only retry after restart without Work replay, optional and resolved conflicts, and real coordinator plain-text validation for current, missing and withdrawn evidence. Conflict resolution must cite a read result whose Run was scoped to the affected requirement. Cross-version tests reuse unchanged scopes, enforce reads for current support, retain valid support alongside invalid references and enqueue one review for a partial decision. Recovery may read an existing result and submit a verified full report; missing or withdrawn evidence still requires continuation or blockage. Advisory reviews cannot substitute for mandatory evidence or drive another automatic layer.",
       "location": {
         "path": "tests/integration/joi-review-coverage.test.ts"
       },
-      "hash": "d1b9f2196207b89941d018e7533c8b05953fb25ed50783fac76f264eb62b2d05",
-      "observedAt": "2026-11-19T16:43:38.662Z",
+      "hash": "d1571f489a9927bdf1db9b71c22762ba6ac354c8a970fbb497d78530c283dff4",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 290
+        "endLine": 301
       }
     },
     {
@@ -4050,15 +4050,15 @@
     {
       "id": "46193bc6-5f95-4df0-9533-52b4cdcd1751",
       "kind": "source-code",
-      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence. Accepted authoritative results support individually unchanged historical requirements through their frozen scope and source. Bounded coverage diagnostics identify missing or unresolved requirements, conflicts and unusable citations. Continuation progress uses the same result eligibility facts and ignores failed citations.",
+      "claim": "Mandatory coverage is derived from current verified claims and scoped read receipts. Blocking conflicts retain affected requirement IDs and require matching verified resolution evidence. Accepted authoritative results support individually unchanged historical requirements through their frozen scope and source. Bounded coverage diagnostics identify missing or unresolved requirements, conflicts and unusable citations. Continuation progress uses the same result eligibility facts and ignores failed citations. Advisory observations are not blocking gaps but all mandatory evidence and conflict gates remain.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-goal-synthesis-state.ts"
       },
-      "hash": "a29d4d169512d30fde9f02f7d78d490eb3914b13f1c753d7a55185fa2c949e2e",
-      "observedAt": "2026-11-24T09:33:37.447Z",
+      "hash": "eb3170493b8b4892deabb322d1463c5ba6e682aec40c88555cda787b6123e9b6",
+      "observedAt": "2026-11-26T04:55:21.428Z",
       "range": {
         "startLine": 1,
-        "endLine": 238
+        "endLine": 239
       }
     },
     {
@@ -4898,12 +4898,12 @@
     {
       "id": "c5a5ee2f-03f5-4756-b947-6a9aeab8a344",
       "kind": "document",
-      "claim": "Continuation budgets, repeated proof gaps, versioned user input and partial acceptance align on one goal.",
+      "claim": "Continuation budgets, repeated proof gaps, versioned user input and partial acceptance align on one goal. Fresh scheduled budgets, stable scope comparison, advisory observations and occurrence settlement.",
       "location": {
         "path": "docs/adr/0017-goal-result-continuation.md"
       },
-      "hash": "f6ffa216eb9597bb3180a49634660a4eb86920c8c699bdd8df2f329195f2a31f",
-      "observedAt": "2026-11-24T09:33:37.447Z"
+      "hash": "7be9622d1767261bb80f3deeab408d5ce0d56456ff382543036398b8a5a422d7",
+      "observedAt": "2026-11-26T04:55:21.428Z"
     },
     {
       "id": "122357bd-017c-4400-b177-cc4aa381e338",
@@ -4999,6 +4999,90 @@
       "range": {
         "startLine": 1,
         "endLine": 884
+      }
+    },
+    {
+      "id": "4b929723-d662-4dd6-8683-ed235f1fb717",
+      "kind": "source-code",
+      "claim": "Scoped gaps use stable requirement identity and verified evidence progress; advisory-only continuation is invalid.",
+      "location": {
+        "path": "src/main/domain/work/goal-synthesis-state.ts"
+      },
+      "hash": "43c370277acf375385d212f1c0ab106d1ff5ef1bb1d9a324125a2ff320c9ef5d",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 132
+      }
+    },
+    {
+      "id": "dc085bc0-a7ea-4065-963d-8a3cb11bcb89",
+      "kind": "source-code",
+      "claim": "Effective requirement identity includes optional explicitly execution-scoped lifetime.",
+      "location": {
+        "path": "src/main/domain/work/goal-requirements.ts"
+      },
+      "hash": "f77b3ed8585d3eda0fd2664520142f32a71964f8be1e2e4d49c4fdc623cc09e0",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 134
+      }
+    },
+    {
+      "id": "37d8dfbe-9271-4997-8639-37bf72137e5f",
+      "kind": "source-code",
+      "claim": "Scheduled occurrences atomically refresh scope and bounded credit; planning completion does not settle the occurrence.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-automation-store.ts"
+      },
+      "hash": "e5341523fd97b4cbe0d4de296cc9fc412bf502d6f00ba2586ff87750e741bd7c",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 576
+      }
+    },
+    {
+      "id": "968107bd-ef6c-49a0-810e-1113dd82279a",
+      "kind": "source-code",
+      "claim": "Expiration writes a new immutable snapshot without rewriting past requirement versions.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-goal-requirements.ts"
+      },
+      "hash": "df38655e19046c1bb18c63e2667950d18c0057db7f19892943859c9ae0e0bd77",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 58
+      }
+    },
+    {
+      "id": "27831a81-a50f-4f0e-bd64-65c018f3facd",
+      "kind": "source-code",
+      "claim": "Synthetic convergence tests cover paraphrased scoped gaps, legacy fallback, new evidence and unscoped distinctions.",
+      "location": {
+        "path": "tests/unit/goal-synthesis-convergence.test.ts"
+      },
+      "hash": "def179135fffceb186005ae1214c25cc7970da01ae195edd73a8dd098747428e",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 34
+      }
+    },
+    {
+      "id": "aa2da7b8-6cc5-41fd-9200-0bdb398ae655",
+      "kind": "source-code",
+      "claim": "Disposable runtime tests cover occurrence-only expiry, fresh budget and terminal settlement before the next claim.",
+      "location": {
+        "path": "tests/integration/automation.test.ts"
+      },
+      "hash": "538c2b17f412fdcaefb023b9f6ac3cf633a2b2af617d938d875fd2030301f652",
+      "observedAt": "2026-11-26T04:55:21.428Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 439
       }
     }
   ]

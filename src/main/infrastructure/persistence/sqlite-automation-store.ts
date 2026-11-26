@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 import { nextGoalReopenTime } from "./sqlite-goal-reopen-time.js";
+import { expireExecutionRequirements } from "./sqlite-goal-requirements.js";
 
 import type { AutomationGoalInspection, AutomationRecord, AutomationRunRecord, AutomationStore, AutomationTrigger } from "../../application/ports/automation.js";
 import { createRoutine, nextRoutineOccurrence, type RoutineFrequency } from "../../domain/automation/routine.js";
@@ -173,6 +174,7 @@ export class SqliteAutomationStore implements AutomationStore {
 
   async runNow(input: { idempotencyKey: string; inputId: string; routineId: string; now: string }): Promise<AutomationTrigger | null> {
     return this.database.transaction((connection) => {
+      settleContinuationRuns(connection, input.now);
       const key = `automation:${input.routineId}:run-now:${input.idempotencyKey}`;
       const existing = connection.prepare("SELECT run_id, input_id FROM joi_automation_runs WHERE idempotency_key = ?").get(key) as Row | undefined;
       if (existing !== undefined) return {
@@ -207,6 +209,7 @@ export class SqliteAutomationStore implements AutomationStore {
 
   async claimDue(input: { now: string; timezone: string }): Promise<AutomationTrigger[]> {
     return this.database.transaction((connection) => {
+      settleContinuationRuns(connection, input.now);
       const now = new Date(input.now);
       const rows = connection.prepare(`SELECT * FROM joi_automations
         WHERE enabled = 1 AND deleted_at IS NULL AND (
@@ -405,22 +408,22 @@ function queueGoalContinuation(
     routine.routineId, occurrence.now, occurrence.now, nextGoalReopenTime(connection, goal.goalId, occurrence.now), goal.goalId,
   );
   if (claimed.changes !== 1) return null;
-  // A scheduled execution can top up its two-round budget once when it claims the goal.
-  // Cap automatic top-ups across executions even when a Routine fires very frequently.
+  expireExecutionRequirements(connection, goal.goalId);
+  // Each occurrence has its own two-round budget; unused user grants do not carry over.
+  // The daily cap applies across occurrences even when a Routine fires very frequently.
   const windowCutoff = new Date(Date.parse(occurrence.now) - 24 * 60 * 60 * 1_000).toISOString();
   connection.prepare(`WITH budget AS (
-    SELECT CASE WHEN scheduled_continuation_window_at > ? THEN scheduled_continuation_granted ELSE 0 END AS granted,
-           MAX(0, 2 - MAX(0, continuation_allowance - continuation_used)) AS needed
+    SELECT CASE WHEN scheduled_continuation_window_at > ? THEN scheduled_continuation_granted ELSE 0 END AS granted
     FROM joi_harness_maps WHERE goal_input_id = ?
   ), top_up AS (
-    SELECT granted, MIN(needed, MAX(0, 24 - granted)) AS rounds FROM budget
+    SELECT granted, MIN(2, MAX(0, 24 - granted)) AS rounds FROM budget
   )
   UPDATE joi_harness_maps
     SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL, continuation_stalled_revision = NULL,
-        continuation_allowance = MAX(continuation_allowance, continuation_used) + (SELECT rounds FROM top_up),
+        continuation_allowance = continuation_used + (SELECT rounds FROM top_up),
         scheduled_continuation_granted = (SELECT granted + rounds FROM top_up),
         scheduled_continuation_window_at = CASE WHEN scheduled_continuation_window_at > ? THEN scheduled_continuation_window_at ELSE ? END,
-        revision = revision + 1, updated_at = ? WHERE goal_input_id = ? AND status = 'CLEARED'`)
+        revision = revision + 1, updated_at = ? WHERE goal_input_id = ?`)
     .run(windowCutoff, goal.goalId, windowCutoff, occurrence.now, occurrence.now, goal.goalId);
   if (waiting === undefined) {
     connection.prepare(`INSERT OR IGNORE INTO joi_automation_runs
@@ -471,10 +474,11 @@ function mapRecord(connection: DatabaseSync, row: Row): AutomationRecord {
   });
   const runs = (connection.prepare(`SELECT r.*, i.status AS inbox_status, i.failed_at AS inbox_failed_at, i.failure_reason_code AS inbox_failure_reason,
       i.canceled_at AS inbox_canceled_at, t.status AS turn_status, t.updated_at AS turn_updated_at, c.completed_at AS completion_at
+      , EXISTS (SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id = r.input_id AND m.status = 'ACTIVE') AS active_map
     FROM joi_automation_runs r LEFT JOIN joi_inbox_messages i ON i.input_id = r.input_id
     LEFT JOIN joi_turns t ON t.input_id = r.input_id AND t.turn_id = (SELECT turn_id FROM joi_turns WHERE input_id = r.input_id ORDER BY created_at DESC LIMIT 1)
     LEFT JOIN joi_turn_completions c ON c.input_id = r.input_id
-     WHERE r.routine_id = ? ORDER BY r.occurrence_at DESC LIMIT ?`).all(routine.routineId, ROUTINE_RUN_HISTORY_LIMIT) as Row[]).map((run) => mapRun(run));
+     WHERE r.routine_id = ? ORDER BY r.occurrence_at DESC LIMIT ?`).all(routine.routineId, ROUTINE_RUN_HISTORY_LIMIT) as Row[]).map((run) => mapRun(run, targetKind === "GOAL_CONTINUATION"));
   const nextRunAt = optionalText(row, "next_run_at");
   return { ...routine, ...(createIdempotencyKey === undefined ? {} : { createIdempotencyKey }), ...(nextRunAt === undefined ? {} : { nextRunAt }), runs };
 }
@@ -486,7 +490,7 @@ function mapTarget(kind: "NEW_GOAL" | "GOAL_CONTINUATION", goalId: string | unde
 }
 
 function inspectGoal(connection: DatabaseSync, goalId: string): AutomationGoalInspection | null {
-  const row = connection.prepare(`SELECT input_id, status, workbench_id, canceled_at, failed_at
+  const row = connection.prepare(`SELECT input_id, status, workbench_id, canceled_at, failed_at, reopened_at, created_at
     FROM joi_inbox_messages
     WHERE input_id = ? AND dismissed_at IS NULL AND goal_input_id IS NULL
       AND input_id NOT LIKE 'joi_result_input:%'
@@ -496,20 +500,37 @@ function inspectGoal(connection: DatabaseSync, goalId: string): AutomationGoalIn
   const activeWork = connection.prepare(`SELECT 1 FROM work_items w LEFT JOIN partner_runs pr ON pr.work_id = w.work_id
     WHERE w.input_id = ? AND (w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')
       OR pr.status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH')) LIMIT 1`).get(goalId);
-  const currentOutcome = connection.prepare(`SELECT o.disposition FROM joi_goal_result_sets s
+  const currentOutcome = connection.prepare(`SELECT o.disposition,o.completed_at FROM joi_goal_result_sets s
     JOIN joi_current_goal_outcomes o ON o.input_id = s.original_input_id AND o.result_revision = s.revision
     WHERE s.original_input_id = ? AND s.revision > 0`).get(goalId) as Row | undefined;
   const activeMap = connection.prepare("SELECT 1 FROM joi_harness_maps WHERE goal_input_id = ? AND status = 'ACTIVE' LIMIT 1").get(goalId);
-  const failedOutcome = currentOutcome?.disposition === "BLOCKED";
+  const failedOutcome = currentOutcome?.disposition === "BLOCKED"
+    && occurredAtOrAfter(currentOutcome.completed_at, optionalText(row, "reopened_at") ?? text(row, "created_at"));
   const state: AutomationGoalInspection["state"] = typeof row.canceled_at === "string" ? "CANCELED"
     : activeWork !== undefined ? "ACTIVE"
+      : row.status === "CLARIFICATION_REQUIRED" ? "ACTIVE"
       : typeof row.failed_at === "string" || failedOutcome ? "FAILED"
         : row.status !== "CONSUMED" || activeMap !== undefined ? "ACTIVE"
           : "COMPLETED";
   return { goalId: text(row, "input_id"), state, workbenchId: text(row, "workbench_id") };
 }
 
-function mapRun(row: Row): AutomationRunRecord {
+/** A continuation occurrence is settled only when its reused goal has reached a terminal state. */
+function settleContinuationRuns(connection: DatabaseSync, now: string): void {
+  const rows = connection.prepare(`SELECT r.run_id,r.input_id FROM joi_automation_runs r
+    JOIN joi_automations a ON a.routine_id = r.routine_id
+    WHERE a.target_kind = 'GOAL_CONTINUATION' AND r.input_id IS NOT NULL AND r.queued_at IS NOT NULL
+      AND r.status IN ('PENDING','RUNNING','BLOCKED')`).all() as Row[];
+  for (const row of rows) {
+    const goal = inspectGoal(connection, text(row, "input_id"));
+    if (goal === null || goal.state === "ACTIVE") continue;
+    connection.prepare(`UPDATE joi_automation_runs SET status = ?, result = ?, completed_at = ?, reason_code = ?
+      WHERE run_id = ? AND status IN ('PENDING','RUNNING','BLOCKED')`).run(
+      goal.state, goal.state, now, goal.state === "COMPLETED" ? null : goal.state === "FAILED" ? "goal_failed" : "goal_canceled", text(row, "run_id"));
+  }
+}
+
+function mapRun(row: Row, continuation: boolean): AutomationRunRecord {
   const inbox = row.inbox_status;
   const turn = row.turn_status;
   let status = String(row.status) as AutomationRunRecord["status"];
@@ -521,19 +542,27 @@ function mapRun(row: Row): AutomationRunRecord {
   const failedThisRun = occurredAtOrAfter(row.inbox_failed_at, runStartedAt);
   const canceledThisRun = occurredAtOrAfter(row.inbox_canceled_at, runStartedAt);
   const turnThisRun = occurredAtOrAfter(row.turn_updated_at, runStartedAt);
-  if (completedThisRun) { status = "COMPLETED"; result = "COMPLETED"; }
+  const settled = ["COMPLETED", "FAILED", "CANCELED"].includes(status);
+  if (continuation && settled) {
+    // Persisted occurrence outcome remains authoritative after the goal reopens.
+  } else if (continuation && row.active_map === 1 && typeof row.input_id === "string" && !failedThisRun && !canceledThisRun) {
+    if (inbox === "CLARIFICATION_REQUIRED") { status = "BLOCKED"; result = "BLOCKED"; }
+    else if (inbox === "CONSUMED" || turnThisRun && turn === "RUNNING") { status = "RUNNING"; result = "RUNNING"; }
+  } else if (completedThisRun) { status = "COMPLETED"; result = "COMPLETED"; }
   else if (failedThisRun || (turnThisRun && turn === "FAILED")) { status = "FAILED"; result = "FAILED"; }
   else if (canceledThisRun) { status = "CANCELED"; result = "CANCELED"; }
   else if (inbox === "CONSUMED") { status = "COMPLETED"; result = "COMPLETED"; }
   else if (turnThisRun && turn === "RUNNING") { status = "RUNNING"; result = "RUNNING"; }
   else if (inbox === "CLARIFICATION_REQUIRED") { status = "BLOCKED"; result = "BLOCKED"; }
   return {
-    ...(completedThisRun && typeof row.completion_at === "string" ? { completedAt: row.completion_at } : {}),
+    ...(continuation && settled && typeof row.completed_at === "string" ? { completedAt: row.completed_at }
+      : status === "COMPLETED" && completedThisRun && typeof row.completion_at === "string" ? { completedAt: row.completion_at } : {}),
     ...(typeof row.execution_sequence === "number" ? { executionSequence: row.execution_sequence } : {}),
     ...(typeof row.input_id === "string" ? { inputId: row.input_id } : {}),
     occurrenceAt: text(row, "occurrence_at"),
     ...(typeof row.queued_at === "string" ? { queuedAt: row.queued_at } : {}),
-    ...(typeof row.reason_code === "string" ? { reasonCode: row.reason_code } : typeof row.inbox_failure_reason === "string" ? { reasonCode: row.inbox_failure_reason } : {}),
+    ...(typeof row.reason_code === "string" ? { reasonCode: row.reason_code }
+      : !(continuation && settled) && typeof row.inbox_failure_reason === "string" ? { reasonCode: row.inbox_failure_reason } : {}),
     result, runId: text(row, "run_id"), mergeCount: typeof row.merge_count === "number" ? row.merge_count : 0,
     status, triggeredAt: text(row, "triggered_at"),
   };
